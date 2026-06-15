@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php artisan *)",
+      "Bash(./vendor/bin/phpunit tests/Feature/CoreApiTest.php)",
+      "Bash(npx create-expo-app *)"
+    ]
+  }
+}
