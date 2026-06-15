@@ -11,7 +11,7 @@ Aplikasi **GPS Tracker** adalah solusi mobile yang dirancang untuk memantau dan 
 - **Manajemen Perangkat:** Menambahkan, mengelola, dan mengonfigurasi beberapa perangkat yang akan dipantau.
 - **Notifikasi:** Peringatan otomatis untuk peristiwa tertentu, seperti perangkat keluar jalur, baterai rendah, atau kecepatan berlebih.
 
-## Tech Stack (Tumpukan Teknologi)
+## Tech Stack
 
 Proyek ini dikembangkan menggunakan kombinasi teknologi modern untuk backend, database, dan, asumsi, frontend mobile.
 
