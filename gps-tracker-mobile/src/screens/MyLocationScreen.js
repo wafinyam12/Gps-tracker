@@ -3,8 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import * as Location from 'expo-location';
 import MapView, { Circle, Marker } from 'react-native-maps';
 import { Crosshair, RefreshCw } from 'lucide-react-native';
-import { visitService } from '../api/services/visitService';
-import { DUMMY_STORES } from '../utils/dummyStores';
+import { storeService } from '../api/services/storeService';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -18,6 +17,16 @@ const toRegion = (location) => ({
   longitude: location.coords.longitude,
   latitudeDelta: 0.01,
   longitudeDelta: 0.01,
+});
+
+const normalizeStore = (store) => ({
+  id: store.id,
+  code: store.code,
+  name: store.name,
+  address: store.address,
+  branch: store.branch,
+  latitude: Number(store.latitude),
+  longitude: Number(store.longitude),
 });
 
 const MyLocationScreen = () => {
@@ -38,23 +47,15 @@ const MyLocationScreen = () => {
 
   const loadStorePoints = async () => {
     try {
-      const response = await visitService.getTodaySchedules();
-      const schedules = response.data?.schedules || [];
-      const scheduledStores = schedules
-        .map((schedule) => ({
-          id: schedule.store?.id || schedule.id,
-          code: schedule.store?.code,
-          name: schedule.store?.name,
-          address: schedule.store?.address,
-          latitude: schedule.store?.latitude,
-          longitude: schedule.store?.longitude,
-          status: schedule.status,
-        }))
-        .filter((store) => typeof store.latitude === 'number' && typeof store.longitude === 'number');
-
-      setStorePoints(scheduledStores.length > 0 ? scheduledStores : DUMMY_STORES);
+      const response = await storeService.getAvailableStores();
+      const payload = response.data?.data || response.data || [];
+      const stores = Array.isArray(payload)
+        ? payload.map(normalizeStore).filter((store) => Number.isFinite(store.latitude) && Number.isFinite(store.longitude))
+        : [];
+      setStorePoints(stores);
     } catch (error) {
-      setStorePoints(DUMMY_STORES);
+      console.log('Load store points error:', error.response?.data || error);
+      setStorePoints([]);
     }
   };
 
@@ -66,7 +67,7 @@ const MyLocationScreen = () => {
       });
       setLocation(current);
       centerToLocation(current);
-      loadStorePoints();
+      await loadStorePoints();
     } catch (error) {
       setErrorMsg('Gagal mengambil lokasi terbaru.');
     } finally {
@@ -88,7 +89,6 @@ const MyLocationScreen = () => {
       }
 
       await refreshLocation();
-      await loadStorePoints();
 
       subscriptionRef.current = await Location.watchPositionAsync(
         {
@@ -146,6 +146,7 @@ const MyLocationScreen = () => {
             )}
           </>
         )}
+
         {storePoints.map((store) => (
           <Marker
             key={store.code || store.id}
@@ -154,7 +155,7 @@ const MyLocationScreen = () => {
               longitude: store.longitude,
             }}
             title={store.name || 'Toko'}
-            description={store.status ? `Status: ${store.status}` : store.address}
+            description={store.branch || store.address || ''}
             pinColor="#16A34A"
           />
         ))}
@@ -176,6 +177,9 @@ const MyLocationScreen = () => {
             </Text>
             <Text style={styles.statusText}>
               Akurasi {Math.round(location.coords.accuracy || 0)} m
+            </Text>
+            <Text style={styles.statusText}>
+              {storePoints.length > 0 ? `${storePoints.length} toko punya koordinat lokal` : 'Belum ada koordinat toko yang tersimpan'}
             </Text>
           </>
         )}
@@ -234,6 +238,7 @@ const styles = StyleSheet.create({
   statusText: {
     color: '#64748B',
     fontSize: 12,
+    marginTop: 2,
   },
   errorText: {
     color: '#EF4444',

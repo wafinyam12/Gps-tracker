@@ -83,7 +83,12 @@ const PhotoUploadScreen = () => {
       try {
         await offlineQueue.addItem('/visit/photos', 'post', {
           visit_log_id: visitLogId,
-          photos: photos.map(p => ({ uri: p.uri, type: type })),
+          type: type,
+          photos: photos.map((p, index) => ({
+            uri: p.uri,
+            name: `photo_${index}.jpg`,
+            type: 'image/jpeg',
+          })),
           latitude: latitude,
           longitude: longitude,
           taken_at: takenAt || new Date().toISOString(),

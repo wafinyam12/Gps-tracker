@@ -104,13 +104,14 @@ class LocationController extends Controller
                         'latitude'    => $ping->location->latitude,
                         'longitude'   => $ping->location->longitude,
                         'accuracy'    => $ping->accuracy,
-                        'speed'       => $ping->speed,
-                        'bearing'     => $ping->bearing,
-                        'battery'     => $ping->battery,
-                        'is_moving'   => $ping->is_moving,
-                        'recorded_at' => $ping->recorded_at?->toISOString(),
-                    ] : null,
-                ];
+                    'speed'       => $ping->speed,
+                    'bearing'     => $ping->bearing,
+                    'battery'     => $ping->battery,
+                    'is_moving'   => $ping->is_moving,
+                    'is_mock_location' => $ping->is_mock_location,
+                    'recorded_at' => $ping->recorded_at?->toISOString(),
+                ] : null,
+            ];
             });
 
             return response()->success($salesData, 'OK', 200);
@@ -142,10 +143,11 @@ class LocationController extends Controller
                 'bearing'     => $ping->bearing,
                 'battery'     => $ping->battery,
                 'is_moving'   => $ping->is_moving,
+                'is_mock_location' => $ping->is_mock_location,
                 'recorded_at' => $ping->recorded_at->toISOString(),
             ]);
 
-        return response()->json([
+        return response()->success([
             'user_id' => $user->id,
             'name'    => $user->name,
             'date'    => $request->date,
@@ -160,6 +162,7 @@ class LocationController extends Controller
      */
     public function salesLocation(User $user)
     {
+        $user->loadMissing('team');
         $ping = $user->latestPing;
 
         if (! $ping) {
@@ -168,9 +171,17 @@ class LocationController extends Controller
             ], 404);
         }
 
-        return response()->json([
+        return response()->success([
             'user_id'      => $user->id,
             'name'         => $user->name,
+            'employee_id'  => $user->employee_id,
+            'phone'        => $user->phone,
+            'photo'        => $user->photo ? asset('storage/'.$user->photo) : null,
+            'team'         => $user->team ? [
+                'id'   => $user->team->id,
+                'name' => $user->team->name,
+                'area' => $user->team->area,
+            ] : null,
             'last_seen_at' => $user->last_seen_at?->toISOString(),
             'is_online'    => $user->last_seen_at
                                 ? $user->last_seen_at->diffInMinutes(now()) <= 10
@@ -182,6 +193,7 @@ class LocationController extends Controller
                 'speed'       => $ping->speed,
                 'battery'     => $ping->battery,
                 'is_moving'   => $ping->is_moving,
+                'is_mock_location' => $ping->is_mock_location,
                 'recorded_at' => $ping->recorded_at->toISOString(),
             ],
         ]);

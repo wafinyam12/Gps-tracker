@@ -14,41 +14,68 @@ import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { MapPin, Navigation, Search } from 'lucide-react-native';
 import { visitService } from '../api/services/visitService';
-import { DUMMY_STORES } from '../utils/dummyStores';
+import { storeService } from '../api/services/storeService';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
   longitude: 106.816666,
-  latitudeDelta: 0.12,
-  longitudeDelta: 0.08,
+  latitudeDelta: 0.14,
+  longitudeDelta: 0.1,
 };
+
+const normalizeStore = (store) => ({
+  id: store.id,
+  code: store.code,
+  external_bp_code: store.external_bp_code || store.code,
+  name: store.name,
+  address: store.address || '',
+  branch: store.branch || store.area || '',
+  latitude: Number(store.latitude),
+  longitude: Number(store.longitude),
+  geofence_radius: store.geofence_radius,
+  status: store.status,
+  has_location: Boolean(store.has_location),
+});
 
 const StartVisitScreen = ({ navigation }) => {
   const mapRef = useRef(null);
   const [search, setSearch] = useState('');
   const [location, setLocation] = useState(null);
-  const [selectedStore, setSelectedStore] = useState(DUMMY_STORES[0]);
+  const [stores, setStores] = useState([]);
+  const [selectedStore, setSelectedStore] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [notice, setNotice] = useState('');
 
-  const filteredStores = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
+  const loadStores = useCallback(async () => {
+    try {
+      const response = await storeService.getAvailableStores({ search });
+      const payload = response.data?.data || response.data || [];
+      const normalized = Array.isArray(payload) ? payload.map(normalizeStore) : [];
+      setStores(normalized);
+      setSelectedStore((current) => current || normalized[0] || null);
 
-    if (!keyword) {
-      return DUMMY_STORES;
+      if (normalized.length === 0) {
+        setNotice('Belum ada toko aktif dari master data.');
+      } else if (normalized.every((store) => !Number.isFinite(store.latitude) || !Number.isFinite(store.longitude))) {
+        setNotice('Koordinat toko akan tersimpan setelah visit valid pertama.');
+      } else {
+        setNotice('');
+      }
+    } catch (error) {
+      console.log('Load stores error:', error.response?.data || error);
+      setStores([]);
+      setNotice(error.response?.data?.message || 'Gagal memuat daftar toko aktif.');
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    return DUMMY_STORES.filter((store) => (
-      store.code.toLowerCase().includes(keyword) ||
-      store.name.toLowerCase().includes(keyword) ||
-      store.address.toLowerCase().includes(keyword)
-    ));
-  }, [search]);
-
-  const getLocation = useCallback(async () => {
+  const requestLocation = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Izin Ditolak', 'Izin lokasi diperlukan untuk memulai kunjungan.');
+        Alert.alert('Izin Ditolak', 'Izin lokasi diperlukan untuk memulai visit.');
         return null;
       }
 
@@ -64,57 +91,76 @@ const StartVisitScreen = ({ navigation }) => {
   }, []);
 
   useEffect(() => {
-    getLocation();
-  }, [getLocation]);
+    requestLocation();
+    loadStores();
+  }, [loadStores, requestLocation]);
+
+  const filteredStores = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) {
+      return stores;
+    }
+
+    return stores.filter((store) => {
+      const fields = [store.code, store.external_bp_code, store.name, store.address, store.branch];
+      return fields.some((field) => field && field.toLowerCase().includes(keyword));
+    });
+  }, [search, stores]);
 
   const focusStore = (store) => {
     setSelectedStore(store);
-    mapRef.current?.animateToRegion({
-      latitude: store.latitude,
-      longitude: store.longitude,
-      latitudeDelta: 0.02,
-      longitudeDelta: 0.02,
-    }, 500);
+
+    if (Number.isFinite(store.latitude) && Number.isFinite(store.longitude)) {
+      mapRef.current?.animateToRegion({
+        latitude: store.latitude,
+        longitude: store.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      }, 500);
+    }
   };
 
   const startVisit = async (store) => {
-    setSelectedStore(store);
-    const currentLocation = location || await getLocation();
+    const currentLocation = location || await requestLocation();
     if (!currentLocation?.coords) {
-      Alert.alert('Tunggu', 'Lokasi belum tersedia.');
       return;
     }
 
     setStarting(true);
     try {
       const response = await visitService.startVisit({
-        store_code: store.code,
+        store_id: store.id,
+        external_bp_code: store.external_bp_code || store.code,
         store_name: store.name,
         store_address: store.address,
-        store_latitude: store.latitude,
-        store_longitude: store.longitude,
+        branch: store.branch,
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
         accuracy: currentLocation.coords.accuracy,
         is_mock_location: currentLocation.mocked || false,
       });
 
+      const payload = response.data || {};
+      const warning = payload.warning || response.message || '';
+
       navigation.replace('VisitForm', {
-        schedule: response.data?.schedule,
-        visitLogId: response.data?.visit_log_id,
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
+        visitLogId: payload.visit_log_id,
       });
+
+      if (warning) {
+        Alert.alert('Info Visit', warning);
+      }
     } catch (error) {
       console.log('Start visit error:', error.response?.data || error);
-      Alert.alert('Gagal', error.response?.data?.message || 'Gagal memulai kunjungan.');
+      Alert.alert('Gagal', error.response?.data?.message || 'Gagal memulai visit.');
     } finally {
       setStarting(false);
     }
   };
 
   const renderStore = ({ item }) => {
-    const isSelected = selectedStore?.code === item.code;
+    const isSelected = selectedStore?.id === item.id;
+    const hasLocation = Number.isFinite(item.latitude) && Number.isFinite(item.longitude);
 
     return (
       <TouchableOpacity
@@ -126,9 +172,12 @@ const StartVisitScreen = ({ navigation }) => {
           <MapPin size={20} color={isSelected ? '#fff' : '#1E40AF'} />
         </View>
         <View style={styles.storeInfo}>
-          <Text style={styles.storeCode}>{item.code}</Text>
-          <Text style={styles.storeName}>{item.name}</Text>
-          <Text style={styles.storeAddress} numberOfLines={2}>{item.address}</Text>
+          <Text style={styles.storeCode}>{item.external_bp_code || item.code}</Text>
+          <Text style={styles.storeName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.storeAddress} numberOfLines={2}>{item.address || 'Alamat belum tersedia'}</Text>
+          <Text style={styles.storeMeta} numberOfLines={1}>
+            {item.branch || 'Cabang belum tersedia'}{hasLocation ? ' - Koordinat tersimpan' : ' - Koordinat belum ada'}
+          </Text>
         </View>
         <TouchableOpacity
           style={[styles.startButton, starting && styles.disabled]}
@@ -165,23 +214,26 @@ const StartVisitScreen = ({ navigation }) => {
               pinColor="#1E40AF"
             />
           )}
-          {DUMMY_STORES.map((store) => (
-            <Marker
-              key={store.code}
-              coordinate={{
-                latitude: store.latitude,
-                longitude: store.longitude,
-              }}
-              title={store.name}
-              description={store.code}
-              pinColor={selectedStore?.code === store.code ? '#F59E0B' : '#16A34A'}
-              onPress={() => setSelectedStore(store)}
-            />
-          ))}
+
+          {filteredStores
+            .filter((store) => Number.isFinite(store.latitude) && Number.isFinite(store.longitude))
+            .map((store) => (
+              <Marker
+                key={store.external_bp_code || store.code}
+                coordinate={{
+                  latitude: store.latitude,
+                  longitude: store.longitude,
+                }}
+                title={store.name}
+                description={store.external_bp_code || store.code}
+                pinColor={selectedStore?.id === store.id ? '#F59E0B' : '#16A34A'}
+                onPress={() => setSelectedStore(store)}
+              />
+            ))}
         </MapView>
 
         <View style={styles.locationCard}>
-          <Text style={styles.title}>Tambah Kunjungan</Text>
+          <Text style={styles.title}>Self-Visit</Text>
           <View style={styles.locationRow}>
             <Navigation size={15} color="#64748B" />
             <Text style={styles.locationText}>
@@ -190,6 +242,9 @@ const StartVisitScreen = ({ navigation }) => {
                 : 'Mencari lokasi...'}
             </Text>
           </View>
+          <Text style={styles.noteText}>
+            Pilih toko dari master data SAP dummy. Koordinat toko baru akan tersimpan saat visit valid pertama.
+          </Text>
         </View>
       </View>
 
@@ -199,21 +254,31 @@ const StartVisitScreen = ({ navigation }) => {
           style={styles.searchInput}
           value={search}
           onChangeText={setSearch}
-          placeholder="Cari kode SAP, nama, atau alamat toko..."
+          placeholder="Cari kode, nama, alamat, atau cabang..."
           placeholderTextColor="#94A3B8"
-          returnKeyType="search"
         />
       </View>
 
+      {!!notice && (
+        <View style={styles.noticeRow}>
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      )}
+
+      {loading ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color="#1E40AF" />
+          <Text style={styles.loadingText}>Memuat daftar toko aktif...</Text>
+        </View>
+      ) : null}
+
       <FlatList
         data={filteredStores}
-        keyExtractor={(item) => item.code}
+        keyExtractor={(item) => String(item.id)}
         renderItem={renderStore}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Tidak ada toko dummy yang cocok.</Text>
-        }
+        ListEmptyComponent={<Text style={styles.emptyText}>Tidak ada toko yang cocok.</Text>}
       />
     </View>
   );
@@ -225,12 +290,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   mapWrap: {
-    height: 270,
+    height: 260,
     backgroundColor: '#E2E8F0',
   },
   map: {
     width: Dimensions.get('window').width,
-    height: 270,
+    height: 260,
   },
   locationCard: {
     position: 'absolute',
@@ -262,6 +327,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'monospace',
   },
+  noteText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
+  },
   searchBox: {
     margin: 16,
     marginBottom: 8,
@@ -284,6 +355,25 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 8,
     paddingBottom: 40,
+  },
+  noticeRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
+  noticeText: {
+    fontSize: 12,
+    color: '#B45309',
+  },
+  loadingRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: '#64748B',
   },
   storeCard: {
     backgroundColor: '#fff',
@@ -334,6 +424,12 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 3,
   },
+  storeMeta: {
+    color: '#94A3B8',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
   startButton: {
     minWidth: 62,
     minHeight: 38,
@@ -348,13 +444,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
-  emptyText: {
-    color: '#94A3B8',
-    textAlign: 'center',
-    paddingVertical: 24,
-  },
   disabled: {
-    opacity: 0.65,
+    opacity: 0.8,
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 60,
+    color: '#94A3B8',
+    fontSize: 14,
   },
 });
 

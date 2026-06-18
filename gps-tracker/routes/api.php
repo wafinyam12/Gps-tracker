@@ -1,12 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DailyTargetController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\ReportController;
-use App\Http\Controllers\Api\ScheduleController;
-use App\Http\Controllers\Api\ScheduleManagementController;
 use App\Http\Controllers\Api\StoreController;
+use App\Http\Controllers\Api\VisitMonitoringController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VisitLogController;
@@ -14,16 +14,11 @@ use App\Http\Controllers\Api\VisitPhotoController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
-
-    // ── Public ──────────────────────────────────────────────────
     Route::middleware(['throttle:login', 'brute.force'])->group(function () {
         Route::post('auth/login', [AuthController::class, 'login']);
     });
 
-    // ── Protected ───────────────────────────────────────────────
     Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
-
-        // Auth
         Route::prefix('auth')->group(function () {
             Route::get('me', [AuthController::class, 'me']);
             Route::post('logout', [AuthController::class, 'logout']);
@@ -31,7 +26,6 @@ Route::prefix('v1')->group(function () {
             Route::post('refresh', [AuthController::class, 'refresh']);
         });
 
-        // ── SALES only ──────────────────────────────────────────
         Route::middleware('role:sales|spv')->group(function () {
             Route::post('location/ping', [LocationController::class, 'ping'])
                 ->middleware('throttle:location-ping');
@@ -42,13 +36,12 @@ Route::prefix('v1')->group(function () {
                 ->middleware('throttle:checkin');
             Route::post('visit/checkout', [CheckInController::class, 'checkOut'])
                 ->middleware('throttle:checkin');
-            Route::post('visit/skip', [CheckInController::class, 'skip']);
 
-            Route::get('schedule/today', [ScheduleController::class, 'today']);
+            Route::get('stores/available', [StoreController::class, 'available']);
             Route::post('visit/photos', [VisitPhotoController::class, 'upload'])
                 ->middleware('throttle:photo-upload');
 
-            Route::get('reports/my-summary', [ReportController::class, 'mySummary']);
+            Route::get('target/today', [DailyTargetController::class, 'today']);
         });
 
         Route::middleware('role:sales|spv|admin')->group(function () {
@@ -65,22 +58,18 @@ Route::prefix('v1')->group(function () {
             Route::delete('visit/photos/{photo}', [VisitPhotoController::class, 'destroy']);
         });
 
-        // ── SPV + ADMIN ─────────────────────────────────────────
         Route::middleware('role:spv|admin')->group(function () {
             Route::get('location/live', [LocationController::class, 'liveSales']);
             Route::get('location/history/{user}', [LocationController::class, 'history']);
             Route::get('location/{user}', [LocationController::class, 'salesLocation']);
 
-            Route::get('schedule/date', [ScheduleController::class, 'byDate']);
-            Route::get('schedule/summary', [ScheduleManagementController::class, 'summary']);
-            Route::post('schedule/assign', [ScheduleManagementController::class, 'assign']);
-            Route::put('schedule/reorder', [ScheduleManagementController::class, 'reorder']);
-            Route::delete('schedule/{schedule}', [ScheduleManagementController::class, 'destroy']);
-
             Route::get('teams', [TeamController::class, 'index']);
             Route::get('teams/{team}', [TeamController::class, 'show']);
 
-            Route::get('reports/visit-summary', [ReportController::class, 'visitSummary']);
+            Route::get('target/summary', [VisitMonitoringController::class, 'summary']);
+            Route::get('target/detail/{user}', [VisitMonitoringController::class, 'detail']);
+            Route::post('target/set', [DailyTargetController::class, 'set']);
+
             Route::get('reports/per-sales', [ReportController::class, 'perSales']);
             Route::get('reports/per-store', [ReportController::class, 'perStore']);
 
@@ -90,14 +79,8 @@ Route::prefix('v1')->group(function () {
                 ->middleware('throttle:export');
         });
 
-        // ── ADMIN only ──────────────────────────────────────────
         Route::middleware('role:admin')->group(function () {
-            Route::post('stores', [StoreController::class, 'store']);
-            Route::put('stores/{store}', [StoreController::class, 'update']);
-            Route::patch('stores/{store}/toggle-status', [StoreController::class, 'toggleStatus']);
-            Route::delete('stores/{store}', [StoreController::class, 'destroy']);
-
-            Route::post('schedule/bulk-assign', [ScheduleManagementController::class, 'bulkAssign']);
+            Route::post('target/bulk-set', [DailyTargetController::class, 'bulkSet']);
 
             Route::get('users', [UserController::class, 'index']);
             Route::get('users/{user}', [UserController::class, 'show']);

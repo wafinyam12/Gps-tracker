@@ -3,12 +3,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { getRoleName } from './src/utils/roles';
+import './src/utils/backgroundTracker';
 
 // Screens
 import LoginScreen from './src/screens/LoginScreen';
 import LoadingScreen from './src/screens/LoadingScreen';
 import HomeScreen from './src/screens/HomeScreen';
-import CheckInScreen from './src/screens/CheckInScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import StartVisitScreen from './src/screens/StartVisitScreen';
 import VisitFormScreen from './src/screens/VisitFormScreen';
@@ -23,7 +23,6 @@ import UserFormScreen from './src/screens/admin/UserFormScreen';
 import TeamListScreen from './src/screens/admin/TeamListScreen';
 import TeamFormScreen from './src/screens/admin/TeamFormScreen';
 import StoreListScreen from './src/screens/admin/StoreListScreen';
-import StoreFormScreen from './src/screens/admin/StoreFormScreen';
 
 // SPV Screens
 import LiveMapScreen from './src/screens/spv/LiveMapScreen';
@@ -47,11 +46,6 @@ const AppStack = () => (
       name="Home"
       component={HomeScreen}
       options={{ headerShown: false }}
-    />
-    <Stack.Screen
-      name="CheckIn"
-      component={CheckInScreen}
-      options={{ title: 'Check-in Kunjungan' }}
     />
     <Stack.Screen
       name="StartVisit"
@@ -144,11 +138,6 @@ const AdminStack = () => (
       options={{ title: 'Manajemen Toko' }}
     />
     <Stack.Screen
-      name="StoreForm"
-      component={StoreFormScreen}
-      options={{ headerShown: false }}
-    />
-    <Stack.Screen
       name="LiveMap"
       component={LiveMapScreen}
       options={{ title: 'Live Monitoring' }}
@@ -173,11 +162,6 @@ const AdminStack = () => (
       name="Home"
       component={HomeScreen}
       options={{ title: 'Monitoring Kunjungan' }}
-    />
-    <Stack.Screen
-      name="CheckIn"
-      component={CheckInScreen}
-      options={{ title: 'Detail Kunjungan' }}
     />
     <Stack.Screen
       name="StartVisit"

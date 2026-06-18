@@ -2,16 +2,16 @@
 
 namespace App\Exports;
 
-use App\Models\VisitSchedule;
+use App\Models\VisitLog;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class VisitReportExport implements
     FromCollection,
@@ -26,19 +26,19 @@ class VisitReportExport implements
         private string $dateTo,
         private ?int   $userId = null,
         private ?int   $teamId = null,
-    ) {}
+    ) {
+    }
 
     public function collection()
     {
-        return VisitSchedule::with(['user.team', 'store', 'visitLog'])
+        return VisitLog::with(['user.team', 'store'])
             ->whereBetween('visit_date', [$this->dateFrom, $this->dateTo])
-            ->when($this->userId, fn($q) => $q->where('user_id', $this->userId))
-            ->when($this->teamId, fn($q) => $q->whereHas('user', function ($q) {
-                $q->where('team_id', $this->teamId);
+            ->when($this->userId, fn ($query) => $query->where('user_id', $this->userId))
+            ->when($this->teamId, fn ($query) => $query->whereHas('user', function ($query) {
+                $query->where('team_id', $this->teamId);
             }))
             ->orderBy('visit_date')
-            ->orderBy('user_id')
-            ->orderBy('sequence')
+            ->orderBy('checkin_at')
             ->get();
     }
 
@@ -51,44 +51,42 @@ class VisitReportExport implements
             'Team',
             'Toko',
             'Kode Toko',
-            'Area',
-            'Kota',
-            'Urutan',
-            'Status',
+            'BP Code',
+            'Cabang',
             'Check-in',
             'Check-out',
             'Durasi (menit)',
             'Jarak Check-in (m)',
             'Lokasi Valid',
             'Mock GPS',
+            'Duplicate',
+            'Dihitung Target',
             'Hasil Kunjungan',
             'Catatan',
         ];
     }
 
-    public function map($schedule): array
+    public function map($visitLog): array
     {
-        $log = $schedule->visitLog;
-
         return [
-            $schedule->visit_date->format('d/m/Y'),
-            $schedule->user->name,
-            $schedule->user->employee_id ?? '-',
-            $schedule->user->team?->name ?? '-',
-            $schedule->store->name,
-            $schedule->store->code,
-            $schedule->store->area ?? '-',
-            $schedule->store->city ?? '-',
-            $schedule->sequence,
-            $this->translateStatus($schedule->status),
-            $log?->checkin_at?->format('H:i:s') ?? '-',
-            $log?->checkout_at?->format('H:i:s') ?? '-',
-            $log?->duration_minutes ?? '-',
-            $log?->checkin_distance ? round($log->checkin_distance, 1) : '-',
-            $log ? ($log->checkin_valid ? 'Ya' : 'Tidak') : '-',
-            $log ? ($log->is_mock_location ? 'Terdeteksi' : 'Normal') : '-',
-            $log?->visit_result ? $this->translateResult($log->visit_result) : '-',
-            $log?->notes ?? '-',
+            $visitLog->visit_date?->format('d/m/Y') ?? '-',
+            $visitLog->user?->name ?? '-',
+            $visitLog->user?->employee_id ?? '-',
+            $visitLog->user?->team?->name ?? '-',
+            $visitLog->store?->name ?? '-',
+            $visitLog->store?->code ?? '-',
+            $visitLog->store?->external_bp_code ?? '-',
+            $visitLog->store?->branch ?? $visitLog->store?->area ?? '-',
+            $visitLog->checkin_at?->format('H:i:s') ?? '-',
+            $visitLog->checkout_at?->format('H:i:s') ?? '-',
+            $visitLog->duration_minutes ?? '-',
+            $visitLog->checkin_distance ? round($visitLog->checkin_distance, 1) : '-',
+            $visitLog->checkin_valid ? 'Ya' : 'Tidak',
+            $visitLog->is_mock_location ? 'Terdeteksi' : 'Normal',
+            $visitLog->is_duplicate ? 'Ya' : 'Tidak',
+            $visitLog->counted_as_target ? 'Ya' : 'Tidak',
+            $this->translateResult($visitLog->visit_result),
+            $visitLog->notes ?? '-',
         ];
     }
 
@@ -111,19 +109,7 @@ class VisitReportExport implements
         return 'Laporan Kunjungan';
     }
 
-    private function translateStatus(string $status): string
-    {
-        return match ($status) {
-            'pending'     => 'Belum Dikunjungi',
-            'in_progress' => 'Sedang Berjalan',
-            'completed'   => 'Selesai',
-            'skipped'     => 'Dilewati',
-            'rescheduled' => 'Dijadwal Ulang',
-            default       => $status,
-        };
-    }
-
-    private function translateResult(string $result): string
+    private function translateResult(?string $result): string
     {
         return match ($result) {
             'order_taken' => 'Dapat Order',
@@ -131,7 +117,7 @@ class VisitReportExport implements
             'closed'      => 'Toko Tutup',
             'not_found'   => 'Toko Tidak Ditemukan',
             'postponed'   => 'Ditunda',
-            default       => $result,
+            default       => '-',
         };
     }
 }

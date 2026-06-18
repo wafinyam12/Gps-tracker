@@ -1,33 +1,58 @@
 import apiClient from '../client';
 
+const normalizeCheckInPayload = (storeOrVisit, latitude, longitude, options = {}) => {
+  const basePayload = {
+    latitude,
+    longitude,
+    accuracy: options.accuracy,
+    is_mock_location: options.isMockLocation || false,
+  };
+
+  if (storeOrVisit && typeof storeOrVisit === 'object' && !Array.isArray(storeOrVisit)) {
+    return {
+      ...storeOrVisit,
+      ...basePayload,
+    };
+  }
+
+  return {
+    store_id: storeOrVisit,
+    ...basePayload,
+  };
+};
+
+const normalizeVisitIdPayload = (visitLogId, extra = {}) => {
+  if (visitLogId && typeof visitLogId === 'object' && !Array.isArray(visitLogId)) {
+    return {
+      ...visitLogId,
+      ...extra,
+    };
+  }
+
+  return {
+    visit_log_id: visitLogId,
+    ...extra,
+  };
+};
+
 export const visitService = {
-  // Ambil jadwal hari ini
-  getTodaySchedules: async () => {
-    const response = await apiClient.get('/schedule/today');
-    return response.data;
-  },
-
-  // Check-in
-  checkIn: async (scheduleId, latitude, longitude, options = {}) => {
-    const response = await apiClient.post('/visit/checkin', {
-      visit_schedule_id: scheduleId,
-      latitude,
-      longitude,
-      accuracy: options.accuracy,
-      is_mock_location: options.isMockLocation || false,
-    });
-    return response.data;
-  },
-
   startVisit: async (data) => {
     const response = await apiClient.post('/visit/start', data);
     return response.data;
   },
 
-  // Check-out
-  checkOut: async (scheduleId, visitResult, notes, options = {}) => {
-    const response = await apiClient.post('/visit/checkout', {
-      visit_schedule_id: scheduleId,
+  checkIn: async (storeOrVisit, latitude, longitude, options = {}) => {
+    const response = await apiClient.post('/visit/checkin', normalizeCheckInPayload(
+      storeOrVisit,
+      latitude,
+      longitude,
+      options,
+    ));
+    return response.data;
+  },
+
+  checkOut: async (visitLogId, visitResult, notes, options = {}) => {
+    const response = await apiClient.post('/visit/checkout', normalizeVisitIdPayload(visitLogId, {
       visit_result: visitResult,
       notes,
       latitude: options.latitude,
@@ -36,20 +61,10 @@ export const visitService = {
       submitted_at: options.submittedAt,
       submitted_by_user_id: options.userId,
       submitted_by_username: options.username,
-    });
+    }));
     return response.data;
   },
 
-  // Skip kunjungan
-  skipVisit: async (scheduleId, reason) => {
-    const response = await apiClient.post('/visit/skip', {
-      visit_schedule_id: scheduleId,
-      skip_reason: reason,
-    });
-    return response.data;
-  },
-
-  // Upload foto (Multipart form data)
   uploadPhotos: async (visitLogId, photos, latitude, longitude, type = 'checkin', metadata = {}) => {
     const formData = new FormData();
     formData.append('visit_log_id', visitLogId);

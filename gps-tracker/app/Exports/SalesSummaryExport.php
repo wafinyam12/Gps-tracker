@@ -2,7 +2,7 @@
 
 namespace App\Exports;
 
-use App\Models\User;
+use App\Services\Visits\VisitAnalyticsService;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -24,19 +24,16 @@ class SalesSummaryExport implements
         private string $dateFrom,
         private string $dateTo,
         private ?int   $teamId = null,
+        private ?int   $userId = null,
     ) {}
 
     public function collection()
     {
-        return User::with(['team', 'schedules' => function ($q) {
-                $q->whereBetween('visit_date', [$this->dateFrom, $this->dateTo])
-                  ->with('visitLog');
-            }])
-            ->whereHas('roles', fn($q) => $q->whereIn('name', ['sales', 'spv']))
-            ->where('is_active', true)
-            ->when($this->teamId, fn($q) => $q->where('team_id', $this->teamId))
-            ->orderBy('name')
-            ->get();
+        $analytics = app(VisitAnalyticsService::class);
+        $users = $analytics->scopeUsers($this->userId, $this->teamId);
+        $logs = $analytics->loadVisits($this->dateFrom, $this->dateTo, $this->userId, $this->teamId);
+
+        return $analytics->summarizeByUser($users, $logs, $this->dateFrom, $this->dateTo);
     }
 
     public function headings(): array
@@ -45,48 +42,36 @@ class SalesSummaryExport implements
             'Sales',
             'Employee ID',
             'Team',
-            'Total Jadwal',
-            'Selesai',
-            'Dilewati',
-            'Belum Dikunjungi',
+            'Target Kunjungan',
+            'Kunjungan Unik',
+            'Duplicate',
             '% Completion',
             'Total Dapat Order',
-            'Total Toko Tutup',
             'Avg Durasi Kunjungan (menit)',
             'Mock GPS Terdeteksi',
             'Check-in Tidak Valid',
+            'Warning Audit',
         ];
     }
 
-    public function map($user): array
+    public function map($item): array
     {
-        $schedules  = $user->schedules;
-        $total      = $schedules->count();
-        $completed  = $schedules->where('status', 'completed')->count();
-        $skipped    = $schedules->where('status', 'skipped')->count();
-        $pending    = $schedules->whereIn('status', ['pending', 'rescheduled'])->count();
-        $logs       = $schedules->pluck('visitLog')->filter();
-
-        $orderTaken   = $logs->where('visit_result', 'order_taken')->count();
-        $closed       = $logs->where('visit_result', 'closed')->count();
-        $avgDuration  = $logs->avg('duration_minutes');
-        $mockGps      = $logs->where('is_mock_location', true)->count();
-        $invalidCheckin = $logs->where('checkin_valid', false)->count();
+        $summary = $item['summary'] ?? [];
+        $warnings = $item['warnings'] ?? [];
 
         return [
-            $user->name,
-            $user->employee_id ?? '-',
-            $user->team?->name ?? '-',
-            $total,
-            $completed,
-            $skipped,
-            $pending,
-            $total > 0 ? round(($completed / $total) * 100, 1).'%' : '0%',
-            $orderTaken,
-            $closed,
-            $avgDuration ? round($avgDuration, 1) : '-',
-            $mockGps,
-            $invalidCheckin,
+            $item['name'] ?? '-',
+            $item['employee_id'] ?? '-',
+            $item['team'] ?? '-',
+            $summary['target_visits'] ?? 0,
+            $summary['unique_visits'] ?? 0,
+            $summary['duplicate_visits'] ?? 0,
+            ($summary['completion_pct'] ?? 0).'%',
+            $summary['order_taken'] ?? 0,
+            $summary['avg_duration_min'] ?? 0,
+            $summary['mock_detected'] ?? 0,
+            $summary['invalid_checkins'] ?? 0,
+            count($warnings),
         ];
     }
 

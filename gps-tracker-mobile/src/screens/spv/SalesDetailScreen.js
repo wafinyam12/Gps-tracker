@@ -1,9 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { locationService } from '../../api/services/locationService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ChevronLeft, MapPin, Clock, Navigation, Calendar } from 'lucide-react-native';
+
+const toRadians = (value) => (value * Math.PI) / 180;
+
+const haversineMeters = (from, to) => {
+  if (!from || !to) {
+    return 0;
+  }
+
+  const earthRadius = 6371000;
+  const dLat = toRadians(to.latitude - from.latitude);
+  const dLon = toRadians(to.longitude - from.longitude);
+  const lat1 = toRadians(from.latitude);
+  const lat2 = toRadians(to.latitude);
+
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadius * c;
+};
 
 const SalesDetailScreen = () => {
   const navigation = useNavigation();
@@ -14,35 +34,54 @@ const SalesDetailScreen = () => {
     if (!userId) {
       Alert.alert('Error', 'User ID tidak ditemukan');
       navigation.goBack();
+      return;
     }
-  }, [userId]);
+  }, [navigation, userId]);
 
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
   const [history, setHistory] = useState([]);
-  const [summary, setSummary] = useState(null);
 
   useEffect(() => {
+    const fetchData = async () => {
+      if (!userId) {
+        return;
+      }
+
+      try {
+        const [userRes, historyRes] = await Promise.all([
+          locationService.getSalesLocation(userId),
+          locationService.getLocationHistory(userId),
+        ]);
+
+        const userPayload = userRes.data?.data || userRes.data || null;
+        const historyPayload = historyRes.data?.data || historyRes.data || {};
+
+        setUserData(userPayload);
+        setHistory(Array.isArray(historyPayload.trail) ? historyPayload.trail : []);
+      } catch (error) {
+        Alert.alert('Error', 'Gagal mengambil data detail sales');
+        navigation.goBack();
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
-  }, []);
+  }, [navigation, userId]);
 
-  const fetchData = async () => {
-    try {
-      const [userRes, historyRes] = await Promise.all([
-        locationService.getSalesLocation(userId),
-        locationService.getLocationHistory(userId),
-      ]);
-
-      setUserData(userRes.data?.data);
-      setHistory(historyRes.data?.trail || historyRes.data?.data?.trail || historyRes.data?.data?.history || []);
-      setSummary(historyRes.data?.data?.summary);
-    } catch (error) {
-      Alert.alert('Error', 'Gagal mengambil data detail sales');
-      navigation.goBack();
-    } finally {
-      setLoading(false);
+  const totalDistanceKm = useMemo(() => {
+    if (history.length < 2) {
+      return 0;
     }
-  };
+
+    let totalMeters = 0;
+    for (let index = 1; index < history.length; index += 1) {
+      totalMeters += haversineMeters(history[index - 1], history[index]);
+    }
+
+    return totalMeters / 1000;
+  }, [history]);
 
   if (loading) {
     return (
@@ -53,10 +92,12 @@ const SalesDetailScreen = () => {
   }
 
   const lastLoc = userData?.location;
-  const polylineCoords = history.map(h => ({
-    latitude: h.latitude,
-    longitude: h.longitude,
-  }));
+  const polylineCoords = history
+    .filter((h) => Number.isFinite(h.latitude) && Number.isFinite(h.longitude))
+    .map((h) => ({
+      latitude: h.latitude,
+      longitude: h.longitude,
+    }));
 
   return (
     <View style={styles.container}>
@@ -92,11 +133,13 @@ const SalesDetailScreen = () => {
                 pinColor="#1E40AF"
               />
             )}
-            <Polyline
-              coordinates={polylineCoords}
-              strokeColor="#1E40AF"
-              strokeWidth={3}
-            />
+            {polylineCoords.length > 1 && (
+              <Polyline
+                coordinates={polylineCoords}
+                strokeColor="#1E40AF"
+                strokeWidth={3}
+              />
+            )}
           </MapView>
         </View>
 
@@ -109,7 +152,7 @@ const SalesDetailScreen = () => {
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Jarak Tempuh</Text>
-              <Text style={styles.statValue}>{summary?.total_distance_km || '0'} KM</Text>
+              <Text style={styles.statValue}>{totalDistanceKm.toFixed(1)} KM</Text>
             </View>
           </View>
 

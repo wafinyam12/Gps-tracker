@@ -291,7 +291,7 @@ const StoreFormScreen = () => {
         <View style={styles.switchGroup}>
           <View>
             <Text style={styles.label}>Status Toko Aktif</Text>
-            <Text style={styles.subLabel}>Toko nonaktif tidak akan muncul di jadwal</Text>
+            <Text style={styles.subLabel}>Toko nonaktif tidak akan muncul di daftar toko</Text>
           </View>
           <Switch
             value={form.status === 'active'}

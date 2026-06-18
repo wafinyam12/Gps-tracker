@@ -3,125 +3,119 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\StoreRequest;
 use App\Http\Resources\StoreResource;
 use App\Models\Store;
 use Illuminate\Http\Request;
-use MatanYadaev\EloquentSpatial\Objects\Point;
+use App\Services\MasterData\StoreCatalogSyncService;
 
 class StoreController extends Controller
 {
-    /**
-     * List semua toko dengan filter & pagination
-     * Role: semua authenticated
-     */
-    public function index(Request $request)
+    public function index(Request $request, StoreCatalogSyncService $catalog)
     {
-        $stores = Store::query()
-            ->when($request->search, fn($q) =>
-                $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('code', 'like', "%{$request->search}%")
-                  ->orWhere('address', 'like', "%{$request->search}%")
-            )
-            ->when($request->area, fn($q) =>
-                $q->where('area', $request->area)
-            )
-            ->when($request->city, fn($q) =>
-                $q->where('city', $request->city)
-            )
-            ->when($request->status, fn($q) =>
-                $q->where('status', $request->status)
-            )
-            ->when($request->is_priority, fn($q) =>
-                $q->where('is_priority', true)
-            )
+        $catalog->sync();
+
+        $query = Store::query()
+            ->when($request->search, function ($q) use ($request) {
+                $search = $request->search;
+                $q->where(function ($nested) use ($search) {
+                    $nested->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhere('external_bp_code', 'like', "%{$search}%")
+                        ->orWhere('address', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->branch, fn ($q) => $q->where('branch', $request->branch))
+            ->when($request->area, fn ($q) => $q->where('area', $request->area))
+            ->when($request->city, fn ($q) => $q->where('city', $request->city))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when($request->is_priority, fn ($q) => $q->where('is_priority', true));
+
+        if ($request->filled('paginate') || $request->filled('per_page')) {
+            $stores = $query->orderBy('name')
+                ->paginate((int) ($request->per_page ?? 20));
+
+            return response()->success(
+                $stores->getCollection()->map(
+                    fn (Store $store) => (new StoreResource($store))->toArray($request)
+                )->values()->all()
+            );
+        }
+
+        $stores = $query
             ->orderBy('name')
-            ->paginate($request->per_page ?? 20);
+            ->get();
 
-        return StoreResource::collection($stores);
+        return response()->success(
+            $stores->map(fn (Store $store) => (new StoreResource($store))->toArray($request))->values()->all()
+        );
     }
 
-    /**
-     * Detail toko
-     */
-    public function show(Store $store)
+    public function available(Request $request, StoreCatalogSyncService $catalog)
     {
-        return new StoreResource($store);
+        $stores = $catalog->activeStores()
+            ->when($request->search, function ($collection) use ($request) {
+                $search = mb_strtolower(trim((string) $request->search));
+
+                return $collection->filter(function (Store $store) use ($search) {
+                    $fields = [
+                        $store->name,
+                        $store->code,
+                        $store->external_bp_code,
+                        $store->address,
+                        $store->branch,
+                    ];
+
+                    foreach ($fields as $field) {
+                        if ($field && str_contains(mb_strtolower($field), $search)) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                })->values();
+            })
+            ->values();
+
+        return response()->success(
+            $stores->map(fn (Store $store) => (new StoreResource($store))->toArray($request))->values()->all()
+        );
     }
 
-    /**
-     * Buat toko baru
-     * Role: admin
-     */
-    public function store(StoreRequest $request)
+    public function show(StoreCatalogSyncService $catalog, Store $store)
     {
-        $store = Store::create([
-            ...$request->validated(),
-            'location' => new Point(
-                latitude: $request->latitude,
-                longitude: $request->longitude,
-            ),
-        ]);
+        $catalog->sync();
+
+        return response()->success((new StoreResource($store))->toArray(request()));
+    }
+
+    public function store()
+    {
+        return response()->error('Master data toko berasal dari SAP dan tidak bisa ditambah manual.', 403);
+    }
+
+    public function update()
+    {
+        return response()->error('Master data toko berasal dari SAP dan tidak bisa diubah manual.', 403);
+    }
+
+    public function toggleStatus()
+    {
+        return response()->error('Status master toko dikelola dari SAP/dummy master data.', 403);
+    }
+
+    public function destroy()
+    {
+        return response()->error('Master data toko tidak bisa dihapus manual.', 403);
+    }
+
+    public function filters(StoreCatalogSyncService $catalog)
+    {
+        $catalog->sync();
 
         return response()->success([
-            'store'   => new StoreResource($store),
-        ], 'Toko berhasil dibuat.', 201);
-    }
-
-    /**
-     * Update toko
-     * Role: admin
-     */
-    public function update(StoreRequest $request, Store $store)
-    {
-        $store->update([
-            ...$request->validated(),
-            'location' => new Point(
-                latitude: $request->latitude,
-                longitude: $request->longitude,
-            ),
-        ]);
-
-        return response()->success([
-            'store'   => new StoreResource($store->fresh()),
-        ], 'Toko berhasil diupdate.');
-    }
-
-    /**
-     * Nonaktifkan toko (soft approach via status)
-     * Role: admin
-     */
-    public function toggleStatus(Store $store)
-    {
-        $store->update([
-            'status' => $store->status === 'active' ? 'inactive' : 'active',
-        ]);
-
-        return response()->success([
-            'status'  => $store->status,
-        ], 'Status toko diupdate.');
-    }
-
-    /**
-     * Hapus toko (soft delete)
-     * Role: admin
-     */
-    public function destroy(Store $store)
-    {
-        $store->delete();
-
-        return response()->success(null, 'Toko berhasil dihapus.');
-    }
-
-    /**
-     * List area & kota unik (untuk filter dropdown)
-     * Role: semua authenticated
-     */
-    public function filters()
-    {
-        return response()->success([
-            'areas'  => Store::distinct()->pluck('area')->filter()->values(),
-            'cities' => Store::distinct()->pluck('city')->filter()->values(),
+            'branches' => Store::distinct()->pluck('branch')->filter()->values(),
+            'areas'    => Store::distinct()->pluck('area')->filter()->values(),
+            'cities'   => Store::distinct()->pluck('city')->filter()->values(),
         ]);
     }
 }

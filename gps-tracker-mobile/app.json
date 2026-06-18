@@ -21,6 +21,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Izinkan aplikasi mengakses lokasi saat digunakan.",
+          "locationAlwaysAndWhenInUsePermission": "Izinkan aplikasi melacak lokasi sales di latar belakang.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       "expo-secure-store",
       [
         "expo-camera",

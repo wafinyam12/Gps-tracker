@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { Users, UsersRound, LogOut, ChevronRight, BarChart3, MapPin } from 'lucide-react-native';
+import { Users, UsersRound, LogOut, ChevronRight, BarChart3, MapPin, Store } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { canVisitStores, getRoleName } from '../../utils/roles';
 
@@ -16,7 +16,7 @@ const AdminDashboardScreen = () => {
     ...(canVisit ? [
       {
         title: 'Kunjungan Saya',
-        subtitle: 'Jadwal, check-in, dan lokasi pribadi',
+        subtitle: 'Mulai visit, ringkasan, dan lokasi pribadi',
         icon: <MapPin size={24} color="#1E40AF" />,
         screen: 'Home',
       },
@@ -34,6 +34,12 @@ const AdminDashboardScreen = () => {
         icon: <UsersRound size={24} color="#1E40AF" />,
         screen: 'TeamList',
       },
+      {
+        title: 'Manajemen Toko',
+        subtitle: 'Master toko read-only dari SAP dummy',
+        icon: <Store size={24} color="#1E40AF" />,
+        screen: 'StoreList',
+      },
     ] : []),
     {
       title: 'Monitoring Kunjungan',
@@ -42,8 +48,8 @@ const AdminDashboardScreen = () => {
       screen: 'LiveMap',
     },
     {
-      title: 'Ringkasan & Anomali',
-      subtitle: 'Lihat progres tim dan peringatan',
+      title: 'Ringkasan & Warning',
+      subtitle: 'Lihat progres visit dan audit warning',
       icon: <BarChart3 size={24} color="#1E40AF" />,
       screen: 'TeamSummary',
     },
@@ -82,12 +88,12 @@ const AdminDashboardScreen = () => {
 
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total Team</Text>
-            <Text style={styles.statValue}>-</Text>
+            <Text style={styles.statLabel}>Role</Text>
+            <Text style={styles.statValue}>{roleName.toUpperCase()}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>User Aktif</Text>
-            <Text style={styles.statValue}>-</Text>
+            <Text style={styles.statLabel}>Akses Visit</Text>
+            <Text style={styles.statValue}>{canVisit ? 'Ya' : 'Tidak'}</Text>
           </View>
         </View>
       </ScrollView>
@@ -198,7 +204,7 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#1E40AF',
     marginTop: 4,

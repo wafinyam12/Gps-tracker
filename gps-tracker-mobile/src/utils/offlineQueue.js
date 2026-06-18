@@ -7,6 +7,38 @@ const OFFLINE_QUEUE_KEY = 'offlineQueue';
 
 let isProcessingQueue = false;
 
+const buildRequestPayload = (endpoint, data, headers = {}) => {
+  if (endpoint === '/visit/photos' && data && Array.isArray(data.photos)) {
+    const formData = new FormData();
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (key === 'photos' || value === undefined || value === null) {
+        return;
+      }
+
+      formData.append(key, String(value));
+    });
+
+    data.photos.forEach((photo, index) => {
+      formData.append('photos[]', {
+        uri: photo.uri,
+        name: photo.name || `photo_${index}.jpg`,
+        type: photo.type || 'image/jpeg',
+      });
+    });
+
+    return {
+      data: formData,
+      headers: {
+        ...headers,
+        'Content-Type': 'multipart/form-data',
+      },
+    };
+  }
+
+  return { data, headers };
+};
+
 export const offlineQueue = {
   async addItem(endpoint, method, data, headers = {})
   {
@@ -48,7 +80,8 @@ export const offlineQueue = {
         const { endpoint, method, data, headers } = queue[i];
         try {
           console.log(`Syncing ${method} ${endpoint}`);
-          await apiClient({ method, url: endpoint, data, headers });
+          const payload = buildRequestPayload(endpoint, data, headers);
+          await apiClient({ method, url: endpoint, data: payload.data, headers: payload.headers });
           // Remove successfully processed item from the queue
           queue.splice(i, 1);
           i--; // Adjust index after removal

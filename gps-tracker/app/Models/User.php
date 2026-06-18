@@ -35,9 +35,9 @@ class User extends Authenticatable
         return $this->belongsTo(Team::class);
     }
 
-    public function schedules()
+    public function dailyTargets()
     {
-        return $this->hasMany(VisitSchedule::class);
+        return $this->hasMany(DailyTarget::class);
     }
 
     public function visitLogs()

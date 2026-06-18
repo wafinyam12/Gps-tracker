@@ -25,64 +25,87 @@ const getStoredUser = async () => {
 };
 
 // 1. Definisikan Task yang akan dijalankan di background
-TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
-  if (error) {
-    console.log('Background location error:', error.message);
-    return;
-  }
-  if (data) {
-    const { locations } = data;
-    const location = locations[0];
-    if (location) {
-      try {
-        const user = await getStoredUser();
-        if (!canVisitStores(user)) {
-          return;
-        }
+if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefined(LOCATION_TRACKING_TASK)) {
+  TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
+    if (error) {
+      console.log('Background location error:', error.message);
+      return;
+    }
+    if (data) {
+      const { locations } = data;
+      const location = locations[0];
+      if (location) {
+        try {
+          const user = await getStoredUser();
+          if (!canVisitStores(user)) {
+            return;
+          }
 
-        // Ping ke server
-        await apiClient.post('/location/ping', {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          accuracy: location.coords.accuracy,
-          speed: location.coords.speed,
-          bearing: normalizeBearing(location.coords.heading),
-          recorded_at: new Date(location.timestamp).toISOString(),
-          is_mock_location: location.mocked || false,
-        });
-      } catch (e) {
-        console.log('Background ping failed', e.message);
+          // Ping ke server
+          await apiClient.post('/location/ping', {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy,
+            speed: location.coords.speed,
+            bearing: normalizeBearing(location.coords.heading),
+            recorded_at: new Date(location.timestamp).toISOString(),
+            is_mock_location: location.mocked || false,
+          });
+        } catch (e) {
+          console.log('Background ping failed', e.message);
+        }
       }
     }
-  }
-});
+  });
+}
 
 // 2. Fungsi untuk menyalakan background tracking
 export const startBackgroundTracking = async () => {
-  const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-  if (foregroundStatus === 'granted') {
-    const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-    if (backgroundStatus === 'granted') {
-      await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 300000, // Tiap 5 menit jika background untuk hemat baterai
-        distanceInterval: 50,  // Atau tiap 50 meter
-        foregroundService: {
-          notificationTitle: "GPS Tracker Aktif",
-          notificationBody: "Melacak posisi sales untuk jadwal kunjungan",
-          notificationColor: "#FF0000",
-        },
-      });
-      console.log('Background tracking started');
+  try {
+    if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK)) {
+      return true;
     }
+
+    const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+    if (foregroundStatus !== 'granted') {
+      return false;
+    }
+
+    const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+    if (backgroundStatus !== 'granted') {
+      return false;
+    }
+
+    await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 300000, // Tiap 5 menit jika background untuk hemat baterai
+      distanceInterval: 50,  // Atau tiap 50 meter
+      foregroundService: {
+        notificationTitle: "GPS Tracker Aktif",
+        notificationBody: "Melacak posisi sales untuk visit harian",
+        notificationColor: "#FF0000",
+      },
+    });
+    console.log('Background tracking started');
+
+    return true;
+  } catch (e) {
+    console.log('Failed to start background tracking', e.message);
+    return false;
   }
 };
 
 // 3. Fungsi untuk mematikan
 export const stopBackgroundTracking = async () => {
-  const hasStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK);
-  if (hasStarted) {
-    await Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
-    console.log('Background tracking stopped');
+  try {
+    const hasStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK);
+    if (hasStarted) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
+      console.log('Background tracking stopped');
+    }
+    return true;
+  } catch (e) {
+    console.log('Failed to stop background tracking', e.message);
+    return false;
   }
 };

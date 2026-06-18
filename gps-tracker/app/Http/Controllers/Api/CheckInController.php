@@ -5,256 +5,39 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\VisitLog;
-use App\Models\VisitSchedule;
+use App\Services\MasterData\StoreCatalogSyncService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class CheckInController extends Controller
 {
+    private const LOCAL_TIMEZONE = 'Asia/Jakarta';
+
+    public function __construct(
+        private readonly StoreCatalogSyncService $catalog,
+    ) {
+    }
+
     /**
-     * Mulai kunjungan mandiri dari mobile tanpa jadwal admin/SPV.
-     * Sistem tetap membuat visit_schedule agar laporan harian tetap konsisten.
+     * Mulai kunjungan mandiri.
+     * Alias lama check-in tetap diarahkan ke alur yang sama agar client lama tidak patah.
      */
     public function start(Request $request)
     {
-        $request->validate([
-            'store_id'         => 'nullable|exists:stores,id',
-            'store_code'       => 'required_without:store_id|nullable|string|max:100',
-            'store_name'       => 'required_without:store_id|nullable|string|max:255',
-            'store_address'    => 'nullable|string|max:1000',
-            'store_latitude'   => 'nullable|numeric|between:-90,90',
-            'store_longitude'  => 'nullable|numeric|between:-180,180',
-            'latitude'         => 'required|numeric|between:-90,90',
-            'longitude'        => 'required|numeric|between:-180,180',
-            'accuracy'         => 'nullable|numeric|min:0',
-            'is_mock_location' => 'nullable|boolean',
-        ]);
-
-        $user = $request->user();
-        $isMock = $request->boolean('is_mock_location', false);
-        $salesLocation = new Point(
-            latitude: $request->latitude,
-            longitude: $request->longitude,
-        );
-
-        $store = null;
-        $schedule = null;
-        $visitLog = null;
-        $distanceMeters = 0;
-        $isValidLocation = ! $isMock;
-
-        DB::transaction(function () use (
-            $request,
-            $user,
-            $isMock,
-            $salesLocation,
-            &$store,
-            &$schedule,
-            &$visitLog,
-            &$distanceMeters,
-            &$isValidLocation
-        ) {
-            if ($request->filled('store_id')) {
-                $store = Store::findOrFail($request->store_id);
-            } else {
-                $store = Store::firstOrCreate(
-                    ['code' => $request->store_code],
-                    [
-                        'name'             => $request->store_name,
-                        'address'          => $request->store_address,
-                        'location'         => new Point(
-                            latitude: $request->input('store_latitude', $request->latitude),
-                            longitude: $request->input('store_longitude', $request->longitude),
-                        ),
-                        'geofence_radius'  => 100,
-                        'status'           => 'active',
-                        'is_priority'      => false,
-                        'tags'             => ['dummy_sap_store'],
-                    ]
-                );
-            }
-
-            $existingSchedule = VisitSchedule::with(['store', 'visitLog'])
-                ->where('user_id', $user->id)
-                ->where('store_id', $store->id)
-                ->whereDate('visit_date', today())
-                ->lockForUpdate()
-                ->first();
-
-            if ($existingSchedule) {
-                if ($existingSchedule->status === 'in_progress' && $existingSchedule->visitLog) {
-                    $schedule = $existingSchedule;
-                    $visitLog = $existingSchedule->visitLog;
-                    return;
-                }
-
-                if ($existingSchedule->status !== 'pending') {
-                    abort(response()->error('Toko ini sudah memiliki kunjungan hari ini.', 422));
-                }
-
-                $schedule = $existingSchedule;
-            } else {
-                $nextSequence = ((int) VisitSchedule::where('user_id', $user->id)
-                    ->whereDate('visit_date', today())
-                    ->max('sequence')) + 1;
-
-                $schedule = VisitSchedule::create([
-                    'user_id'     => $user->id,
-                    'store_id'    => $store->id,
-                    'visit_date'  => today(),
-                    'sequence'    => min($nextSequence, 255),
-                    'status'      => 'pending',
-                    'assigned_by' => $user->id,
-                ]);
-            }
-
-            $distanceMeters = $this->calculateDistance(
-                $request->latitude,
-                $request->longitude,
-                $store->location->latitude,
-                $store->location->longitude,
-            );
-
-            $isValidLocation = $distanceMeters <= $store->geofence_radius && ! $isMock;
-
-            $visitLog = VisitLog::create([
-                'visit_schedule_id' => $schedule->id,
-                'user_id'           => $user->id,
-                'store_id'          => $store->id,
-                'checkin_at'        => now(),
-                'checkin_location'  => $salesLocation,
-                'checkin_accuracy'  => $request->accuracy,
-                'checkin_valid'     => $isValidLocation,
-                'checkin_distance'  => round($distanceMeters, 2),
-                'is_mock_location'  => $isMock,
-                'form_data'         => $this->withSubmissionMeta($request, [
-                    'started_from' => 'mobile_self_service',
-                ]),
-            ]);
-
-            $schedule->update(['status' => 'in_progress']);
-        });
-
-        $schedule->load(['store', 'visitLog']);
-
-        return response()->success([
-            'visit_log_id'      => $visitLog?->id,
-            'is_valid_location' => $isValidLocation,
-            'distance_meters'   => round($distanceMeters, 2),
-            'geofence_radius'   => $store->geofence_radius,
-            'schedule'          => $this->formatSchedule($schedule),
-            'store'             => [
-                'id'      => $store->id,
-                'name'    => $store->name,
-                'address' => $store->address,
-            ],
-            'warning'           => $isMock ? 'Terdeteksi menggunakan fake GPS.' : null,
-        ], $isValidLocation
-            ? 'Kunjungan mandiri berhasil dimulai.'
-            : 'Kunjungan tercatat, namun lokasi di luar radius toko.'
-        , 201);
+        return $this->createVisit($request);
     }
 
-    /**
-     * Check-in ke toko
-     * Role: sales
-     */
     public function checkIn(Request $request)
     {
-        $request->validate([
-            'visit_schedule_id' => 'required|exists:visit_schedules,id',
-            'latitude'          => 'required|numeric|between:-90,90',
-            'longitude'         => 'required|numeric|between:-180,180',
-            'accuracy'          => 'nullable|numeric|min:0',
-            'is_mock_location'  => 'nullable|boolean',
-        ]);
-
-        $user     = $request->user();
-        $schedule = VisitSchedule::with('store')
-            ->where('id', $request->visit_schedule_id)
-            ->where('user_id', $user->id)
-            ->firstOrFail();
-
-        // Cek schedule milik user yang login
-        if ($schedule->user_id !== $user->id) {
-            return response()->error('Unauthorized.', 403);
-        }
-
-        // Cek status — jangan double check-in
-        if ($schedule->status === 'in_progress') {
-            return response()->error('Sudah check-in di toko ini.', 422);
-        }
-
-        if ($schedule->status === 'completed') {
-            return response()->error('Kunjungan sudah selesai.', 422);
-        }
-
-        // Hitung jarak sales ke toko
-        $store         = $schedule->store;
-        $salesLocation = new Point(
-            latitude: $request->latitude,
-            longitude: $request->longitude,
-        );
-
-        $distanceMeters = $this->calculateDistance(
-            $request->latitude,
-            $request->longitude,
-            $store->location->latitude,
-            $store->location->longitude,
-        );
-
-        $isValidLocation = $distanceMeters <= $store->geofence_radius;
-        $isMock          = $request->boolean('is_mock_location', false);
-
-        $visitLog = null;
-
-        DB::transaction(function () use (
-            $request, $user, $schedule, $store,
-            $salesLocation, $distanceMeters, $isValidLocation, $isMock,
-            &$visitLog
-        ) {
-            // Buat visit log
-            $visitLog = VisitLog::create([
-                'visit_schedule_id' => $schedule->id,
-                'user_id'           => $user->id,
-                'store_id'          => $store->id,
-                'checkin_at'        => now(),
-                'checkin_location'  => $salesLocation,
-                'checkin_accuracy'  => $request->accuracy,
-                'checkin_valid'     => $isValidLocation && ! $isMock,
-                'checkin_distance'  => round($distanceMeters, 2),
-                'is_mock_location'  => $isMock,
-            ]);
-
-            // Update status schedule
-            $schedule->update(['status' => 'in_progress']);
-        });
-
-        return response()->success([
-            'visit_log_id'       => $visitLog?->id,
-            'is_valid_location' => $isValidLocation && ! $isMock,
-            'distance_meters'  => round($distanceMeters, 2),
-            'geofence_radius'  => $store->geofence_radius,
-            'store'            => [
-                'id'   => $store->id,
-                'name' => $store->name,
-            ],
-            'warning' => $isMock ? 'Terdeteksi menggunakan fake GPS.' : null,
-        ], $isValidLocation
-            ? 'Check-in berhasil.'
-            : 'Check-in tercatat, namun lokasi di luar radius toko.'
-        , 201);
+        return $this->createVisit($request);
     }
 
-    /**
-     * Check-out dari toko
-     * Role: sales
-     */
     public function checkOut(Request $request)
     {
         $request->validate([
-            'visit_schedule_id' => 'required|exists:visit_schedules,id',
+            'visit_log_id'      => 'nullable|exists:visit_logs,id',
             'latitude'          => 'required|numeric|between:-90,90',
             'longitude'         => 'required|numeric|between:-180,180',
             'notes'             => 'nullable|string|max:1000',
@@ -265,99 +48,281 @@ class CheckInController extends Controller
             'submitted_by_username' => 'nullable|string|max:255',
         ]);
 
-        $user     = $request->user();
-        $schedule = VisitSchedule::where('id', $request->visit_schedule_id)
-            ->where('user_id', $user->id)
-            ->firstOrFail();
+        $user = $request->user();
+        $visitLog = $this->resolveVisitLog($request, $user->id);
 
-        if ($schedule->status !== 'in_progress') {
-            return response()->error('Belum melakukan check-in untuk kunjungan ini.', 422);
+        if (! $visitLog) {
+            return response()->error('Data kunjungan tidak ditemukan.', 404);
         }
 
-        $visitLog = VisitLog::where('visit_schedule_id', $schedule->id)
-            ->whereNull('checkout_at')
-            ->latest()
-            ->firstOrFail();
+        if ($visitLog->checkout_at !== null) {
+            return response()->error('Kunjungan ini sudah selesai.', 422);
+        }
 
-        $checkoutAt      = now();
-        $durationMinutes = (int) $visitLog->checkin_at->diffInMinutes($checkoutAt);
+        $checkoutAt = now(self::LOCAL_TIMEZONE);
+        $durationMinutes = null;
+
+        if ($visitLog->checkin_at) {
+            $checkinAt = Carbon::parse(
+                $visitLog->getRawOriginal('checkin_at'),
+                self::LOCAL_TIMEZONE
+            );
+
+            $durationMinutes = (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60);
+        }
 
         $rawFormData = $request->input('form_data');
         $formData = $this->withSubmissionMeta($request, is_array($rawFormData) ? $rawFormData : []);
 
-        DB::transaction(function () use (
-            $request, $schedule, $visitLog, $checkoutAt, $durationMinutes, $formData
-        ) {
+        DB::transaction(function () use ($request, $visitLog, $checkoutAt, $durationMinutes, $formData) {
             $visitLog->update([
                 'checkout_at'       => $checkoutAt,
                 'checkout_location' => new Point(
-                                           latitude: $request->latitude,
-                                           longitude: $request->longitude,
-                                       ),
+                    latitude: $request->latitude,
+                    longitude: $request->longitude,
+                ),
                 'duration_minutes'  => $durationMinutes,
                 'notes'             => $request->notes,
                 'visit_result'      => $request->visit_result,
                 'form_data'         => $formData,
             ]);
-
-            $schedule->update(['status' => 'completed']);
         });
+
+        $visitLog->loadMissing(['store', 'user']);
 
         return response()->success([
             'visit_log_id'      => $visitLog->id,
-            'duration_minutes' => $durationMinutes,
-            'visit_result'     => $request->visit_result,
-            'submitted_at'     => $formData['_meta']['timestamp'],
-            'submitted_by'     => [
+            'duration_minutes'  => $durationMinutes,
+            'visit_result'      => $request->visit_result,
+            'submitted_at'      => $formData['_meta']['timestamp'],
+            'submitted_by'      => [
                 'user_id'  => $formData['_meta']['user_id'],
                 'username' => $formData['_meta']['username'],
             ],
-            'store'            => [
-                'id'   => $visitLog->store_id,
-                'name' => $schedule->store->name,
-            ],
+            'store'             => $this->formatStore($visitLog->store),
+            'visit'             => $this->formatVisit($visitLog),
         ], 'Check-out berhasil.');
     }
 
-    /**
-     * Skip kunjungan (toko tutup / tidak bisa dikunjungi)
-     * Role: sales
-     */
-    public function skip(Request $request)
+    private function createVisit(Request $request)
     {
         $request->validate([
-            'visit_schedule_id' => 'required|exists:visit_schedules,id',
-            'skip_reason'       => 'required|string|max:500',
+            'store_id'          => 'nullable|exists:stores,id',
+            'external_bp_code'  => 'required_without:store_id|nullable|string|max:100',
+            'store_name'        => 'required_without:store_id|nullable|string|max:255',
+            'store_address'     => 'nullable|string|max:1000',
+            'branch'            => 'nullable|string|max:255',
+            'latitude'          => 'required|numeric|between:-90,90',
+            'longitude'         => 'required|numeric|between:-180,180',
+            'accuracy'          => 'nullable|numeric|min:0',
+            'is_mock_location'  => 'nullable|boolean',
         ]);
 
-        $schedule = VisitSchedule::where('id', $request->visit_schedule_id)
-            ->where('user_id', $request->user()->id)
-            ->whereIn('status', ['pending', 'in_progress'])
-            ->firstOrFail();
+        $user = $request->user();
+        $isMock = $request->boolean('is_mock_location', false);
+        $visitDate = now(self::LOCAL_TIMEZONE)->toDateString();
+        $salesLocation = new Point(
+            latitude: $request->latitude,
+            longitude: $request->longitude,
+        );
 
-        $schedule->update([
-            'status'      => 'skipped',
-            'skip_reason' => $request->skip_reason,
-        ]);
+        $store = $this->resolveStore($request);
+        if (! $store) {
+            return response()->error('Toko tidak tersedia di master data.', 422);
+        }
 
-        return response()->success(null, 'Kunjungan ditandai sebagai skip.');
+        $openVisit = VisitLog::where('user_id', $user->id)
+            ->whereNull('checkout_at')
+            ->latest('checkin_at')
+            ->first();
+
+        if ($openVisit) {
+            return response()->error('Masih ada kunjungan aktif. Selesaikan check-out terlebih dahulu.', 409, [
+                'visit_log_id' => $openVisit->id,
+            ]);
+        }
+
+        $isDuplicate = VisitLog::where('user_id', $user->id)
+            ->where('store_id', $store->id)
+            ->whereDate('visit_date', $visitDate)
+            ->exists();
+
+        $distanceMeters = null;
+        $isValidLocation = ! $isMock;
+
+        if ($store->location instanceof Point) {
+            $distanceMeters = $this->calculateDistance(
+                $request->latitude,
+                $request->longitude,
+                $store->location->latitude,
+                $store->location->longitude,
+            );
+
+            $isValidLocation = $distanceMeters <= $store->geofence_radius && ! $isMock;
+        }
+
+        $visitLog = null;
+
+        DB::transaction(function () use (
+            $request,
+            $user,
+            $store,
+            $visitDate,
+            $salesLocation,
+            $distanceMeters,
+            $isValidLocation,
+            $isMock,
+            $isDuplicate,
+            &$visitLog
+        ) {
+            $visitLog = VisitLog::create([
+                'user_id'           => $user->id,
+                'store_id'          => $store->id,
+                'visit_date'        => $visitDate,
+                'checkin_at'        => now(self::LOCAL_TIMEZONE),
+                'checkin_location'  => $salesLocation,
+                'checkin_accuracy'  => $request->accuracy,
+                'checkin_valid'     => $isValidLocation,
+                'checkin_distance'  => $distanceMeters !== null ? round($distanceMeters, 2) : null,
+                'is_mock_location'  => $isMock,
+                'is_duplicate'      => $isDuplicate,
+                'counted_as_target' => $isValidLocation && ! $isDuplicate,
+                'duplicate_reason'  => $isDuplicate ? 'store_already_visited_today' : null,
+                'form_data'         => $this->withSubmissionMeta($request, [
+                    'started_from' => 'mobile_self_service',
+                    'duplicate'    => $isDuplicate,
+                ]),
+            ]);
+
+            if (! $isMock && ! ($store->location instanceof Point)) {
+                $store->forceFill([
+                    'location'       => $salesLocation,
+                    'last_synced_at'  => now(self::LOCAL_TIMEZONE),
+                ])->save();
+            }
+        });
+
+        $store = $store->fresh();
+        $visitLog->loadMissing(['store', 'user']);
+
+        $warnings = [];
+        if ($isMock) {
+            $warnings[] = 'Terdeteksi menggunakan fake GPS.';
+        }
+
+        if ($isDuplicate) {
+            $warnings[] = 'Kunjungan ini tercatat sebagai duplicate dan tidak dihitung ke target.';
+        }
+
+        if (! $isValidLocation) {
+            $warnings[] = 'Lokasi di luar radius toko dan tidak dihitung ke target.';
+        }
+
+        $message = $warnings
+            ? implode(' ', $warnings)
+            : 'Kunjungan mandiri berhasil dimulai.';
+
+        return response()->success([
+            'visit_log_id'      => $visitLog->id,
+            'is_valid_location'  => $isValidLocation,
+            'distance_meters'    => $distanceMeters !== null ? round($distanceMeters, 2) : null,
+            'geofence_radius'    => $store->geofence_radius,
+            'is_duplicate'       => $isDuplicate,
+            'counted_as_target'  => $isValidLocation && ! $isDuplicate,
+            'store'              => $this->formatStore($store),
+            'visit'              => $this->formatVisit($visitLog),
+            'warning'            => $warnings ? implode(' ', $warnings) : null,
+        ], $message, 201);
     }
 
-    /**
-     * Haversine formula — hitung jarak 2 koordinat dalam meter
-     */
+    private function resolveStore(Request $request): ?Store
+    {
+        if ($request->filled('store_id')) {
+            $store = Store::find($request->store_id);
+
+            return $store?->status === 'active' ? $store : null;
+        }
+
+        $externalCode = $this->catalog->normalizeExternalCode($request->input('external_bp_code'));
+        if (! $externalCode) {
+            return null;
+        }
+
+        $store = $this->catalog->findByExternalCode($externalCode);
+
+        return $store?->status === 'active' ? $store : null;
+    }
+
+    private function resolveVisitLog(Request $request, int $userId): ?VisitLog
+    {
+        if ($request->filled('visit_log_id')) {
+            return VisitLog::where('id', $request->visit_log_id)
+                ->where('user_id', $userId)
+                ->first();
+        }
+
+        return null;
+    }
+
+    private function formatStore(?Store $store): array
+    {
+        return [
+            'id'              => $store?->id,
+            'code'            => $store?->code,
+            'external_bp_code'=> $store?->external_bp_code,
+            'name'            => $store?->name,
+            'address'         => $store?->address,
+            'branch'          => $store?->branch,
+            'latitude'        => $store?->location?->latitude,
+            'longitude'       => $store?->location?->longitude,
+            'geofence_radius' => $store?->geofence_radius,
+            'status'          => $store?->status,
+        ];
+    }
+
+    private function formatVisit(VisitLog $visitLog): array
+    {
+        $visitLog->loadMissing(['store', 'user', 'photos']);
+
+        return [
+            'id'                => $visitLog->id,
+            'visit_date'         => $visitLog->visit_date?->toDateString(),
+            'is_duplicate'       => $visitLog->is_duplicate,
+            'counted_as_target'  => $visitLog->counted_as_target,
+            'duplicate_reason'   => $visitLog->duplicate_reason,
+            'user'               => [
+                'id'       => $visitLog->user?->id,
+                'name'     => $visitLog->user?->name,
+                'username' => $visitLog->user?->name,
+            ],
+            'store'              => $this->formatStore($visitLog->store),
+            'checkin_at'         => $visitLog->checkin_at?->toISOString(),
+            'checkout_at'        => $visitLog->checkout_at?->toISOString(),
+            'duration_minutes'   => $visitLog->duration_minutes,
+            'notes'              => $visitLog->notes,
+            'form_data'          => $visitLog->form_data,
+            'visit_result'       => $visitLog->visit_result,
+            'checkin_valid'      => $visitLog->checkin_valid,
+            'checkin_distance'   => $visitLog->checkin_distance,
+            'is_mock_location'   => $visitLog->is_mock_location,
+            'photos_count'       => $visitLog->photos?->count() ?? 0,
+        ];
+    }
+
     private function calculateDistance(
-        float $lat1, float $lon1,
-        float $lat2, float $lon2
+        float $lat1,
+        float $lon1,
+        float $lat2,
+        float $lon2
     ): float {
-        $earthRadius = 6371000; // meter
+        $earthRadius = 6371000;
 
         $dLat = deg2rad($lat2 - $lat1);
         $dLon = deg2rad($lon2 - $lon1);
 
         $a = sin($dLat / 2) ** 2
-           + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
-           * sin($dLon / 2) ** 2;
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+            * sin($dLon / 2) ** 2;
 
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 
@@ -369,7 +334,7 @@ class CheckInController extends Controller
         $user = $request->user();
 
         $formData['_meta'] = [
-            'timestamp'        => now()->toISOString(),
+            'timestamp'        => now(self::LOCAL_TIMEZONE)->toISOString(),
             'user_id'          => $user->id,
             'username'         => $user->name,
             'client_timestamp' => $request->input('submitted_at'),
@@ -378,35 +343,5 @@ class CheckInController extends Controller
         ];
 
         return $formData;
-    }
-
-    private function formatSchedule(VisitSchedule $schedule): array
-    {
-        return [
-            'id'       => $schedule->id,
-            'sequence' => $schedule->sequence,
-            'status'   => $schedule->status,
-            'store'    => [
-                'id'               => $schedule->store->id,
-                'name'             => $schedule->store->name,
-                'address'          => $schedule->store->address,
-                'latitude'         => $schedule->store->location->latitude,
-                'longitude'        => $schedule->store->location->longitude,
-                'geofence_radius'  => $schedule->store->geofence_radius,
-                'pic_name'         => $schedule->store->pic_name,
-                'pic_phone'        => $schedule->store->pic_phone,
-            ],
-            'visit_log' => $schedule->visitLog ? [
-                'id'               => $schedule->visitLog->id,
-                'checkin_at'       => $schedule->visitLog->checkin_at?->toISOString(),
-                'checkout_at'      => $schedule->visitLog->checkout_at?->toISOString(),
-                'checkin_valid'    => $schedule->visitLog->checkin_valid,
-                'checkin_distance' => $schedule->visitLog->checkin_distance,
-                'duration_minutes' => $schedule->visitLog->duration_minutes,
-                'visit_result'     => $schedule->visitLog->visit_result,
-                'notes'            => $schedule->visitLog->notes,
-                'form_data'        => $schedule->visitLog->form_data,
-            ] : null,
-        ];
     }
 }

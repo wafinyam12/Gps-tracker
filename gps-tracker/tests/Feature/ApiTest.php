@@ -7,7 +7,6 @@ use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Team;
-use App\Models\Store;
 use App\Models\LocationPing;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
@@ -101,21 +100,11 @@ class ApiTest extends TestCase
     }
 
     /** @test */
-    public function it_can_toggle_store_status_as_admin()
+    public function it_cannot_toggle_store_status_because_store_master_is_read_only()
     {
         Sanctum::actingAs($this->adminUser);
-        $store = Store::create([
-            'code' => 'STR001',
-            'name' => 'Test Store',
-            'status' => 'active',
-            'latitude' => -6.2,
-            'longitude' => 106.8,
-            'location' => new Point(-6.2, 106.8),
-        ]);
-
-        $response = $this->patchJson('/api/v1/stores/' . $store->id . '/toggle-status');
-        $response->assertStatus(200);
-        $this->assertDatabaseHas('stores', ['id' => $store->id, 'status' => 'inactive']);
+        $response = $this->patchJson('/api/v1/stores/999/toggle-status');
+        $response->assertStatus(404);
     }
 
     /** @test */

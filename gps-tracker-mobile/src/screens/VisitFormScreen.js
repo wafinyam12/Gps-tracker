@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { Picker } from '@react-native-picker/picker';
-import { Camera, CheckCircle2, MapPin, Save, Trash2 } from 'lucide-react-native';
+import { Camera, CheckCircle2, MapPin, Save } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { visitService } from '../api/services/visitService';
@@ -23,62 +23,33 @@ const VISIT_RESULTS = [
   { label: 'Tidak Ada Order', value: 'no_order' },
   { label: 'Toko Tutup', value: 'closed' },
   { label: 'Tidak Ditemukan', value: 'not_found' },
-  { label: 'Dijadwalkan Ulang', value: 'postponed' },
+  { label: 'Ditunda', value: 'postponed' },
 ];
 
-const emptyForm = {
+const EMPTY_FORM = {
   visitResult: 'order_taken',
-  contactPerson: '',
-  orderValue: '',
-  stockNotes: '',
-  competitorNotes: '',
-  nextAction: '',
   notes: '',
 };
 
 const VisitFormScreen = ({ route, navigation }) => {
   const { user } = useAuth();
-  const { schedule, visitLogId: routeVisitLogId, latitude, longitude } = route.params || {};
-  const initialVisitLogId = routeVisitLogId || schedule?.visit_log?.id || null;
+  const { visitLogId: routeVisitLogId } = route.params || {};
 
-  const [visitLogId, setVisitLogId] = useState(initialVisitLogId);
-  const [visit, setVisit] = useState(schedule?.visit_log ? { ...schedule.visit_log, id: initialVisitLogId } : null);
-  const [form, setForm] = useState(() => ({
-    ...emptyForm,
-    visitResult: schedule?.visit_log?.visit_result || emptyForm.visitResult,
-    notes: schedule?.visit_log?.notes || '',
-    contactPerson: schedule?.visit_log?.form_data?.contact_person || '',
-    orderValue: schedule?.visit_log?.form_data?.order_value !== undefined && schedule?.visit_log?.form_data?.order_value !== null
-      ? String(schedule.visit_log.form_data.order_value)
-      : '',
-    stockNotes: schedule?.visit_log?.form_data?.stock_notes || '',
-    competitorNotes: schedule?.visit_log?.form_data?.competitor_notes || '',
-    nextAction: schedule?.visit_log?.form_data?.next_action || '',
-  }));
-  const [currentLocation, setCurrentLocation] = useState(
-    latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null
-      ? { coords: { latitude, longitude } }
-      : null
-  );
-  const [loading, setLoading] = useState(Boolean(initialVisitLogId));
+  const [visitLogId, setVisitLogId] = useState(routeVisitLogId || null);
+  const [visit, setVisit] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [loading, setLoading] = useState(Boolean(routeVisitLogId));
   const [saving, setSaving] = useState(false);
 
-  const resolvedVisitLogId = visitLogId || routeVisitLogId || schedule?.visit_log?.id || null;
-  const isCheckedOut = Boolean(visit?.checkout_at || schedule?.visit_log?.checkout_at);
-  const store = visit?.store || schedule?.store || {};
-  const submittedAt = useMemo(() => new Date().toISOString(), [saving]);
+  const resolvedVisitLogId = visitLogId || routeVisitLogId || null;
+  const isCheckedOut = Boolean(visit?.checkout_at);
+  const store = visit?.store || {};
 
   const hydrateForm = useCallback((visitData) => {
-    const formData = visitData?.form_data || {};
-
     setForm({
-      visitResult: visitData?.visit_result || emptyForm.visitResult,
+      visitResult: visitData?.visit_result || EMPTY_FORM.visitResult,
       notes: visitData?.notes || '',
-      contactPerson: formData.contact_person || '',
-      orderValue: formData.order_value !== undefined && formData.order_value !== null ? String(formData.order_value) : '',
-      stockNotes: formData.stock_notes || '',
-      competitorNotes: formData.competitor_notes || '',
-      nextAction: formData.next_action || '',
     });
   }, []);
 
@@ -91,7 +62,7 @@ const VisitFormScreen = ({ route, navigation }) => {
     setLoading(true);
     try {
       const response = await visitService.getVisit(resolvedVisitLogId);
-      const visitData = response.data?.visit;
+      const visitData = response.data?.visit || response.data?.data?.visit || null;
       setVisit(visitData);
       hydrateForm(visitData);
     } catch (error) {
@@ -102,11 +73,11 @@ const VisitFormScreen = ({ route, navigation }) => {
     }
   }, [hydrateForm, resolvedVisitLogId]);
 
-  const getLocation = useCallback(async () => {
+  const requestLocation = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Izin Ditolak', 'Izin lokasi diperlukan untuk menyimpan kunjungan.');
+        Alert.alert('Izin Ditolak', 'Izin lokasi diperlukan untuk checkout visit.');
         return null;
       }
 
@@ -123,9 +94,9 @@ const VisitFormScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     if (!currentLocation) {
-      getLocation();
+      requestLocation();
     }
-  }, [currentLocation, getLocation]);
+  }, [currentLocation, requestLocation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -137,18 +108,6 @@ const VisitFormScreen = ({ route, navigation }) => {
     setForm((previous) => ({ ...previous, [field]: value }));
   };
 
-  const buildFormData = () => {
-    const numericOrderValue = Number(String(form.orderValue).replace(/[^0-9.]/g, ''));
-
-    return {
-      contact_person: form.contactPerson.trim(),
-      order_value: Number.isFinite(numericOrderValue) && form.orderValue ? numericOrderValue : null,
-      stock_notes: form.stockNotes.trim(),
-      competitor_notes: form.competitorNotes.trim(),
-      next_action: form.nextAction.trim(),
-    };
-  };
-
   const handleTakePhoto = () => {
     if (!resolvedVisitLogId) {
       Alert.alert('Belum Bisa', 'ID kunjungan belum tersedia.');
@@ -157,7 +116,7 @@ const VisitFormScreen = ({ route, navigation }) => {
 
     navigation.navigate('PhotoUpload', {
       visitLogId: resolvedVisitLogId,
-      type: 'product',
+      type: 'visit',
       latitude: currentLocation?.coords?.latitude,
       longitude: currentLocation?.coords?.longitude,
       takenAt: new Date().toISOString(),
@@ -167,92 +126,46 @@ const VisitFormScreen = ({ route, navigation }) => {
   };
 
   const handleSubmit = async () => {
-    const location = currentLocation || await getLocation();
+    const location = currentLocation || await requestLocation();
     if (!location?.coords) {
-      Alert.alert('Tunggu', 'Lokasi belum tersedia.');
       return;
     }
 
-    if (!isCheckedOut && !schedule?.id) {
-      Alert.alert('Error', 'Data jadwal kunjungan tidak ditemukan.');
+    if (!resolvedVisitLogId) {
+      Alert.alert('Error', 'ID kunjungan tidak ditemukan.');
       return;
     }
-
-    const payload = {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-      formData: buildFormData(),
-      submittedAt: new Date().toISOString(),
-      userId: user?.id,
-      username: user?.name,
-    };
 
     setSaving(true);
     try {
-      let response;
-      if (isCheckedOut) {
-        response = await visitService.updateVisit(resolvedVisitLogId, {
-          latitude: payload.latitude,
-          longitude: payload.longitude,
-          notes: form.notes.trim(),
-          visit_result: form.visitResult,
-          form_data: payload.formData,
-          submitted_at: payload.submittedAt,
-          submitted_by_user_id: payload.userId,
-          submitted_by_username: payload.username,
-        });
-      } else {
-        response = await visitService.checkOut(
-          schedule.id,
-          form.visitResult,
-          form.notes.trim(),
-          payload
-        );
-        setVisitLogId(response.data?.visit_log_id || resolvedVisitLogId);
-      }
-
-      Alert.alert(
-        'Berhasil',
-        isCheckedOut ? 'Data kunjungan berhasil diperbarui.' : 'Kunjungan berhasil disimpan.',
-        [{ text: 'OK', onPress: () => navigation.popToTop() }]
+      const response = await visitService.checkOut(
+        resolvedVisitLogId,
+        form.visitResult,
+        form.notes.trim(),
+        {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          formData: {
+            notes: form.notes.trim(),
+          },
+          submittedAt: new Date().toISOString(),
+          userId: user?.id,
+          username: user?.name,
+        }
       );
+
+      const payload = response.data || {};
+      setVisitLogId(payload.visit_log_id || resolvedVisitLogId);
+
+      Alert.alert('Berhasil', 'Kunjungan berhasil disimpan.', [
+        { text: 'OK', onPress: () => navigation.popToTop() },
+      ]);
     } catch (error) {
       console.log('Save visit error:', error.response?.data || error);
       Alert.alert('Gagal', error.response?.data?.message || 'Gagal menyimpan data kunjungan.');
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDeleteDraft = () => {
-    if (!resolvedVisitLogId || isCheckedOut) {
-      return;
-    }
-
-    Alert.alert(
-      'Hapus Draft',
-      'Data check-in dan foto kunjungan ini akan dihapus.',
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Hapus',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              await visitService.deleteVisit(resolvedVisitLogId);
-              Alert.alert('Berhasil', 'Draft kunjungan berhasil dihapus.', [
-                { text: 'OK', onPress: () => navigation.popToTop() },
-              ]);
-            } catch (error) {
-              Alert.alert('Gagal', error.response?.data?.message || 'Gagal menghapus draft kunjungan.');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ]
-    );
   };
 
   if (loading) {
@@ -273,9 +186,10 @@ const VisitFormScreen = ({ route, navigation }) => {
         <View style={styles.storeCard}>
           <View style={styles.storeHeader}>
             <View style={styles.storeTextWrap}>
-              <Text style={styles.storeLabel}>Kunjungan</Text>
+              <Text style={styles.storeLabel}>Visit</Text>
               <Text style={styles.storeName}>{store.name || 'Toko'}</Text>
               {!!store.address && <Text style={styles.storeAddress}>{store.address}</Text>}
+              {!!store.branch && <Text style={styles.storeMeta}>{store.branch}</Text>}
             </View>
             <View style={[styles.statusBadge, isCheckedOut ? styles.completedBadge : styles.openBadge]}>
               <CheckCircle2 size={14} color={isCheckedOut ? '#047857' : '#1D4ED8'} />
@@ -298,16 +212,17 @@ const VisitFormScreen = ({ route, navigation }) => {
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.photoBtn]} onPress={handleTakePhoto}>
             <Camera size={20} color="#fff" />
-            <Text style={styles.actionBtnText}>Foto Langsung</Text>
+            <Text style={styles.actionBtnText}>Foto Wajib</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.formCard}>
-          <Text style={styles.fieldLabel}>Hasil Kunjungan</Text>
+          <Text style={styles.fieldLabel}>Hasil Visit</Text>
           <View style={styles.pickerWrap}>
             <Picker
               selectedValue={form.visitResult}
               onValueChange={(value) => setField('visitResult', value)}
+              enabled={!isCheckedOut}
             >
               {VISIT_RESULTS.map((item) => (
                 <Picker.Item key={item.value} label={item.label} value={item.value} />
@@ -315,91 +230,32 @@ const VisitFormScreen = ({ route, navigation }) => {
             </Picker>
           </View>
 
-          <Text style={styles.fieldLabel}>Nama PIC</Text>
-          <TextInput
-            style={styles.input}
-            value={form.contactPerson}
-            onChangeText={(value) => setField('contactPerson', value)}
-            placeholder="Nama PIC toko"
-            placeholderTextColor="#94A3B8"
-          />
-
-          <Text style={styles.fieldLabel}>Nilai Order</Text>
-          <TextInput
-            style={styles.input}
-            value={form.orderValue}
-            onChangeText={(value) => setField('orderValue', value)}
-            placeholder="0"
-            placeholderTextColor="#94A3B8"
-            keyboardType="numeric"
-          />
-
-          <Text style={styles.fieldLabel}>Catatan Stok</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={form.stockNotes}
-            onChangeText={(value) => setField('stockNotes', value)}
-            placeholder="Kondisi stok / kebutuhan toko"
-            placeholderTextColor="#94A3B8"
-            multiline
-          />
-
-          <Text style={styles.fieldLabel}>Aktivitas Kompetitor</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={form.competitorNotes}
-            onChangeText={(value) => setField('competitorNotes', value)}
-            placeholder="Promo, display, atau catatan kompetitor"
-            placeholderTextColor="#94A3B8"
-            multiline
-          />
-
-          <Text style={styles.fieldLabel}>Tindak Lanjut</Text>
-          <TextInput
-            style={styles.input}
-            value={form.nextAction}
-            onChangeText={(value) => setField('nextAction', value)}
-            placeholder="Follow-up berikutnya"
-            placeholderTextColor="#94A3B8"
-          />
-
-          <Text style={styles.fieldLabel}>Catatan Akhir</Text>
+          <Text style={styles.fieldLabel}>Catatan</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={form.notes}
             onChangeText={(value) => setField('notes', value)}
-            placeholder="Ringkasan kunjungan"
+            placeholder="Catatan singkat visit"
             placeholderTextColor="#94A3B8"
             multiline
+            editable={!isCheckedOut}
           />
         </View>
 
         <View style={styles.auditCard}>
-          <Text style={styles.auditTitle}>Data Pengirim</Text>
-          <Text style={styles.auditText}>Timestamp: {new Date(submittedAt).toLocaleString('id-ID')}</Text>
-          <Text style={styles.auditText}>User ID: {user?.id || '-'}</Text>
-          <Text style={styles.auditText}>Username: {user?.name || '-'}</Text>
+          <Text style={styles.auditTitle}>Audit</Text>
+          <Text style={styles.auditText}>User: {user?.name || '-'}</Text>
+          <Text style={styles.auditText}>Visit ID: {resolvedVisitLogId || '-'}</Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.saveBtn, saving && styles.disabledBtn]}
+          style={[styles.saveBtn, saving && styles.disabledBtn, isCheckedOut && styles.disabledBtn]}
           onPress={handleSubmit}
-          disabled={saving}
+          disabled={saving || isCheckedOut}
         >
           {saving ? <ActivityIndicator color="#fff" /> : <Save size={20} color="#fff" />}
-          <Text style={styles.saveBtnText}>{isCheckedOut ? 'Simpan Perubahan' : 'Simpan Kunjungan'}</Text>
+          <Text style={styles.saveBtnText}>{isCheckedOut ? 'Visit Sudah Selesai' : 'Simpan Visit'}</Text>
         </TouchableOpacity>
-
-        {!isCheckedOut && resolvedVisitLogId && (
-          <TouchableOpacity
-            style={[styles.deleteBtn, saving && styles.disabledBtn]}
-            onPress={handleDeleteDraft}
-            disabled={saving}
-          >
-            <Trash2 size={18} color="#B91C1C" />
-            <Text style={styles.deleteBtnText}>Hapus Draft</Text>
-          </TouchableOpacity>
-        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -423,18 +279,13 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 32,
   },
   storeCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 16,
+    marginBottom: 16,
   },
   storeHeader: {
     flexDirection: 'row',
@@ -445,176 +296,149 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   storeLabel: {
+    fontSize: 11,
     color: '#64748B',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   storeName: {
-    color: '#0F172A',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 2,
   },
   storeAddress: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 3,
+  },
+  storeMeta: {
+    fontSize: 12,
     color: '#64748B',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
+    marginTop: 3,
   },
   statusBadge: {
-    height: 30,
-    paddingHorizontal: 10,
-    borderRadius: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-  },
-  completedBadge: {
-    backgroundColor: '#D1FAE5',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
   },
   openBadge: {
     backgroundColor: '#DBEAFE',
   },
+  completedBadge: {
+    backgroundColor: '#D1FAE5',
+  },
   statusText: {
     fontSize: 11,
-    fontWeight: '800',
-  },
-  completedText: {
-    color: '#047857',
+    fontWeight: '700',
   },
   openText: {
     color: '#1D4ED8',
   },
+  completedText: {
+    color: '#047857',
+  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 14,
+    gap: 6,
+    marginTop: 12,
   },
   metaText: {
+    fontSize: 12,
     color: '#64748B',
-    fontSize: 13,
-    fontFamily: 'monospace',
   },
   actionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   actionBtn: {
-    flex: 1,
-    minHeight: 50,
-    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    minHeight: 46,
+    borderRadius: 14,
   },
   photoBtn: {
     backgroundColor: '#1E40AF',
   },
-  galleryBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
   actionBtnText: {
     color: '#fff',
-    fontWeight: '800',
     fontSize: 14,
+    fontWeight: '700',
   },
   formCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 16,
   },
   fieldLabel: {
-    color: '#334155',
     fontSize: 13,
-    fontWeight: '800',
-    marginBottom: 7,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 8,
     marginTop: 12,
   },
   pickerWrap: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#fff',
+    backgroundColor: '#F8FAFC',
   },
   input: {
-    minHeight: 48,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: '#0F172A',
+    padding: 12,
     fontSize: 15,
-    backgroundColor: '#fff',
+    color: '#1E293B',
   },
   textArea: {
-    minHeight: 88,
+    minHeight: 96,
     textAlignVertical: 'top',
   },
   auditCard: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 14,
+    backgroundColor: '#FFF7ED',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#FED7AA',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 16,
   },
   auditTitle: {
-    color: '#0F172A',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
+    color: '#C2410C',
     marginBottom: 6,
   },
   auditText: {
-    color: '#475569',
     fontSize: 12,
-    lineHeight: 19,
+    color: '#9A3412',
+    marginTop: 3,
   },
   saveBtn: {
-    minHeight: 56,
-    backgroundColor: '#16A34A',
-    borderRadius: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
     marginTop: 16,
+    backgroundColor: '#1E40AF',
+    borderRadius: 14,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
   saveBtnText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
-  },
-  deleteBtn: {
-    minHeight: 50,
-    borderRadius: 14,
-    marginTop: 10,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  deleteBtnText: {
-    color: '#B91C1C',
-    fontWeight: '800',
-    fontSize: 14,
   },
   disabledBtn: {
-    opacity: 0.65,
+    opacity: 0.6,
   },
 });
 

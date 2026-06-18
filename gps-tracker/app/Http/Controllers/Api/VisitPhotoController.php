@@ -6,14 +6,25 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\VisitPhotoRequest;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
+use App\Services\Visits\VisitPhotoExifService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Intervention\Image\Laravel\Facades\Image;
+use Intervention\Image\Drivers\Gd\Driver as GdDriver;
+use Intervention\Image\Encoders\JpegEncoder;
+use Intervention\Image\ImageManager;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class VisitPhotoController extends Controller
 {
+    private const LOCAL_TIMEZONE = 'Asia/Jakarta';
+
+    public function __construct(
+        private readonly VisitPhotoExifService $exifService,
+    ) {
+    }
+
     /**
      * Upload foto kunjungan
      * Role: sales
@@ -24,25 +35,30 @@ class VisitPhotoController extends Controller
         $visitLog = VisitLog::where('id', $request->visit_log_id)
             ->where('user_id', $user->id)
             ->firstOrFail();
+        $latitude = $request->filled('latitude') ? (float) $request->latitude : null;
+        $longitude = $request->filled('longitude') ? (float) $request->longitude : null;
+        $takenAt = $request->filled('taken_at')
+            ? Carbon::parse($request->taken_at)->setTimezone(self::LOCAL_TIMEZONE)
+            : now(self::LOCAL_TIMEZONE);
 
         // Pastikan visit log masih aktif (belum checkout) atau baru selesai
         // Foto bisa diupload saat checkin maupun checkout
         $uploaded = [];
 
         foreach ($request->file('photos') as $photo) {
-            $path = $this->processAndStore($photo, $visitLog->id);
+            $path = $this->processAndStore($photo, $visitLog->id, $latitude, $longitude, $takenAt);
 
             $visitPhoto = VisitPhoto::create([
                 'visit_log_id' => $visitLog->id,
                 'path'         => $path,
                 'type'         => $request->type ?? 'checkin',
-                'location'     => ($request->filled('latitude') && $request->filled('longitude'))
+                'location'     => ($latitude !== null && $longitude !== null)
                                     ? new Point(
-                                          latitude: $request->latitude,
-                                          longitude: $request->longitude,
+                                          latitude: $latitude,
+                                          longitude: $longitude,
                                       )
                                     : null,
-                'taken_at'     => $request->taken_at ?? now(),
+                'taken_at'     => $takenAt,
             ]);
 
             $uploaded[] = [
@@ -127,18 +143,30 @@ class VisitPhotoController extends Controller
     /**
      * Process foto — resize + compress + simpan
      */
-    private function processAndStore($file, int $visitLogId): string
+    private function processAndStore($file, int $visitLogId, ?float $latitude = null, ?float $longitude = null, ?Carbon $takenAt = null): string
     {
         $filename  = Str::uuid().'.'.'jpg'; // selalu convert ke jpg
-        $directory = date('Y/m/d').'/'.$visitLogId;
+        $directory = ($takenAt ?? now(self::LOCAL_TIMEZONE))->format('Y/m/d').'/'.$visitLogId;
         $fullPath  = $directory.'/'.$filename;
 
-        // Resize & compress pakai Intervention Image
-        $image = Image::read($file->getRealPath())
-            ->scaleDown(width: 1280) // max width 1280px, maintain ratio
-            ->toJpeg(quality: 80);   // compress ke 80% quality
+        $manager = new ImageManager(new GdDriver());
 
-        Storage::disk('visit_photos')->put($fullPath, $image);
+        // Resize & compress pakai Intervention Image
+        $image = $manager->decodePath($file->getRealPath())
+            ->scaleDown(width: 1280); // max width 1280px, maintain ratio
+
+        $encoded = $image->encode(new JpegEncoder(quality: 80)); // compress ke 80% quality
+        $binary = $encoded->toString();
+
+        if ($latitude !== null && $longitude !== null) {
+            $binary = $this->exifService->embedGps($binary, $latitude, $longitude, $takenAt);
+        }
+
+        $stored = Storage::disk('visit_photos')->put($fullPath, $binary);
+
+        if (! $stored) {
+            throw new \RuntimeException('Gagal menyimpan foto kunjungan ke storage.');
+        }
 
         return $fullPath;
     }

@@ -11,27 +11,38 @@ class VisitLog extends Model
     use HasSpatial;
 
     protected $fillable = [
-        'visit_schedule_id', 'user_id', 'store_id',
-        'checkin_at', 'checkin_location', 'checkin_accuracy',
-        'checkin_valid', 'checkin_distance', 'is_mock_location',
-        'checkout_at', 'checkout_location', 'duration_minutes',
-        'notes', 'form_data', 'visit_result',
+        'user_id',
+        'store_id',
+        'visit_date',
+        'checkin_at',
+        'checkin_location',
+        'checkin_accuracy',
+        'checkin_valid',
+        'checkin_distance',
+        'is_mock_location',
+        'is_duplicate',
+        'counted_as_target',
+        'duplicate_reason',
+        'checkout_at',
+        'checkout_location',
+        'duration_minutes',
+        'notes',
+        'form_data',
+        'visit_result',
     ];
 
     protected $casts = [
         'checkin_location'  => Point::class,
         'checkout_location' => Point::class,
+        'visit_date'        => 'date',
         'form_data'         => 'array',
         'checkin_valid'     => 'boolean',
         'is_mock_location'  => 'boolean',
+        'is_duplicate'      => 'boolean',
+        'counted_as_target'  => 'boolean',
         'checkin_at'        => 'datetime',
         'checkout_at'       => 'datetime',
     ];
-
-    public function schedule()
-    {
-        return $this->belongsTo(VisitSchedule::class, 'visit_schedule_id');
-    }
 
     public function user()
     {

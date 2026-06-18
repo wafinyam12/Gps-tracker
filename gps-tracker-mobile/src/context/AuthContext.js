@@ -2,6 +2,8 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 import authEvents from '../utils/authEvents';
+import { canVisitStores } from '../utils/roles';
+import { startBackgroundTracking, stopBackgroundTracking } from '../utils/backgroundTracker';
 
 const AuthContext = createContext();
 
@@ -18,6 +20,7 @@ export const AuthProvider = ({ children }) => {
     const unsub = authEvents.on('logout', async (payload) => {
       console.log('AuthContext received logout event', payload);
       try {
+        await stopBackgroundTracking();
         await SecureStore.deleteItemAsync('user_token');
         await SecureStore.deleteItemAsync('user_data');
       } catch (e) {
@@ -27,6 +30,22 @@ export const AuthProvider = ({ children }) => {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    const syncTracking = async () => {
+      try {
+        if (canVisitStores(user)) {
+          await startBackgroundTracking();
+        } else {
+          await stopBackgroundTracking();
+        }
+      } catch (e) {
+        console.log('Failed to sync background tracking', e);
+      }
+    };
+
+    syncTracking();
+  }, [user]);
 
   const loadStoredData = async () => {
     try {
@@ -74,6 +93,7 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       console.log('Logout error', e);
     } finally {
+      await stopBackgroundTracking();
       await SecureStore.deleteItemAsync('user_token');
       await SecureStore.deleteItemAsync('user_data');
       setUser(null);

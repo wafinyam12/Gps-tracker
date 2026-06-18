@@ -1,12 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
-import { scheduleService } from '../../api/services/scheduleService'; // Assuming you'll create this
-import { teamService } from '../../api/services/teamService';     // Assuming you'll create this
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Calendar, Users, CheckCircle, XCircle, Clock, TrendingUp, AlertTriangle } from 'lucide-react-native';
+import { Calendar, Users, AlertTriangle, ChevronRight } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import moment from 'moment';
+import { reportService } from '../../api/services/reportService';
+import { teamService } from '../../api/services/teamService';
 
 const TeamSummaryScreen = () => {
   const navigation = useNavigation();
@@ -31,7 +39,7 @@ const TeamSummaryScreen = () => {
       const payload = response.data?.data;
       setTeams(Array.isArray(payload) ? payload : payload?.data || []);
     } catch (error) {
-      console.log('Error fetching teams', error);
+      console.log('Error fetching teams', error.response?.data || error);
     }
   };
 
@@ -39,24 +47,36 @@ const TeamSummaryScreen = () => {
     setLoading(true);
     try {
       const formattedDate = moment(selectedDate).format('YYYY-MM-DD');
-      const response = await scheduleService.getTeamSummary({
-        date: formattedDate,
+      const response = await reportService.targetSummary({
+        date_from: formattedDate,
+        date_to: formattedDate,
         team_id: selectedTeamId || undefined,
       });
-      setSummaryData(response.data?.data);
+      setSummaryData(response.data?.data || response.data || null);
     } catch (error) {
+      console.log('Error fetching summary', error.response?.data || error);
       Alert.alert('Error', 'Gagal mengambil ringkasan team');
     } finally {
       setLoading(false);
     }
   };
 
-  const onDateChange = (event, selectedDate) => {
+  const onDateChange = (event, nextDate) => {
     setShowDatePicker(false);
-    if (selectedDate) {
-      setSelectedDate(selectedDate);
+    if (nextDate) {
+      setSelectedDate(nextDate);
     }
   };
+
+  const overviewCards = useMemo(() => {
+    const overview = summaryData?.overview || {};
+    return [
+      { label: 'Target', value: overview.target_visits ?? 0 },
+      { label: 'Visit Unik', value: overview.unique_visits ?? 0 },
+      { label: 'Duplicate', value: overview.duplicate_visits ?? 0 },
+      { label: 'Progress', value: `${overview.completion_pct ?? 0}%` },
+    ];
+  }, [summaryData]);
 
   if (loading) {
     return (
@@ -67,10 +87,13 @@ const TeamSummaryScreen = () => {
     );
   }
 
+  const sales = Array.isArray(summaryData?.sales) ? summaryData.sales : [];
+  const warnings = Array.isArray(summaryData?.warnings) ? summaryData.warnings : [];
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Ringkasan Kunjungan Tim</Text>
+        <Text style={styles.headerTitle}>Ringkasan Visit Tim</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Alerts')} style={styles.alertBtn}>
           <AlertTriangle size={24} color="#EF4444" />
         </TouchableOpacity>
@@ -96,7 +119,7 @@ const TeamSummaryScreen = () => {
             style={styles.teamPicker}
           >
             <Picker.Item label="Semua Team" value="" />
-            {teams.map(team => (
+            {teams.map((team) => (
               <Picker.Item key={team.id} label={team.name} value={team.id.toString()} />
             ))}
           </Picker>
@@ -104,80 +127,86 @@ const TeamSummaryScreen = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
-        {summaryData?.team_summary && (
+        {!!summaryData?.team_summary && (
           <View style={styles.overviewCard}>
             <Text style={styles.overviewTitle}>Ringkasan Global</Text>
             <View style={styles.overviewStatsGrid}>
-              <View style={styles.overviewStatItem}>
-                <Text style={styles.overviewStatLabel}>Total Jadwal</Text>
-                <Text style={styles.overviewStatValue}>{summaryData.team_summary.total_schedules}</Text>
-              </View>
-              <View style={styles.overviewStatItem}>
-                <Text style={styles.overviewStatLabel}>Selesai</Text>
-                <Text style={styles.overviewStatValue}>{summaryData.team_summary.total_completed}</Text>
-              </View>
-              <View style={styles.overviewStatItem}>
-                <Text style={styles.overviewStatLabel}>Persentase</Text>
-                <Text style={[styles.overviewStatValue, { color: getCompletionColor(summaryData.team_summary.avg_completion) }]}>
-                  {summaryData.team_summary.avg_completion || 0}%
-                </Text>
-              </View>
+              {overviewCards.map((item) => (
+                <View key={item.label} style={styles.overviewStatItem}>
+                  <Text style={styles.overviewStatLabel}>{item.label}</Text>
+                  <Text style={styles.overviewStatValue}>{item.value}</Text>
+                </View>
+              ))}
             </View>
+            <Text style={styles.overviewNote}>
+              Warning audit: {summaryData.team_summary.warning_count ?? 0}
+            </Text>
+          </View>
+        )}
+
+        {!!warnings.length && (
+          <View style={styles.warningPanel}>
+            <Text style={styles.warningPanelTitle}>Warning Audit</Text>
+            {warnings.slice(0, 3).map((warning, index) => (
+              <Text key={`${warning.date || index}-${index}`} style={styles.warningPanelText}>
+                {warning.message || `Hari ${warning.date} belum mencapai target.`}
+              </Text>
+            ))}
           </View>
         )}
 
         <Text style={styles.sectionTitle}>Progress Sales</Text>
-        {summaryData?.sales?.length > 0 ? (summaryData.sales.map((sales, index) => (
-          <TouchableOpacity
-            key={sales.user_id}
-            style={styles.salesCard}
-            onPress={() => navigation.navigate('SalesDetail', { userId: sales.user_id })} // Navigasi ke SalesDetailScreen
-          >
-            <View style={styles.salesCardHeader}>
-              <View style={styles.salesInfo}>
-                <Users size={20} color="#1E293B" />
-                <Text style={styles.salesName}>{sales.name}</Text>
+        {sales.length > 0 ? sales.map((item) => {
+          const summary = item.summary || {};
+          return (
+            <TouchableOpacity
+              key={item.user_id}
+              style={styles.salesCard}
+              onPress={() => navigation.navigate('SalesDetail', { userId: item.user_id })}
+            >
+              <View style={styles.salesCardHeader}>
+                <View style={styles.salesInfo}>
+                  <Users size={20} color="#1E293B" />
+                  <Text style={styles.salesName}>{item.name}</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
               </View>
-              <View style={[styles.onlineStatus, { backgroundColor: sales.is_online ? '#10B981' : '#EF4444' }]} />
-            </View>
-            <View style={styles.salesStatsGrid}>
-              <View style={styles.salesStatItem}>
-                <Text style={styles.salesStatLabel}>Jadwal</Text>
-                <Text style={styles.salesStatValue}>{sales.summary.total}</Text>
+
+              <View style={styles.salesStatsGrid}>
+                <View style={styles.salesStatItem}>
+                  <Text style={styles.salesStatLabel}>Target</Text>
+                  <Text style={styles.salesStatValue}>{summary.target_visits ?? 0}</Text>
+                </View>
+                <View style={styles.salesStatItem}>
+                  <Text style={styles.salesStatLabel}>Unik</Text>
+                  <Text style={styles.salesStatValue}>{summary.unique_visits ?? 0}</Text>
+                </View>
+                <View style={styles.salesStatItem}>
+                  <Text style={styles.salesStatLabel}>Duplicate</Text>
+                  <Text style={styles.salesStatValue}>{summary.duplicate_visits ?? 0}</Text>
+                </View>
+                <View style={styles.salesStatItem}>
+                  <Text style={styles.salesStatLabel}>Progress</Text>
+                  <Text style={styles.salesStatValue}>{summary.completion_pct ?? 0}%</Text>
+                </View>
+                <View style={styles.salesStatItem}>
+                  <Text style={styles.salesStatLabel}>Mock GPS</Text>
+                  <Text style={styles.salesStatValue}>{summary.mock_detected ?? 0}</Text>
+                </View>
+                <View style={styles.salesStatItem}>
+                  <Text style={styles.salesStatLabel}>Invalid</Text>
+                  <Text style={styles.salesStatValue}>{summary.invalid_checkins ?? 0}</Text>
+                </View>
               </View>
-              <View style={styles.salesStatItem}>
-                <Text style={styles.salesStatLabel}>Selesai</Text>
-                <Text style={styles.salesStatValue}>{sales.summary.completed}</Text>
-              </View>
-              <View style={styles.salesStatItem}>
-                <Text style={styles.salesStatLabel}>% Selesai</Text>
-                <Text style={[styles.salesStatValue, { color: getCompletionColor(sales.summary.completion_pct) }]}>
-                  {sales.summary.completion_pct || 0}%
-                </Text>
-              </View>
-              <View style={styles.salesStatItem}>
-                <Text style={styles.salesStatLabel}>Mock GPS</Text>
-                <Text style={styles.salesStatValue}>{sales.summary.mock_detected}</Text>
-              </View>
-              <View style={styles.salesStatItem}>
-                <Text style={styles.salesStatLabel}>Invalid Checkin</Text>
-                <Text style={styles.salesStatValue}>{sales.summary.total - sales.summary.valid_checkins}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))) : (
+            </TouchableOpacity>
+          );
+        }) : (
           <Text style={styles.emptyText}>Tidak ada data sales untuk tanggal ini.</Text>
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
-};
-
-const getCompletionColor = (percentage) => {
-  if (percentage >= 80) return '#10B981'; // Green
-  if (percentage >= 50) return '#F59E0B'; // Yellow
-  return '#EF4444'; // Red
 };
 
 const styles = StyleSheet.create({
@@ -223,6 +252,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+    gap: 10,
   },
   datePickerBtn: {
     flexDirection: 'row',
@@ -274,9 +304,11 @@ const styles = StyleSheet.create({
   overviewStatsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   overviewStatItem: {
-    alignItems: 'center',
+    width: '48%',
   },
   overviewStatLabel: {
     fontSize: 11,
@@ -287,6 +319,30 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  overviewNote: {
+    marginTop: 10,
+    color: '#DBEAFE',
+    fontSize: 12,
+  },
+  warningPanel: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 16,
+    marginBottom: 18,
+  },
+  warningPanelTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#B45309',
+    marginBottom: 6,
+  },
+  warningPanelText: {
+    fontSize: 12,
+    color: '#92400E',
+    marginTop: 4,
   },
   sectionTitle: {
     fontSize: 18,
@@ -311,21 +367,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    gap: 10,
   },
   salesInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
   },
   salesName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1E293B',
-  },
-  onlineStatus: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    flexShrink: 1,
   },
   salesStatsGrid: {
     flexDirection: 'row',
@@ -335,7 +389,6 @@ const styles = StyleSheet.create({
   },
   salesStatItem: {
     width: '30%',
-    alignItems: 'flex-start',
   },
   salesStatLabel: {
     fontSize: 10,

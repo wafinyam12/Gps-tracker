@@ -32,13 +32,12 @@ class VisitLogController extends Controller
 
         $user = $request->user();
 
-        $visits = VisitLog::with(['schedule', 'store', 'user', 'photos'])
+        $visits = VisitLog::with(['store', 'user', 'photos'])
             ->when($user->hasRole('sales'), fn ($query) => $query->where('user_id', $user->id))
             ->when($request->user_id && ! $user->hasRole('sales'), fn ($query) => $query->where('user_id', $request->user_id))
             ->when($request->store_id, fn ($query) => $query->where('store_id', $request->store_id))
             ->when($request->date_from, function ($query) use ($request) {
-                $query->whereHas('schedule', fn ($schedule) => $schedule
-                    ->whereBetween('visit_date', [$request->date_from, $request->date_to ?? $request->date_from]));
+                $query->whereBetween('visit_date', [$request->date_from, $request->date_to ?? $request->date_from]);
             })
             ->when($request->status === 'open', fn ($query) => $query->whereNull('checkout_at'))
             ->when($request->status === 'completed', fn ($query) => $query->whereNotNull('checkout_at'))
@@ -58,7 +57,7 @@ class VisitLogController extends Controller
             return response()->error('Unauthorized.', 403);
         }
 
-        $visitLog->load(['schedule', 'store', 'user', 'photos']);
+        $visitLog->load(['store', 'user', 'photos']);
 
         return response()->success([
             'visit' => $this->formatVisit($visitLog),
@@ -109,7 +108,7 @@ class VisitLogController extends Controller
         }
 
         $visitLog->update($payload);
-        $visitLog->load(['schedule', 'store', 'user', 'photos']);
+        $visitLog->load(['store', 'user', 'photos']);
 
         return response()->success([
             'visit' => $this->formatVisit($visitLog),
@@ -127,7 +126,6 @@ class VisitLogController extends Controller
         }
 
         DB::transaction(function () use ($visitLog) {
-            $schedule = $visitLog->schedule;
             $photoPaths = $visitLog->photos()->pluck('path')->all();
 
             if (! empty($photoPaths)) {
@@ -135,13 +133,6 @@ class VisitLogController extends Controller
             }
 
             $visitLog->delete();
-
-            if ($schedule) {
-                $schedule->update([
-                    'status'      => 'pending',
-                    'skip_reason' => null,
-                ]);
-            }
         });
 
         return response()->success(null, 'Data kunjungan berhasil dihapus.');
@@ -174,7 +165,7 @@ class VisitLogController extends Controller
     {
         return [
             'id'                 => $visitLog->id,
-            'visit_schedule_id'  => $visitLog->visit_schedule_id,
+            'visit_date'         => $visitLog->visit_date?->toDateString(),
             'user'               => [
                 'id'       => $visitLog->user?->id,
                 'name'     => $visitLog->user?->name,
@@ -184,13 +175,8 @@ class VisitLogController extends Controller
                 'id'      => $visitLog->store?->id,
                 'name'    => $visitLog->store?->name,
                 'address' => $visitLog->store?->address,
+                'branch'  => $visitLog->store?->branch,
             ],
-            'schedule'           => $visitLog->schedule ? [
-                'id'         => $visitLog->schedule->id,
-                'visit_date' => $visitLog->schedule->visit_date?->toDateString(),
-                'sequence'   => $visitLog->schedule->sequence,
-                'status'     => $visitLog->schedule->status,
-            ] : null,
             'checkin_at'         => $visitLog->checkin_at?->toISOString(),
             'checkout_at'        => $visitLog->checkout_at?->toISOString(),
             'duration_minutes'   => $visitLog->duration_minutes,
@@ -200,6 +186,9 @@ class VisitLogController extends Controller
             'checkin_valid'      => $visitLog->checkin_valid,
             'checkin_distance'   => $visitLog->checkin_distance,
             'is_mock_location'   => $visitLog->is_mock_location,
+            'is_duplicate'       => $visitLog->is_duplicate,
+            'counted_as_target'  => $visitLog->counted_as_target,
+            'duplicate_reason'   => $visitLog->duplicate_reason,
             'photos_count'       => $visitLog->photos?->count() ?? 0,
         ];
     }

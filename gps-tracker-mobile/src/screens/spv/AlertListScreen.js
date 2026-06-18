@@ -1,46 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { scheduleService } from '../../api/services/scheduleService';
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, AlertTriangle, MapPin, Clock, User } from 'lucide-react-native';
-import moment from 'moment';
+import { ChevronLeft, AlertTriangle, User, CheckCircle } from 'lucide-react-native';
+import { reportService } from '../../api/services/reportService';
+import { getJakartaDateString } from '../../utils/date';
 
 const AlertListScreen = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
-  const [anomalies, setAnomalies] = useState([]);
+  const [warnings, setWarnings] = useState([]);
 
   useEffect(() => {
-    fetchAnomalies();
+    fetchWarnings();
   }, []);
 
-  const fetchAnomalies = async () => {
+  const fetchWarnings = async () => {
     setLoading(true);
     try {
-      // Mengambil data hari ini dan memfilter anomali di client side (v1)
-      const formattedDate = moment().format('YYYY-MM-DD');
-      const response = await scheduleService.getTeamSummary({ date: formattedDate });
-
-      const salesData = response.data?.data?.sales || [];
-      const allAnomalies = [];
-
-      salesData.forEach(sales => {
-        // Cari mock location atau invalid checkins dari data summary
-        if (sales.summary.mock_detected > 0 || sales.summary.total > sales.summary.valid_checkins) {
-          allAnomalies.push({
-            id: sales.user_id,
-            name: sales.name,
-            team: sales.team?.name,
-            mockCount: sales.summary.mock_detected,
-            invalidCount: sales.summary.total - sales.summary.valid_checkins,
-            lastSeen: sales.last_seen_at,
-          });
-        }
+      const yesterday = getJakartaDateString(-1);
+      const response = await reportService.targetSummary({
+        date_from: yesterday,
+        date_to: yesterday,
       });
 
-      setAnomalies(allAnomalies);
+      const payload = response.data?.data || response.data || {};
+      setWarnings(Array.isArray(payload.warnings) ? payload.warnings : []);
     } catch (error) {
-      Alert.alert('Error', 'Gagal mengambil data anomali');
+      console.log('Error fetching warnings', error.response?.data || error);
+      Alert.alert('Error', 'Gagal mengambil data warning');
     } finally {
       setLoading(false);
     }
@@ -49,7 +36,7 @@ const AlertListScreen = () => {
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.card}
-      onPress={() => navigation.navigate('SalesDetail', { userId: item.id })}
+      onPress={() => navigation.navigate('SalesDetail', { userId: item.user_id })}
     >
       <View style={styles.cardHeader}>
         <View style={styles.userInfo}>
@@ -59,22 +46,10 @@ const AlertListScreen = () => {
         <AlertTriangle size={20} color="#EF4444" />
       </View>
 
-      <View style={styles.anomalyDetails}>
-        {item.mockCount > 0 && (
-          <View style={styles.anomalyItem}>
-            <View style={styles.dot} />
-            <Text style={styles.anomalyText}>Terdeteksi {item.mockCount} penggunaan Mock GPS / Lokasi Palsu</Text>
-          </View>
-        )}
-        {item.invalidCount > 0 && (
-          <View style={styles.anomalyItem}>
-            <View style={styles.dot} />
-            <Text style={styles.anomalyText}>{item.invalidCount} Check-in dilakukan di luar radius toko</Text>
-          </View>
-        )}
-      </View>
-
-      <Text style={styles.tapText}>Ketuk untuk lihat detail pergerakan {'>'}</Text>
+      <Text style={styles.metaText}>Tanggal: {item.date}</Text>
+      <Text style={styles.metaText}>Target: {item.target_visits} | Unik: {item.unique_visits} | Duplicate: {item.duplicate_visits}</Text>
+      <Text style={styles.anomalyText}>{item.message}</Text>
+      <Text style={styles.tapText}>Ketuk untuk lihat detail sales {'>'}</Text>
     </TouchableOpacity>
   );
 
@@ -92,29 +67,26 @@ const AlertListScreen = () => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <ChevronLeft size={24} color="#1E293B" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Anomali Kunjungan</Text>
+        <Text style={styles.headerTitle}>Warning Audit</Text>
       </View>
 
       <FlatList
-        data={anomalies}
-        keyExtractor={(item) => item.id.toString()}
+        data={warnings}
+        keyExtractor={(item, index) => `${item.user_id}-${item.date}-${index}`}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <CheckCircle size={48} color="#10B981" />
-            <Text style={styles.emptyText}>Tidak ada anomali terdeteksi hari ini.</Text>
+            <Text style={styles.emptyText}>Tidak ada warning audit untuk hari kemarin.</Text>
           </View>
         }
-        onRefresh={fetchAnomalies}
+        onRefresh={fetchWarnings}
         refreshing={loading}
       />
     </View>
   );
 };
-
-// Re-using CheckCircle from lucide-react-native
-import { CheckCircle } from 'lucide-react-native';
 
 const styles = StyleSheet.create({
   container: {
@@ -162,7 +134,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   userInfo: {
     flexDirection: 'row',
@@ -174,26 +146,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1E293B',
   },
-  anomalyDetails: {
-    marginBottom: 12,
-    gap: 8,
-  },
-  anomalyItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#EF4444',
-    marginTop: 6,
+  metaText: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 4,
   },
   anomalyText: {
     fontSize: 13,
-    color: '#475569',
-    flex: 1,
+    color: '#7C2D12',
+    marginTop: 8,
     lineHeight: 18,
   },
   tapText: {
@@ -201,6 +162,7 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     fontWeight: 'bold',
     textAlign: 'right',
+    marginTop: 10,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -210,6 +172,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#64748B',
+    textAlign: 'center',
   },
 });
 

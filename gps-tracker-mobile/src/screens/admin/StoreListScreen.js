@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { storeService } from '../../api/services/storeService';
-import { Plus, Search, MapPin, ChevronRight, Filter } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { Search, MapPin, ShieldCheck } from 'lucide-react-native';
 
 const StoreListScreen = () => {
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const navigation = useNavigation();
 
   useEffect(() => {
     fetchStores();
@@ -18,9 +16,10 @@ const StoreListScreen = () => {
   const fetchStores = async () => {
     setLoading(true);
     try {
-      const response = await storeService.getStores({ search });
-      setStores(response.data?.data || []);
+      const response = await storeService.getStores();
+      setStores(response.data?.data || response.data || []);
     } catch (error) {
+      console.log('Fetch stores error:', error.response?.data || error);
       Alert.alert('Error', 'Gagal mengambil data toko');
     } finally {
       setLoading(false);
@@ -28,16 +27,32 @@ const StoreListScreen = () => {
     }
   };
 
+  const filteredStores = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) {
+      return stores;
+    }
+
+    return stores.filter((store) => {
+      const fields = [
+        store.name,
+        store.code,
+        store.external_bp_code,
+        store.address,
+        store.branch,
+      ];
+
+      return fields.some((field) => field && field.toLowerCase().includes(keyword));
+    });
+  }, [search, stores]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchStores();
   };
 
   const renderStoreItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.storeCard}
-      onPress={() => navigation.navigate('StoreForm', { storeId: item.id })}
-    >
+    <View style={styles.storeCard}>
       <View style={styles.iconContainer}>
         <MapPin size={24} color="#1E40AF" />
       </View>
@@ -45,10 +60,16 @@ const StoreListScreen = () => {
         <Text style={styles.storeName}>{item.name}</Text>
         <Text style={styles.storeAddress} numberOfLines={1}>{item.address || 'No Address'}</Text>
         <View style={styles.tagRow}>
-          <Text style={styles.storeCode}>{item.code}</Text>
-          {item.is_priority && (
-            <View style={styles.priorityBadge}>
-              <Text style={styles.priorityText}>PRIORITY</Text>
+          <Text style={styles.storeCode}>{item.external_bp_code || item.code}</Text>
+          {!!item.branch && <Text style={styles.branchText}>{item.branch}</Text>}
+          {item.has_location ? (
+            <View style={styles.locationBadge}>
+              <ShieldCheck size={10} color="#166534" />
+              <Text style={styles.locationBadgeText}>Lokasi Lokal</Text>
+            </View>
+          ) : (
+            <View style={styles.pendingBadge}>
+              <Text style={styles.pendingBadgeText}>Koordinat Belum Ada</Text>
             </View>
           )}
         </View>
@@ -59,9 +80,8 @@ const StoreListScreen = () => {
             {item.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
           </Text>
         </View>
-        <ChevronRight size={18} color="#94A3B8" />
       </View>
-    </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -74,7 +94,6 @@ const StoreListScreen = () => {
             placeholder="Cari nama, kode, atau alamat..."
             value={search}
             onChangeText={setSearch}
-            onSubmitEditing={fetchStores}
           />
         </View>
       </View>
@@ -85,7 +104,7 @@ const StoreListScreen = () => {
         </View>
       ) : (
         <FlatList
-          data={stores}
+          data={filteredStores}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderStoreItem}
           onRefresh={onRefresh}
@@ -96,13 +115,6 @@ const StoreListScreen = () => {
           }
         />
       )}
-
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate('StoreForm')}
-      >
-        <Plus size={24} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 };
@@ -176,6 +188,7 @@ const styles = StyleSheet.create({
   tagRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     marginTop: 6,
     gap: 8,
   },
@@ -188,14 +201,36 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
-  priorityBadge: {
+  branchText: {
+    fontSize: 11,
+    color: '#334155',
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  locationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  locationBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#166534',
+  },
+  pendingBadge: {
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  priorityText: {
-    fontSize: 9,
+  pendingBadgeText: {
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#92400E',
   },
@@ -211,22 +246,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 10,
     fontWeight: 'bold',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    backgroundColor: '#1E40AF',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#1E40AF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
   emptyText: {
     textAlign: 'center',

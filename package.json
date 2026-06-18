@@ -1,8 +1,8 @@
 {
-  "dependencies": {
-    "@react-native-async-storage/async-storage": "^3.1.1",
-    "expo-background-fetch": "^56.0.18",
-    "expo-location": "^56.0.17",
-    "expo-task-manager": "^56.0.18"
+  "name": "gps-tracker-workspace",
+  "private": true,
+  "scripts": {
+    "backend:build": "npm --prefix gps-tracker run build",
+    "mobile:check": "npm --prefix gps-tracker-mobile run check"
   }
 }

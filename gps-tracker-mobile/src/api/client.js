@@ -2,8 +2,29 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import authEvents from '../utils/authEvents';
 
-// Ganti IP ini sesuai dengan IP komputer Anda jika testing di HP asli
-const BASE_URL = 'http://192.168.101.29:8000/api/v1'; // IP Local PC untuk Expo Go di HP asli
+const DEFAULT_BASE_URL = 'http://192.168.101.29:8000/api/v1';
+
+const resolveBaseUrl = () => {
+  const configured = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+
+  if (!configured) {
+    return DEFAULT_BASE_URL;
+  }
+
+  const normalized = configured.replace(/\/$/, '');
+
+  if (normalized.endsWith('/api/v1')) {
+    return normalized;
+  }
+
+  if (normalized.endsWith('/api')) {
+    return `${normalized}/v1`;
+  }
+
+  return `${normalized}/api/v1`;
+};
+
+const BASE_URL = resolveBaseUrl();
 
 const apiClient = axios.create({
   baseURL: BASE_URL,

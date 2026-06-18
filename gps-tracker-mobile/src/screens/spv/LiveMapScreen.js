@@ -1,11 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, ScrollView } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps';
-import { locationService } from '../../api/services/locationService';
-import { scheduleService } from '../../api/services/scheduleService';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import MapView, { Callout, Marker } from 'react-native-maps';
 import moment from 'moment';
 import { useNavigation } from '@react-navigation/native';
 import { RefreshCw, Clock } from 'lucide-react-native';
+import { locationService } from '../../api/services/locationService';
+import { storeService } from '../../api/services/storeService';
+
+const normalizeStore = (store) => ({
+  id: store.id,
+  name: store.name,
+  address: store.address,
+  branch: store.branch,
+  code: store.code,
+  latitude: Number(store.latitude),
+  longitude: Number(store.longitude),
+});
 
 const LiveMapScreen = () => {
   const [locations, setLocations] = useState([]);
@@ -16,29 +34,36 @@ const LiveMapScreen = () => {
   const navigation = useNavigation();
 
   const [region, setRegion] = useState({
-    latitude: -6.200000, // Default Jakarta
+    latitude: -6.2,
     longitude: 106.816666,
     latitudeDelta: 0.0922,
     longitudeDelta: 0.0421,
   });
 
-  useEffect(() => {
-    fetchLocations();
-    const interval = setInterval(fetchLocations, 30000); // Auto refresh tiap 30 detik
-    return () => clearInterval(interval);
-  }, []);
+  const fetchStoreTargets = async () => {
+    try {
+      const response = await storeService.getAvailableStores();
+      const payload = response.data?.data || response.data || [];
+      const stores = Array.isArray(payload)
+        ? payload.map(normalizeStore).filter((store) => Number.isFinite(store.latitude) && Number.isFinite(store.longitude))
+        : [];
+      setStoreTargets(stores);
+    } catch (error) {
+      console.log('Error fetching store targets', error.response?.data || error);
+      setStoreTargets([]);
+    }
+  };
 
   const fetchLocations = async () => {
     try {
       const response = await locationService.getLiveLocations();
       const data = response.data?.data || [];
-      setLocations(data);
-      fetchStoreTargets();
+      setLocations(Array.isArray(data) ? data : []);
+      await fetchStoreTargets();
 
       if (data.length > 0 && loading) {
-        // Center map to the first user with location
-        const firstUser = data.find(u => u.location);
-        if (firstUser && firstUser.location) {
+        const firstUser = data.find((user) => user.location);
+        if (firstUser?.location) {
           const newRegion = {
             latitude: firstUser.location.latitude,
             longitude: firstUser.location.longitude,
@@ -50,35 +75,18 @@ const LiveMapScreen = () => {
         }
       }
     } catch (error) {
-      console.log('Error fetching live locations', error);
+      console.log('Error fetching live locations', error.response?.data || error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const fetchStoreTargets = async () => {
-    try {
-      const response = await scheduleService.getScheduleByDate({
-        date: new Date().toISOString().split('T')[0],
-      });
-      const schedules = response.data?.data?.schedules || response.data?.schedules || [];
-      setStoreTargets(
-        schedules
-          .map((schedule) => ({
-            id: schedule.store?.id || schedule.id,
-            name: schedule.store?.name,
-            address: schedule.store?.address,
-            status: schedule.status,
-            latitude: schedule.store?.latitude,
-            longitude: schedule.store?.longitude,
-          }))
-          .filter((store) => typeof store.latitude === 'number' && typeof store.longitude === 'number')
-      );
-    } catch (error) {
-      console.log('Error fetching store targets', error.response?.data || error);
-    }
-  };
+  useEffect(() => {
+    fetchLocations();
+    const interval = setInterval(fetchLocations, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const onManualRefresh = () => {
     setRefreshing(true);
@@ -100,17 +108,17 @@ const LiveMapScreen = () => {
         ref={mapRef}
         style={styles.map}
         initialRegion={region}
-        showsUserLocation={true}
-        showsMyLocationButton={true}
+        showsUserLocation
+        showsMyLocationButton
       >
         {locations.map((item) => {
-          if (!item.location) return null;
-
-          const isActive = item.is_online; // Backend handles is_online based on last_seen_at
+          if (!item.location) {
+            return null;
+          }
 
           return (
             <Marker
-              key={item.user_id} // Gunakan user_id
+              key={item.user_id}
               coordinate={{
                 latitude: item.location.latitude,
                 longitude: item.location.longitude,
@@ -133,6 +141,7 @@ const LiveMapScreen = () => {
             </Marker>
           );
         })}
+
         {storeTargets.map((store) => (
           <Marker
             key={`store-${store.id}`}
@@ -145,8 +154,8 @@ const LiveMapScreen = () => {
             <Callout>
               <View style={styles.callout}>
                 <Text style={styles.calloutName}>{store.name || 'Toko'}</Text>
-                <Text style={styles.calloutTeam}>{store.address || 'Alamat belum tersedia'}</Text>
-                <Text style={styles.calloutTimeText}>Status: {store.status}</Text>
+                <Text style={styles.calloutTeam}>{store.branch || store.address || 'Alamat belum tersedia'}</Text>
+                <Text style={styles.calloutTimeText}>Koordinat lokal tersimpan</Text>
               </View>
             </Callout>
           </Marker>

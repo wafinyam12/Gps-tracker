@@ -12,12 +12,13 @@ class LocationPing extends Model
 
     protected $fillable = [
         'user_id', 'location', 'accuracy', 'speed',
-        'bearing', 'battery', 'is_moving', 'recorded_at',
+        'bearing', 'battery', 'is_moving', 'is_mock_location', 'recorded_at',
     ];
 
     protected $casts = [
         'location'    => Point::class,
         'is_moving'   => 'boolean',
+        'is_mock_location' => 'boolean',
         'recorded_at' => 'datetime',
     ];
 

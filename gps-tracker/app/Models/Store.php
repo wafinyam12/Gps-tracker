@@ -12,24 +12,40 @@ class Store extends Model
     use HasSpatial, SoftDeletes;
 
     protected $fillable = [
-        'code', 'name', 'address', 'area', 'city',
-        'location', 'geofence_radius', 'pic_name',
-        'pic_phone', 'status', 'is_priority', 'tags',
+        'code',
+        'external_bp_code',
+        'name',
+        'address',
+        'area',
+        'branch',
+        'city',
+        'location',
+        'geofence_radius',
+        'pic_name',
+        'pic_phone',
+        'status',
+        'is_priority',
+        'tags',
+        'master_source',
+        'master_payload',
+        'last_synced_at',
     ];
 
     protected $casts = [
-        'location'    => Point::class,
-        'tags'        => 'array',
-        'is_priority' => 'boolean',
+        'location'       => Point::class,
+        'tags'           => 'array',
+        'master_payload' => 'array',
+        'is_priority'    => 'boolean',
+        'last_synced_at' => 'datetime',
     ];
-
-    public function schedules()
-    {
-        return $this->hasMany(VisitSchedule::class);
-    }
 
     public function visitLogs()
     {
         return $this->hasMany(VisitLog::class);
+    }
+
+    public function hasLocation(): bool
+    {
+        return $this->location instanceof Point;
     }
 }
