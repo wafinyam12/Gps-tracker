@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UserRequest;
 use App\Http\Resources\UserResource;
+use App\Http\Resources\TeamResource;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -18,19 +19,25 @@ class UserController extends Controller
      */
     public function index(Request $request)
     {
+        $perPage = max(1, min((int) ($request->per_page ?? 20), 100));
+        $search = trim((string) $request->search);
+
         $users = User::with(['roles', 'team'])
-            ->when($request->role, fn($q) => $q->role($request->role))
-            ->when($request->team_id, fn($q) => $q->where('team_id', $request->team_id))
-            ->when($request->search, fn($q) =>
-                $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('email', 'like', "%{$request->search}%")
-                  ->orWhere('employee_id', 'like', "%{$request->search}%")
-            )
+            ->when($request->role, fn ($q) => $q->role($request->role))
+            ->when($request->team_id, fn ($q) => $q->where('team_id', $request->team_id))
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($nested) use ($search) {
+                    $nested->where('name', 'like', "%{$search}%")
+                        ->orWhere('username', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('employee_id', 'like', "%{$search}%");
+                });
+            })
             ->when(! is_null($request->is_active), fn($q) =>
                 $q->where('is_active', $request->boolean('is_active'))
             )
             ->orderBy('name')
-            ->paginate($request->per_page ?? 20);
+            ->paginate($perPage);
 
         return UserResource::collection($users);
     }
@@ -50,13 +57,17 @@ class UserController extends Controller
      */
     public function store(UserRequest $request)
     {
+        $teamId = $request->role === 'manager' ? null : $request->team_id;
+        $username = strtolower(trim((string) $request->username));
+
         $user = User::create([
             'name'        => $request->name,
+            'username'    => $username,
             'email'       => $request->email,
             'password'    => Hash::make($request->password),
             'phone'       => $request->phone,
             'employee_id' => $request->employee_id,
-            'team_id'     => $request->team_id,
+            'team_id'     => $teamId,
             'is_active'   => $request->boolean('is_active', true),
         ]);
 
@@ -73,12 +84,16 @@ class UserController extends Controller
      */
     public function update(UserRequest $request, User $user)
     {
+        $teamId = $request->role === 'manager' ? null : $request->team_id;
+        $username = strtolower(trim((string) $request->username));
+
         $data = [
             'name'        => $request->name,
+            'username'    => $username,
             'email'       => $request->email,
             'phone'       => $request->phone,
             'employee_id' => $request->employee_id,
-            'team_id'     => $request->team_id,
+            'team_id'     => $teamId,
             'is_active'   => $request->boolean('is_active', $user->is_active),
         ];
 
@@ -148,6 +163,6 @@ class UserController extends Controller
             ->orderBy('name')
             ->get();
 
-        return response()->success(['data' => $teams]);
+        return response()->success(TeamResource::collection($teams));
     }
 }

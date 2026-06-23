@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\VisitPhotoRequest;
+use App\Models\User;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Services\Visits\VisitPhotoExifService;
@@ -63,7 +64,7 @@ class VisitPhotoController extends Controller
 
             $uploaded[] = [
                 'id'       => $visitPhoto->id,
-                'url'      => Storage::disk('visit_photos')->url($path),
+                'url'      => $this->photoUrl($path),
                 'type'     => $visitPhoto->type,
                 'taken_at' => $visitPhoto->taken_at->toISOString(),
                 'uploaded_by' => [
@@ -85,9 +86,9 @@ class VisitPhotoController extends Controller
     public function index(Request $request, VisitLog $visitLog)
     {
         $user = $request->user();
+        $visitLog->loadMissing('user');
 
-        // Sales hanya bisa lihat foto miliknya sendiri
-        if ($user->hasRole('sales') && $visitLog->user_id !== $user->id) {
+        if (! $this->canAccessVisitLog($user, $visitLog)) {
             return response()->error('Unauthorized.', 403);
         }
 
@@ -96,7 +97,7 @@ class VisitPhotoController extends Controller
             ->get()
             ->map(fn($photo) => [
                 'id'       => $photo->id,
-                'url'      => Storage::disk('visit_photos')->url($photo->path),
+                'url'      => $this->photoUrl($photo->path),
                 'type'     => $photo->type,
                 'location' => $photo->location ? [
                     'latitude'  => $photo->location->latitude,
@@ -169,5 +170,23 @@ class VisitPhotoController extends Controller
         }
 
         return $fullPath;
+    }
+
+    private function photoUrl(string $path): string
+    {
+        return Storage::disk('visit_photos')->url($path);
+    }
+
+    private function canAccessVisitLog(User $viewer, VisitLog $visitLog): bool
+    {
+        if ($viewer->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+
+        if ($viewer->hasRole('spv')) {
+            return $viewer->team_id !== null && (int) $viewer->team_id === (int) $visitLog->user?->team_id;
+        }
+
+        return $visitLog->user_id === $viewer->id;
     }
 }

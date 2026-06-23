@@ -16,8 +16,8 @@ class User extends Authenticatable
     use HasApiTokens, HasRoles, HasSpatial, Notifiable, SoftDeletes, HasFactory;
 
     protected $fillable = [
-        'name', 'email', 'password', 'phone', 'photo',
-        'employee_id', 'team_id', 'is_active', 'last_seen_at', 'last_location',
+        'name', 'username', 'email', 'password', 'phone', 'photo',
+        'employee_id', 'team_id', 'is_active', 'last_seen_at', 'last_location','slpCode','db_sap'
     ];
 
     protected $hidden = ['password', 'remember_token'];

@@ -85,9 +85,12 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Request $request
         ) {
             if ($request->is('api/*')) {
+                $retryAfter = $e->getHeaders()['Retry-After'] ?? null;
+
                 return response()->json([
-                    'message'     => 'Terlalu banyak request. Coba lagi sebentar.',
-                    'retry_after' => $e->getHeaders()['Retry-After'] ?? null,
+                    'message'              => 'Terlalu banyak request. Coba lagi sebentar.',
+                    'retry_after'          => $retryAfter,
+                    'retry_after_seconds'   => is_numeric($retryAfter) ? (int) $retryAfter : null,
                 ], 429);
             }
         });

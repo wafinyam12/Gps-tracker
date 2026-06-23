@@ -12,6 +12,7 @@ class UserResource extends JsonResource
         return [
             'id'          => $this->id,
             'name'        => $this->name,
+            'username'    => $this->username,
             'email'       => $this->email,
             'phone'       => $this->phone,
             'employee_id' => $this->employee_id,
@@ -20,13 +21,28 @@ class UserResource extends JsonResource
                                 : null,
             'role'        => $this->roles->first()?->name,
             'permissions' => $this->getAllPermissions()->pluck('name'),
-            'team'        => $this->whenLoaded('team', fn() => [
-                'id'   => $this->team->id,
-                'name' => $this->team->name,
-                'area' => $this->team->area,
-            ]),
+            'branch'      => $this->whenLoaded('team', fn () => $this->formatBranch()),
+            'team'        => $this->whenLoaded('team', fn () => $this->formatBranch()),
             'is_active'   => $this->is_active,
             'last_seen_at' => $this->last_seen_at?->toISOString(),
+        ];
+    }
+
+    private function formatBranch(): array
+    {
+        return [
+            'id'            => $this->team->id,
+            'name'          => $this->team->name,
+            'code'          => $this->team->code,
+            'area'          => $this->team->area,
+            'latitude'      => $this->team->location?->latitude,
+            'longitude'     => $this->team->location?->longitude,
+            'location'      => $this->team->location ? [
+                'latitude'  => $this->team->location->latitude,
+                'longitude' => $this->team->location->longitude,
+            ] : null,
+            'has_location'  => $this->team->hasLocation(),
+            'is_active'     => $this->team->is_active,
         ];
     }
 }

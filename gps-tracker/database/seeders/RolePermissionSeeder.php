@@ -52,6 +52,15 @@ class RolePermissionSeeder extends Seeder
             'export-reports',
         ]);
 
+        $manager = Role::firstOrCreate(['name' => 'manager', 'guard_name' => 'web']);
+        $manager->syncPermissions([
+            'view-all-locations',
+            'view-all-schedules',
+            'view-stores',
+            'view-all-reports',
+            'export-reports',
+        ]);
+
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions($permissions);
     }

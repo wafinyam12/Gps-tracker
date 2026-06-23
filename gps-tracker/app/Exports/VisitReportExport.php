@@ -3,6 +3,7 @@
 namespace App\Exports;
 
 use App\Models\VisitLog;
+use App\Models\User;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -24,6 +25,7 @@ class VisitReportExport implements
     public function __construct(
         private string $dateFrom,
         private string $dateTo,
+        private ?User  $viewer = null,
         private ?int   $userId = null,
         private ?int   $teamId = null,
     ) {
@@ -31,11 +33,13 @@ class VisitReportExport implements
 
     public function collection()
     {
+        $teamScope = $this->resolveTeamScope();
+
         return VisitLog::with(['user.team', 'store'])
             ->whereBetween('visit_date', [$this->dateFrom, $this->dateTo])
             ->when($this->userId, fn ($query) => $query->where('user_id', $this->userId))
-            ->when($this->teamId, fn ($query) => $query->whereHas('user', function ($query) {
-                $query->where('team_id', $this->teamId);
+            ->when($teamScope, fn ($query) => $query->whereHas('user', function ($query) use ($teamScope) {
+                $query->where('team_id', $teamScope);
             }))
             ->orderBy('visit_date')
             ->orderBy('checkin_at')
@@ -48,7 +52,7 @@ class VisitReportExport implements
             'Tanggal',
             'Sales',
             'Employee ID',
-            'Team',
+            'Cabang',
             'Toko',
             'Kode Toko',
             'BP Code',
@@ -119,5 +123,14 @@ class VisitReportExport implements
             'postponed'   => 'Ditunda',
             default       => '-',
         };
+    }
+
+    private function resolveTeamScope(): ?int
+    {
+        if ($this->viewer?->hasRole('spv')) {
+            return $this->viewer->team_id;
+        }
+
+        return $this->teamId;
     }
 }

@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\MasterData\StoreCatalogSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -17,16 +20,22 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'email'       => 'required|email',
-            'password'    => 'required|string',
-            'device_name' => 'required|string', // e.g. "Samsung Galaxy A54"
+            'username'    => 'required|string|max:255',
+            'password'    => 'required|string|max:255',
+            'device_name' => 'required|string|max:120', // e.g. "Samsung Galaxy A54"
         ]);
 
-        $user = User::with('roles')->where('email', $request->email)->first();
+        $login = $this->normalizeLoginIdentifier($request->username);
+        $user = User::with('roles')
+            ->where(function ($query) use ($login) {
+                $query->whereRaw('LOWER(username) = ?', [$login])
+                    ->orWhereRaw('LOWER(email) = ?', [$login]);
+            })
+            ->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['Email atau password salah.'],
+                'username' => ['Username/email atau password salah.'],
             ]);
         }
 
@@ -41,6 +50,8 @@ class AuthController extends Controller
             // abilities berdasarkan role
             ...$user->getAllPermissions()->pluck('name')->toArray(),
         ])->plainTextToken;
+
+        $this->warmStoreCatalogAfterLogin($user);
 
         return response()->success([
             'token'   => $token,
@@ -97,5 +108,36 @@ class AuthController extends Controller
         return response()->success([
             'token' => $token,
         ]);
+    }
+
+    private function warmStoreCatalogAfterLogin(User $user): void
+    {
+        if (! $user->hasAnyRole(['sales', 'spv'])) {
+            return;
+        }
+
+        if (! filled($user->db_sap) || ! filled($user->slpCode)) {
+            return;
+        }
+
+        $catalog = app(StoreCatalogSyncService::class);
+
+        app()->terminating(function () use ($catalog, $user) {
+            try {
+                $catalog->warm($user);
+            } catch (\Throwable $throwable) {
+                Log::warning('Failed to warm SAP store catalog after login', [
+                    'user_id' => $user->id,
+                    'db_sap' => $user->db_sap,
+                    'slp_code' => $user->slpCode,
+                    'error' => $throwable->getMessage(),
+                ]);
+            }
+        });
+    }
+
+    private function normalizeLoginIdentifier(string $identifier): string
+    {
+        return Str::lower(trim($identifier));
     }
 }

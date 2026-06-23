@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Store;
+use App\Models\User;
 use App\Models\VisitLog;
+use App\Services\Sap\OutstandingReceivableService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -20,6 +23,11 @@ class VisitLogController extends Controller
         'postponed',
     ];
 
+    public function __construct(
+        private readonly OutstandingReceivableService $outstandingReceivableService,
+    ) {
+    }
+
     public function index(Request $request)
     {
         $request->validate([
@@ -31,9 +39,17 @@ class VisitLogController extends Controller
         ]);
 
         $user = $request->user();
+        $query = VisitLog::with(['store', 'user', 'photos']);
 
-        $visits = VisitLog::with(['store', 'user', 'photos'])
-            ->when($user->hasRole('sales'), fn ($query) => $query->where('user_id', $user->id))
+        if ($user->hasRole('sales')) {
+            $query->where('user_id', $user->id);
+        } elseif ($user->hasRole('spv')) {
+            $query->whereHas('user', function ($nested) use ($user) {
+                $nested->where('team_id', $user->team_id);
+            });
+        }
+
+        $visits = $query
             ->when($request->user_id && ! $user->hasRole('sales'), fn ($query) => $query->where('user_id', $request->user_id))
             ->when($request->store_id, fn ($query) => $query->where('store_id', $request->store_id))
             ->when($request->date_from, function ($query) use ($request) {
@@ -43,7 +59,7 @@ class VisitLogController extends Controller
             ->when($request->status === 'completed', fn ($query) => $query->whereNotNull('checkout_at'))
             ->latest('checkin_at')
             ->get()
-            ->map(fn (VisitLog $visitLog) => $this->formatVisit($visitLog));
+            ->map(fn (VisitLog $visitLog) => $this->formatVisit($visitLog, false));
 
         return response()->success([
             'total'  => $visits->count(),
@@ -53,6 +69,7 @@ class VisitLogController extends Controller
 
     public function show(Request $request, VisitLog $visitLog)
     {
+        $visitLog->loadMissing('user');
         if (! $this->canAccess($request, $visitLog)) {
             return response()->error('Unauthorized.', 403);
         }
@@ -66,6 +83,7 @@ class VisitLogController extends Controller
 
     public function update(Request $request, VisitLog $visitLog)
     {
+        $visitLog->loadMissing('user');
         if (! $this->canAccess($request, $visitLog)) {
             return response()->error('Unauthorized.', 403);
         }
@@ -117,6 +135,7 @@ class VisitLogController extends Controller
 
     public function destroy(Request $request, VisitLog $visitLog)
     {
+        $visitLog->loadMissing('user');
         if (! $this->canAccess($request, $visitLog)) {
             return response()->error('Unauthorized.', 403);
         }
@@ -142,7 +161,15 @@ class VisitLogController extends Controller
     {
         $user = $request->user();
 
-        return ! $user->hasRole('sales') || $visitLog->user_id === $user->id;
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        if ($user->hasRole('spv')) {
+            return $user->team_id !== null && (int) $user->team_id === (int) $visitLog->user?->team_id;
+        }
+
+        return $visitLog->user_id === $user->id;
     }
 
     private function withSubmissionMeta(Request $request, array $formData): array
@@ -161,7 +188,7 @@ class VisitLogController extends Controller
         return $formData;
     }
 
-    private function formatVisit(VisitLog $visitLog): array
+    private function formatVisit(VisitLog $visitLog, bool $includeSap = true): array
     {
         return [
             'id'                 => $visitLog->id,
@@ -171,12 +198,7 @@ class VisitLogController extends Controller
                 'name'     => $visitLog->user?->name,
                 'username' => $visitLog->user?->name,
             ],
-            'store'              => [
-                'id'      => $visitLog->store?->id,
-                'name'    => $visitLog->store?->name,
-                'address' => $visitLog->store?->address,
-                'branch'  => $visitLog->store?->branch,
-            ],
+            'store'              => $this->formatStore($visitLog->store, $visitLog->user, $includeSap),
             'checkin_at'         => $visitLog->checkin_at?->toISOString(),
             'checkout_at'        => $visitLog->checkout_at?->toISOString(),
             'duration_minutes'   => $visitLog->duration_minutes,
@@ -190,6 +212,47 @@ class VisitLogController extends Controller
             'counted_as_target'  => $visitLog->counted_as_target,
             'duplicate_reason'   => $visitLog->duplicate_reason,
             'photos_count'       => $visitLog->photos?->count() ?? 0,
+            'photos_preview'     => $this->formatPhotoPreviews($visitLog, 3),
         ];
+    }
+
+    private function formatStore(?Store $store, ?User $salesUser = null, bool $includeSap = true): array
+    {
+        $storeData = [
+            'id'      => $store?->id,
+            'code'    => $store?->code,
+            'external_bp_code' => $store?->external_bp_code,
+            'name'    => $store?->name,
+            'address' => $store?->address,
+            'branch'  => $store?->branch,
+        ];
+
+        if ($includeSap) {
+            $storeData['sap_outstanding_receivable'] = $this->outstandingReceivableService->forStore($store, $salesUser);
+        }
+
+        return $storeData;
+    }
+
+    private function formatPhotoPreviews(VisitLog $visitLog, int $limit = 3): array
+    {
+        return $visitLog->photos
+            ?->sortBy('taken_at')
+            ->take($limit)
+            ->values()
+            ->map(fn ($photo) => [
+                'id'        => $photo->id,
+                'url'       => $this->photoUrl($photo->path),
+                'type'      => $photo->type,
+                'taken_at'  => $photo->taken_at?->toISOString(),
+            ])
+            ->all() ?? [];
+    }
+
+    private function photoUrl(string $path): string
+    {
+        $baseUrl = rtrim(request()->getSchemeAndHttpHost() ?: config('app.url'), '/');
+
+        return $baseUrl.'/storage/visit_photos/'.$path;
     }
 }

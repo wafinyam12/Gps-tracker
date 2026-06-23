@@ -33,9 +33,11 @@ class AppServiceProvider extends ServiceProvider
     {
         // Login — ketat, prevent brute force
         RateLimiter::for('login', function (Request $request) {
+            $username = strtolower(trim((string) $request->input('username', '')));
+
             return [
                 Limit::perMinute(5)->by($request->ip()),
-                Limit::perMinute(3)->by($request->input('email')),
+                Limit::perMinute(3)->by($username !== '' ? $username : $request->ip()),
             ];
         });
 

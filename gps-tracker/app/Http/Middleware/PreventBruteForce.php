@@ -13,7 +13,8 @@ class PreventBruteForce
 
     public function handle(Request $request, Closure $next)
     {
-        $key = 'login_attempts_'.$request->ip().'_'.md5($request->input('email', ''));
+        $username = strtolower(trim((string) $request->input('username', '')));
+        $key = 'login_attempts_'.$request->ip().'_'.md5($username !== '' ? $username : 'guest');
 
         $attempts = Cache::get($key, 0);
 

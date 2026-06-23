@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TeamResource;
 use App\Models\LocationPing;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\Request;
 use MatanYadaev\EloquentSpatial\Objects\Point;
@@ -17,15 +19,15 @@ class LocationController extends Controller
     public function ping(Request $request)
     {
         $request->validate([
-            'latitude'        => 'required|numeric|between:-90,90',
-            'longitude'       => 'required|numeric|between:-180,180',
-            'accuracy'        => 'nullable|numeric|min:0',
-            'speed'           => 'nullable|numeric',
-            'bearing'         => 'nullable|numeric',
-            'battery'         => 'nullable|integer|between:0,100',
-            'is_moving'       => 'nullable|boolean',
+            'latitude'         => 'required|numeric|between:-90,90',
+            'longitude'        => 'required|numeric|between:-180,180',
+            'accuracy'         => 'nullable|numeric|min:0',
+            'speed'            => 'nullable|numeric',
+            'bearing'          => 'nullable|numeric',
+            'battery'          => 'nullable|integer|between:0,100',
+            'is_moving'        => 'nullable|boolean',
             'is_mock_location' => 'nullable|boolean',
-            'recorded_at'     => 'nullable|date',
+            'recorded_at'      => 'nullable|date',
         ]);
 
         $user = $request->user();
@@ -41,13 +43,12 @@ class LocationController extends Controller
             $bearing = null;
         }
 
-        // Simpan ping
         $ping = LocationPing::create([
             'user_id'          => $user->id,
             'location'         => new Point(
-                                    latitude: $request->latitude,
-                                    longitude: $request->longitude,
-                                 ),
+                latitude: $request->latitude,
+                longitude: $request->longitude,
+            ),
             'accuracy'         => $request->accuracy,
             'speed'            => $speed,
             'bearing'          => $bearing,
@@ -60,9 +61,9 @@ class LocationController extends Controller
         // Update last_location & last_seen_at di user
         $user->update([
             'last_location' => new Point(
-                                   latitude: $request->latitude,
-                                   longitude: $request->longitude,
-                               ),
+                latitude: $request->latitude,
+                longitude: $request->longitude,
+            ),
             'last_seen_at'  => now(),
         ]);
 
@@ -72,58 +73,56 @@ class LocationController extends Controller
     }
 
     /**
-     * Ambil posisi terbaru semua sales (untuk SPV dashboard)
-     * Role: spv, admin
+     * Ambil posisi terbaru semua sales untuk dashboard monitoring.
+     * Role: spv, manager, admin
      */
     public function liveSales(Request $request)
     {
         try {
-            $users = User::where('is_active', true)
-                ->whereHas('roles', fn($q) => $q->whereIn('name', ['sales', 'spv']))
-                ->when($request->team_id, fn($q) => $q->where('team_id', $request->team_id))
+            $teamId = $this->resolveTeamScope($request);
+
+            $users = User::query()
+                ->with(['team', 'latestPing'])
+                ->where('is_active', true)
+                ->whereHas('roles', fn ($query) => $query->whereIn('name', ['sales', 'spv']))
+                ->when($teamId, fn ($query) => $query->where('team_id', $teamId))
+                ->orderBy('name')
                 ->get();
 
-            $salesData = $users->map(function ($user) {
-                // Get latest ping manually to avoid relasi issues
-                $ping = LocationPing::where('user_id', $user->id)
-                    ->latest('recorded_at')
-                    ->first();
+            $branches = Team::query()
+                ->withCount('members')
+                ->where('is_active', true)
+                ->when($teamId, fn ($query) => $query->where('id', $teamId))
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Team $branch) => (new TeamResource($branch))->toArray($request))
+                ->values()
+                ->all();
 
-                return [
-                    'user_id'      => $user->id,
-                    'name'         => $user->name,
-                    'employee_id'  => $user->employee_id,
-                    'phone'        => $user->phone,
-                    'photo'        => $user->photo ? asset('storage/'.$user->photo) : null,
-                    'team'         => $user->team?->name,
-                    'last_seen_at' => $user->last_seen_at?->toISOString(),
-                    'is_online'    => $user->last_seen_at
-                                        ? $user->last_seen_at->diffInMinutes(now()) <= 10
-                                        : false,
-                    'location'     => $ping ? [
-                        'latitude'    => $ping->location->latitude,
-                        'longitude'   => $ping->location->longitude,
-                        'accuracy'    => $ping->accuracy,
-                    'speed'       => $ping->speed,
-                    'bearing'     => $ping->bearing,
-                    'battery'     => $ping->battery,
-                    'is_moving'   => $ping->is_moving,
-                    'is_mock_location' => $ping->is_mock_location,
-                    'recorded_at' => $ping->recorded_at?->toISOString(),
-                ] : null,
-            ];
-            });
+            $salesData = $users->map(function (User $user) {
+                return $this->formatLiveUser($user);
+            })->values()->all();
 
-            return response()->success($salesData, 'OK', 200);
+            return response()->success([
+                'users'   => $salesData,
+                'branches'=> $branches,
+                'scope'   => [
+                    'role'    => $request->user()?->roles->first()?->name,
+                    'team_id' => $request->user()?->team_id,
+                ],
+            ], 'OK', 200);
         } catch (\Exception $e) {
             \Log::error('LiveSales error: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->success([], 'OK', 200);
+            return response()->success([
+                'users'    => [],
+                'branches' => [],
+            ], 'OK', 200);
         }
     }
 
     /**
      * Ambil riwayat perjalanan sales dalam 1 hari (breadcrumb)
-     * Role: spv, admin
+     * Role: spv, manager, admin
      */
     public function history(Request $request, User $user)
     {
@@ -131,20 +130,24 @@ class LocationController extends Controller
             'date' => 'required|date_format:Y-m-d',
         ]);
 
+        if (! $this->canViewUser($request->user(), $user)) {
+            return response()->error('Anda hanya dapat melihat cabang sendiri.', 403);
+        }
+
         $pings = LocationPing::where('user_id', $user->id)
             ->whereDate('recorded_at', $request->date)
             ->orderBy('recorded_at')
             ->get()
-            ->map(fn($ping) => [
-                'latitude'    => $ping->location->latitude,
-                'longitude'   => $ping->location->longitude,
-                'accuracy'    => $ping->accuracy,
-                'speed'       => $ping->speed,
-                'bearing'     => $ping->bearing,
-                'battery'     => $ping->battery,
-                'is_moving'   => $ping->is_moving,
+            ->map(fn ($ping) => [
+                'latitude'         => $ping->location->latitude,
+                'longitude'        => $ping->location->longitude,
+                'accuracy'         => $ping->accuracy,
+                'speed'            => $ping->speed,
+                'bearing'          => $ping->bearing,
+                'battery'          => $ping->battery,
+                'is_moving'        => $ping->is_moving,
                 'is_mock_location' => $ping->is_mock_location,
-                'recorded_at' => $ping->recorded_at->toISOString(),
+                'recorded_at'      => $ping->recorded_at->toISOString(),
             ]);
 
         return response()->success([
@@ -158,11 +161,15 @@ class LocationController extends Controller
 
     /**
      * Ambil posisi terbaru 1 sales spesifik
-     * Role: spv, admin
+     * Role: spv, manager, admin
      */
-    public function salesLocation(User $user)
+    public function salesLocation(Request $request, User $user)
     {
-        $user->loadMissing('team');
+        if (! $this->canViewUser($request->user(), $user)) {
+            return response()->error('Anda hanya dapat melihat cabang sendiri.', 403);
+        }
+
+        $user->loadMissing(['team', 'latestPing']);
         $ping = $user->latestPing;
 
         if (! $ping) {
@@ -177,25 +184,101 @@ class LocationController extends Controller
             'employee_id'  => $user->employee_id,
             'phone'        => $user->phone,
             'photo'        => $user->photo ? asset('storage/'.$user->photo) : null,
-            'team'         => $user->team ? [
-                'id'   => $user->team->id,
-                'name' => $user->team->name,
-                'area' => $user->team->area,
-            ] : null,
+            'team'         => $this->formatBranch($user->team),
+            'branch'       => $this->formatBranch($user->team),
             'last_seen_at' => $user->last_seen_at?->toISOString(),
             'is_online'    => $user->last_seen_at
                                 ? $user->last_seen_at->diffInMinutes(now()) <= 10
                                 : false,
             'location' => [
-                'latitude'    => $ping->location->latitude,
-                'longitude'   => $ping->location->longitude,
-                'accuracy'    => $ping->accuracy,
-                'speed'       => $ping->speed,
-                'battery'     => $ping->battery,
-                'is_moving'   => $ping->is_moving,
+                'latitude'         => $ping->location->latitude,
+                'longitude'        => $ping->location->longitude,
+                'accuracy'         => $ping->accuracy,
+                'speed'            => $ping->speed,
+                'battery'          => $ping->battery,
+                'is_moving'        => $ping->is_moving,
                 'is_mock_location' => $ping->is_mock_location,
-                'recorded_at' => $ping->recorded_at->toISOString(),
+                'recorded_at'      => $ping->recorded_at->toISOString(),
             ],
         ]);
+    }
+
+    private function resolveTeamScope(Request $request): ?int
+    {
+        $viewer = $request->user();
+
+        if ($viewer?->hasRole('spv')) {
+            return $viewer->team_id;
+        }
+
+        $requestedTeamId = $request->integer('team_id');
+
+        return $requestedTeamId ?: null;
+    }
+
+    private function canViewUser(User $viewer, User $target): bool
+    {
+        if ($viewer->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+
+        if ($viewer->hasRole('spv')) {
+            return $viewer->team_id !== null && (int) $viewer->team_id === (int) $target->team_id;
+        }
+
+        return $viewer->id === $target->id;
+    }
+
+    private function formatBranch(?Team $team): ?array
+    {
+        if (! $team) {
+            return null;
+        }
+
+        return [
+            'id'           => $team->id,
+            'name'         => $team->name,
+            'code'         => $team->code,
+            'area'         => $team->area,
+            'latitude'     => $team->location?->latitude,
+            'longitude'    => $team->location?->longitude,
+            'location'     => $team->location ? [
+                'latitude'  => $team->location->latitude,
+                'longitude' => $team->location->longitude,
+            ] : null,
+            'has_location' => $team->hasLocation(),
+            'is_active'    => $team->is_active,
+        ];
+    }
+
+    private function formatLiveUser(User $user): array
+    {
+        $ping = $user->latestPing;
+
+        return [
+            'user_id'      => $user->id,
+            'name'         => $user->name,
+            'employee_id'  => $user->employee_id,
+            'phone'        => $user->phone,
+            'photo'        => $user->photo ? asset('storage/'.$user->photo) : null,
+            'team_id'      => $user->team_id,
+            'team'         => $user->team?->name,
+            'branch'       => $this->formatBranch($user->team),
+            'last_seen_at' => $user->last_seen_at?->toISOString(),
+            'is_online'    => $user->last_seen_at
+                                ? $user->last_seen_at->diffInMinutes(now()) <= 10
+                                : false,
+            'location'     => $ping ? [
+                'latitude'         => $ping->location->latitude,
+                'longitude'        => $ping->location->longitude,
+                'accuracy'         => $ping->accuracy,
+                'speed'            => $ping->speed,
+                'bearing'          => $ping->bearing,
+                'battery'          => $ping->battery,
+                'is_moving'        => $ping->is_moving,
+                'is_mock_location' => $ping->is_mock_location,
+                'recorded_at'      => $ping->recorded_at?->toISOString(),
+            ] : null,
+        ];
     }
 }

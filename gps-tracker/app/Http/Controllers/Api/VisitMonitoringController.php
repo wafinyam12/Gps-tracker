@@ -25,12 +25,15 @@ class VisitMonitoringController extends Controller
         ]);
 
         $users = $this->analytics->scopeUsers(
+            viewer: $request->user(),
             userId: $request->user_id,
             teamId: $request->team_id,
         );
+
         $logs = $this->analytics->loadVisits(
             dateFrom: $request->date_from,
             dateTo: $request->date_to,
+            viewer: $request->user(),
             userId: $request->user_id,
             teamId: $request->team_id,
         );
@@ -80,10 +83,19 @@ class VisitMonitoringController extends Controller
             'date' => 'required|date_format:Y-m-d',
         ]);
 
-        $users = $this->analytics->scopeUsers(userId: $user->id);
+        if (! $this->canViewUser($request->user(), $user)) {
+            return response()->error('Anda hanya dapat melihat cabang sendiri.', 403);
+        }
+
+        $users = $this->analytics->scopeUsers(
+            viewer: $request->user(),
+            userId: $user->id
+        );
+
         $logs = $this->analytics->loadVisits(
             dateFrom: $request->date,
             dateTo: $request->date,
+            viewer: $request->user(),
             userId: $user->id,
         );
 
@@ -102,6 +114,7 @@ class VisitMonitoringController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'employee_id' => $user->employee_id,
+                'branch' => $user->team?->name,
                 'team' => $user->team?->name,
             ],
             'stats' => $sales['summary'] ?? [
@@ -117,12 +130,12 @@ class VisitMonitoringController extends Controller
                     'id'                => $visitLog->id,
                     'visit_date'        => $visitLog->visit_date?->toDateString(),
                     'store'             => [
-                        'id'              => $visitLog->store?->id,
-                        'code'            => $visitLog->store?->code,
-                        'external_bp_code'=> $visitLog->store?->external_bp_code,
-                        'name'            => $visitLog->store?->name,
-                        'address'         => $visitLog->store?->address,
-                        'branch'          => $visitLog->store?->branch,
+                        'id'               => $visitLog->store?->id,
+                        'code'             => $visitLog->store?->code,
+                        'external_bp_code' => $visitLog->store?->external_bp_code,
+                        'name'             => $visitLog->store?->name,
+                        'address'          => $visitLog->store?->address,
+                        'branch'           => $visitLog->store?->branch,
                     ],
                     'checkin_at'        => $visitLog->checkin_at?->toISOString(),
                     'checkout_at'       => $visitLog->checkout_at?->toISOString(),
@@ -136,16 +149,29 @@ class VisitMonitoringController extends Controller
             'open_visit' => $openVisit ? [
                 'visit_log_id' => $openVisit->id,
                 'store'        => [
-                    'id'              => $openVisit->store?->id,
-                    'code'            => $openVisit->store?->code,
-                    'external_bp_code'=> $openVisit->store?->external_bp_code,
-                    'name'            => $openVisit->store?->name,
-                    'address'         => $openVisit->store?->address,
-                    'branch'          => $openVisit->store?->branch,
+                    'id'               => $openVisit->store?->id,
+                    'code'             => $openVisit->store?->code,
+                    'external_bp_code' => $openVisit->store?->external_bp_code,
+                    'name'             => $openVisit->store?->name,
+                    'address'          => $openVisit->store?->address,
+                    'branch'           => $openVisit->store?->branch,
                 ],
                 'checkin_at'   => $openVisit->checkin_at?->toISOString(),
             ] : null,
             'warnings' => $sales['warnings'] ?? [],
         ]);
+    }
+
+    private function canViewUser(User $viewer, User $target): bool
+    {
+        if ($viewer->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+
+        if ($viewer->hasRole('spv')) {
+            return $viewer->team_id !== null && (int) $viewer->team_id === (int) $target->team_id;
+        }
+
+        return $viewer->id === $target->id;
     }
 }

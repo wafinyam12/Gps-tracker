@@ -37,11 +37,14 @@ Route::prefix('v1')->group(function () {
             Route::post('visit/checkout', [CheckInController::class, 'checkOut'])
                 ->middleware('throttle:checkin');
 
-            Route::get('stores/available', [StoreController::class, 'available']);
             Route::post('visit/photos', [VisitPhotoController::class, 'upload'])
                 ->middleware('throttle:photo-upload');
 
             Route::get('target/today', [DailyTargetController::class, 'today']);
+        });
+
+        Route::middleware('role:sales|spv|manager|admin')->group(function () {
+            Route::get('stores/available', [StoreController::class, 'available']);
         });
 
         Route::middleware('role:sales|spv|admin')->group(function () {
@@ -58,7 +61,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('visit/photos/{photo}', [VisitPhotoController::class, 'destroy']);
         });
 
-        Route::middleware('role:spv|admin')->group(function () {
+        Route::middleware('role:spv|manager|admin')->group(function () {
             Route::get('location/live', [LocationController::class, 'liveSales']);
             Route::get('location/history/{user}', [LocationController::class, 'history']);
             Route::get('location/{user}', [LocationController::class, 'salesLocation']);
@@ -68,7 +71,8 @@ Route::prefix('v1')->group(function () {
 
             Route::get('target/summary', [VisitMonitoringController::class, 'summary']);
             Route::get('target/detail/{user}', [VisitMonitoringController::class, 'detail']);
-            Route::post('target/set', [DailyTargetController::class, 'set']);
+            Route::post('target/set', [DailyTargetController::class, 'set'])
+                ->middleware('role:spv|admin');
 
             Route::get('reports/per-sales', [ReportController::class, 'perSales']);
             Route::get('reports/per-store', [ReportController::class, 'perStore']);

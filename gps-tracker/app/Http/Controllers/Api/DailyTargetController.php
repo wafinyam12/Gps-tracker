@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DailyTarget;
+use App\Models\User;
 use App\Models\VisitLog;
 use App\Services\Visits\VisitAnalyticsService;
 use Illuminate\Http\Request;
@@ -27,10 +28,11 @@ class DailyTargetController extends Controller
         $user = $request->user();
         $date = $request->input('date', now(self::LOCAL_TIMEZONE)->toDateString());
 
-        $users = $this->analytics->scopeUsers(userId: $user->id);
+        $users = $this->analytics->scopeUsers(viewer: $user, userId: $user->id);
         $logs = $this->analytics->loadVisits(
             dateFrom: $date,
             dateTo: $date,
+            viewer: $user,
             userId: $user->id,
         );
 
@@ -75,6 +77,8 @@ class DailyTargetController extends Controller
                     'visit_result'      => $visitLog->visit_result,
                     'notes'             => $visitLog->notes,
                     'duration_minutes'  => $visitLog->duration_minutes,
+                    'photos_count'      => $visitLog->photos?->count() ?? 0,
+                    'photos_preview'    => $this->formatPhotoPreviews($visitLog, 3),
                 ];
             }),
             'open_visit' => $openVisit ? [
@@ -88,6 +92,8 @@ class DailyTargetController extends Controller
                     'branch'          => $openVisit->store?->branch,
                 ],
                 'checkin_at'   => $openVisit->checkin_at?->toISOString(),
+                'photos_count' => $openVisit->photos?->count() ?? 0,
+                'photos_preview' => $this->formatPhotoPreviews($openVisit, 3),
             ] : null,
             'warnings' => $sales['warnings'] ?? [],
         ]);
@@ -100,6 +106,11 @@ class DailyTargetController extends Controller
             'target_date'   => 'required|date_format:Y-m-d',
             'target_visits' => 'required|integer|min:1|max:100',
         ]);
+
+        $targetUser = User::findOrFail($request->user_id);
+        if (! $this->canManageTargetUser($request->user(), $targetUser)) {
+            return response()->error('Anda hanya dapat mengatur target cabang sendiri.', 403);
+        }
 
         $target = DailyTarget::setTarget(
             userId: (int) $request->user_id,
@@ -122,6 +133,13 @@ class DailyTargetController extends Controller
             'user_ids.*'    => 'required|exists:users,id',
         ]);
 
+        $targetUsers = User::whereIn('id', $request->user_ids)->get(['id', 'team_id']);
+        foreach ($targetUsers as $targetUser) {
+            if (! $this->canManageTargetUser($request->user(), $targetUser)) {
+                return response()->error('Anda hanya dapat mengatur target cabang sendiri.', 403);
+            }
+        }
+
         $targets = DB::transaction(function () use ($request) {
             return collect($request->user_ids)->map(function ($userId) use ($request) {
                 $target = DailyTarget::setTarget(
@@ -140,6 +158,19 @@ class DailyTargetController extends Controller
         ], 'Target harian berhasil diperbarui.', 201);
     }
 
+    private function canManageTargetUser(User $viewer, User $target): bool
+    {
+        if ($viewer->hasRole('admin')) {
+            return true;
+        }
+
+        if ($viewer->hasRole('spv')) {
+            return $viewer->team_id !== null && (int) $viewer->team_id === (int) $target->team_id;
+        }
+
+        return false;
+    }
+
     private function formatTarget(DailyTarget $target): array
     {
         $target->loadMissing(['user', 'setter']);
@@ -153,5 +184,27 @@ class DailyTargetController extends Controller
             'set_by'        => $target->set_by,
             'set_by_name'   => $target->setter?->name,
         ];
+    }
+
+    private function formatPhotoPreviews(VisitLog $visitLog, int $limit = 3): array
+    {
+        return $visitLog->photos
+            ?->sortBy('taken_at')
+            ->take($limit)
+            ->values()
+            ->map(fn ($photo) => [
+                'id'        => $photo->id,
+                'url'       => $this->photoUrl($photo->path),
+                'type'      => $photo->type,
+                'taken_at'  => $photo->taken_at?->toISOString(),
+            ])
+            ->all() ?? [];
+    }
+
+    private function photoUrl(string $path): string
+    {
+        $baseUrl = rtrim(request()->getSchemeAndHttpHost() ?: config('app.url'), '/');
+
+        return $baseUrl.'/storage/visit_photos/'.$path;
     }
 }

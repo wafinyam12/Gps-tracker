@@ -248,7 +248,7 @@ class CheckInController extends Controller
             return null;
         }
 
-        $store = $this->catalog->findByExternalCode($externalCode);
+        $store = $this->catalog->findByExternalCode($externalCode, $request->user());
 
         return $store?->status === 'active' ? $store : null;
     }

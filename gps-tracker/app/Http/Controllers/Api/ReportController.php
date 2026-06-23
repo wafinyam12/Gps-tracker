@@ -27,12 +27,15 @@ class ReportController extends Controller
         ]);
 
         $users = $this->analytics->scopeUsers(
+            viewer: $request->user(),
             userId: $request->user_id,
             teamId: $request->team_id,
         );
+
         $logs = $this->analytics->loadVisits(
             dateFrom: $request->date_from,
             dateTo: $request->date_to,
+            viewer: $request->user(),
             userId: $request->user_id,
             teamId: $request->team_id,
         );
@@ -60,6 +63,7 @@ class ReportController extends Controller
         $logs = $this->analytics->loadVisits(
             dateFrom: $request->date_from,
             dateTo: $request->date_to,
+            viewer: $request->user(),
         );
 
         if ($request->filled('branch')) {
@@ -95,6 +99,7 @@ class ReportController extends Controller
             new VisitReportExport(
                 dateFrom: $request->date_from,
                 dateTo: $request->date_to,
+                viewer: $request->user(),
                 userId: $request->user_id,
                 teamId: $request->team_id,
             ),
@@ -116,10 +121,10 @@ class ReportController extends Controller
             new SalesSummaryExport(
                 dateFrom: $request->date_from,
                 dateTo: $request->date_to,
+                viewer: $request->user(),
                 teamId: $request->team_id,
             ),
             $filename,
         );
     }
-
 }

@@ -19,6 +19,7 @@ class UserSeeder extends Seeder
 
         $admin = User::create([
             'name'     => 'Admin GPS',
+            'username' => 'admin-gps',
             'email'    => 'admin@gps.test',
             'password' => Hash::make('password'),
             'team_id'  => $team->id,
@@ -27,6 +28,7 @@ class UserSeeder extends Seeder
 
         $spv = User::create([
             'name'     => 'SPV Surabaya',
+            'username' => 'spv-surabaya',
             'email'    => 'spv@gps.test',
             'password' => Hash::make('password'),
             'phone'    => '081234567890',
@@ -36,11 +38,14 @@ class UserSeeder extends Seeder
 
         $sales = User::create([
             'name'        => 'Sales Satu',
+            'username'    => 'sales-satu',
             'email'       => 'sales1@gps.test',
             'password'    => Hash::make('password'),
             'phone'       => '081234567891',
             'employee_id' => 'EMP-001',
             'team_id'     => $team->id,
+            'slpCode'     => '48',
+            'db_sap'      => 'SIMULASI_UDMW',
         ]);
         $sales->assignRole('sales');
     }

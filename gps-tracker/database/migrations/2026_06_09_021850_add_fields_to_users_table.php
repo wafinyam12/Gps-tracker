@@ -12,6 +12,8 @@ return new class extends Migration
             $table->string('phone')->nullable()->after('email');
             $table->string('photo')->nullable()->after('phone');
             $table->string('employee_id')->nullable()->unique()->after('photo');
+            $table->string('slpCode')->nullable()->after('employee_id');
+            $table->string('db_sap')->nullable()->after('slpCode');
             $table->foreignId('team_id')->nullable()->after('employee_id')
                   ->constrained('teams')->nullOnDelete();
             $table->boolean('is_active')->default(true)->after('team_id');

@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Models\User;
 use App\Services\Visits\VisitAnalyticsService;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -23,6 +24,7 @@ class SalesSummaryExport implements
     public function __construct(
         private string $dateFrom,
         private string $dateTo,
+        private ?User  $viewer = null,
         private ?int   $teamId = null,
         private ?int   $userId = null,
     ) {}
@@ -30,8 +32,8 @@ class SalesSummaryExport implements
     public function collection()
     {
         $analytics = app(VisitAnalyticsService::class);
-        $users = $analytics->scopeUsers($this->userId, $this->teamId);
-        $logs = $analytics->loadVisits($this->dateFrom, $this->dateTo, $this->userId, $this->teamId);
+        $users = $analytics->scopeUsers($this->viewer, $this->userId, $this->teamId);
+        $logs = $analytics->loadVisits($this->dateFrom, $this->dateTo, $this->viewer, $this->userId, $this->teamId);
 
         return $analytics->summarizeByUser($users, $logs, $this->dateFrom, $this->dateTo);
     }
@@ -41,7 +43,7 @@ class SalesSummaryExport implements
         return [
             'Sales',
             'Employee ID',
-            'Team',
+            'Cabang',
             'Target Kunjungan',
             'Kunjungan Unik',
             'Duplicate',
@@ -62,7 +64,7 @@ class SalesSummaryExport implements
         return [
             $item['name'] ?? '-',
             $item['employee_id'] ?? '-',
-            $item['team'] ?? '-',
+            $item['branch'] ?? $item['team'] ?? '-',
             $summary['target_visits'] ?? 0,
             $summary['unique_visits'] ?? 0,
             $summary['duplicate_visits'] ?? 0,

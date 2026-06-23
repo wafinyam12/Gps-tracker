@@ -8,7 +8,7 @@ class VisitPhotoRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->hasAnyRole(['sales', 'spv', 'admin']) === true;
     }
 
     public function rules(): array

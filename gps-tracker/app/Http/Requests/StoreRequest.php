@@ -8,7 +8,7 @@ class StoreRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->hasRole('admin') === true;
     }
 
     public function rules(): array
@@ -18,7 +18,7 @@ class StoreRequest extends FormRequest
         return [
             'code'             => 'required|string|max:50|unique:stores,code,'.$storeId,
             'name'             => 'required|string|max:255',
-            'address'          => 'nullable|string',
+            'address'          => 'nullable|string|max:1000',
             'area'             => 'nullable|string|max:100',
             'city'             => 'nullable|string|max:100',
             'latitude'         => 'required|numeric|between:-90,90',

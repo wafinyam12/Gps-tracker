@@ -3,8 +3,8 @@
 namespace App\Services\Visits;
 
 use App\Models\DailyTarget;
-use App\Models\VisitLog;
 use App\Models\User;
+use App\Models\VisitLog;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
 
@@ -17,25 +17,29 @@ class VisitAnalyticsService
         return DailyTarget::resolveTarget($userId, $date, $default)->target_visits;
     }
 
-    public function scopeUsers(?int $userId = null, ?int $teamId = null): Collection
+    public function scopeUsers(?User $viewer = null, ?int $userId = null, ?int $teamId = null): Collection
     {
+        $resolvedTeamId = $this->resolveTeamScope($viewer, $teamId);
+
         return User::query()
             ->whereHas('roles', fn ($query) => $query->whereIn('name', ['sales', 'spv']))
             ->where('is_active', true)
             ->when($userId, fn ($query) => $query->where('id', $userId))
-            ->when($teamId, fn ($query) => $query->where('team_id', $teamId))
+            ->when($resolvedTeamId, fn ($query) => $query->where('team_id', $resolvedTeamId))
             ->with('team')
             ->orderBy('name')
             ->get();
     }
 
-    public function loadVisits(string $dateFrom, string $dateTo, ?int $userId = null, ?int $teamId = null, ?int $storeId = null): Collection
+    public function loadVisits(string $dateFrom, string $dateTo, ?User $viewer = null, ?int $userId = null, ?int $teamId = null, ?int $storeId = null): Collection
     {
+        $resolvedTeamId = $this->resolveTeamScope($viewer, $teamId);
+
         return VisitLog::query()
             ->with(['user.team', 'store', 'photos'])
             ->when($userId, fn ($query) => $query->where('user_id', $userId))
-            ->when($teamId, fn ($query) => $query->whereHas('user', function ($query) use ($teamId) {
-                $query->where('team_id', $teamId);
+            ->when($resolvedTeamId, fn ($query) => $query->whereHas('user', function ($query) use ($resolvedTeamId) {
+                $query->where('team_id', $resolvedTeamId);
             }))
             ->when($storeId, fn ($query) => $query->where('store_id', $storeId))
             ->whereBetween('visit_date', [$dateFrom, $dateTo])
@@ -77,16 +81,17 @@ class VisitAnalyticsService
                 $warning = null;
                 if ($date < $today && $dailyUnique < $dailyTarget) {
                     $warning = [
-                        'date'            => $date,
-                        'user_id'         => $user->id,
-                        'name'            => $user->name,
-                        'team'            => $user->team?->name,
-                        'target_visits'   => $dailyTarget,
-                        'unique_visits'   => $dailyUnique,
-                        'duplicate_visits'=> $dailyDuplicate,
+                        'date'             => $date,
+                        'user_id'          => $user->id,
+                        'name'             => $user->name,
+                        'branch'           => $user->team?->name,
+                        'team'             => $user->team?->name,
+                        'target_visits'    => $dailyTarget,
+                        'unique_visits'    => $dailyUnique,
+                        'duplicate_visits' => $dailyDuplicate,
                         'missing_visits'   => max($dailyTarget - $dailyUnique, 0),
                         'completion_pct'   => $completionPct,
-                        'message'         => "Hari {$date} hanya tercatat {$dailyUnique} dari {$dailyTarget} toko unik.",
+                        'message'          => "Hari {$date} hanya tercatat {$dailyUnique} dari {$dailyTarget} toko unik.",
                     ];
                     $warnings[] = $warning;
                 }
@@ -109,6 +114,7 @@ class VisitAnalyticsService
                 'user_id'          => $user->id,
                 'name'             => $user->name,
                 'employee_id'      => $user->employee_id,
+                'branch'           => $user->team?->name,
                 'team'             => $user->team?->name,
                 'is_online'        => $user->last_seen_at
                     ? $user->last_seen_at->diffInMinutes(now()) <= 10
@@ -160,6 +166,7 @@ class VisitAnalyticsService
                     'date'             => $date,
                     'user_id'          => $user->id,
                     'name'             => $user->name,
+                    'branch'           => $user->team?->name,
                     'team'             => $user->team?->name,
                     'target_visits'    => $dailyTarget,
                     'unique_visits'    => $dailyUnique,
@@ -190,18 +197,18 @@ class VisitAnalyticsService
             $lastVisit = $group->sortByDesc('checkin_at')->first();
 
             return [
-                'store_id'          => $store?->id,
-                'store_code'        => $store?->code,
-                'external_bp_code'  => $store?->external_bp_code,
-                'store_name'        => $store?->name,
-                'branch'            => $store?->branch,
-                'area'              => $store?->area,
-                'city'              => $store?->city,
-                'unique_visits'     => $unique,
-                'duplicate_visits'  => $duplicate,
-                'total_visits'      => $group->count(),
-                'last_visit_at'     => $lastVisit?->checkin_at?->toISOString(),
-                'avg_duration_min'  => round($group->avg('duration_minutes') ?? 0, 1),
+                'store_id'         => $store?->id,
+                'store_code'       => $store?->code,
+                'external_bp_code' => $store?->external_bp_code,
+                'store_name'       => $store?->name,
+                'branch'           => $store?->branch,
+                'area'             => $store?->area,
+                'city'             => $store?->city,
+                'unique_visits'    => $unique,
+                'duplicate_visits' => $duplicate,
+                'total_visits'     => $group->count(),
+                'last_visit_at'    => $lastVisit?->checkin_at?->toISOString(),
+                'avg_duration_min' => round($group->avg('duration_minutes') ?? 0, 1),
             ];
         })->values();
     }
@@ -219,5 +226,14 @@ class VisitAnalyticsService
         return $logs->filter(function (VisitLog $visitLog) use ($date) {
             return $visitLog->visit_date?->toDateString() === $date;
         })->values();
+    }
+
+    private function resolveTeamScope(?User $viewer = null, ?int $teamId = null): ?int
+    {
+        if ($viewer?->hasRole('spv')) {
+            return $viewer->team_id;
+        }
+
+        return $teamId;
     }
 }
