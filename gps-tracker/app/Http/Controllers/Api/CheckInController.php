@@ -273,6 +273,8 @@ class CheckInController extends Controller
             'name'            => $store?->name,
             'address'         => $store?->address,
             'branch'          => $store?->branch,
+            'pic_name'        => $store?->pic_name,
+            'pic_phone'       => $store?->pic_phone,
             'latitude'        => $store?->location?->latitude,
             'longitude'       => $store?->location?->longitude,
             'geofence_radius' => $store?->geofence_radius,

@@ -61,6 +61,9 @@ class RolePermissionSeeder extends Seeder
             'export-reports',
         ]);
 
+        $superadmin = Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
+        $superadmin->syncPermissions($permissions);
+
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions($permissions);
     }

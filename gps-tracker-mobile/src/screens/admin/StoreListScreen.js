@@ -1,17 +1,21 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, Alert, TextInput } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { storeService } from '../../api/services/storeService';
-import { Search, MapPin, ShieldCheck } from 'lucide-react-native';
+import { MapPin, ShieldCheck } from 'lucide-react-native';
+import AppScreen from '../../components/ui/AppScreen';
+import PageHeader from '../../components/ui/PageHeader';
+import SearchBar from '../../components/ui/SearchBar';
+import Surface from '../../components/ui/Surface';
+import EmptyState from '../../components/ui/EmptyState';
+import { colors, radii, shadows, spacing } from '../../styles/theme';
 
 const StoreListScreen = () => {
+  const navigation = useNavigation();
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    fetchStores();
-  }, []);
 
   const fetchStores = async () => {
     setLoading(true);
@@ -26,6 +30,10 @@ const StoreListScreen = () => {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    fetchStores();
+  }, []);
 
   const filteredStores = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -52,19 +60,19 @@ const StoreListScreen = () => {
   };
 
   const renderStoreItem = ({ item }) => (
-    <View style={styles.storeCard}>
+    <Surface style={styles.storeCard}>
       <View style={styles.iconContainer}>
-        <MapPin size={24} color="#1E40AF" />
+        <MapPin size={22} color={colors.primary} />
       </View>
       <View style={styles.storeInfo}>
         <Text style={styles.storeName}>{item.name}</Text>
-        <Text style={styles.storeAddress} numberOfLines={1}>{item.address || 'No Address'}</Text>
+        <Text style={styles.storeAddress} numberOfLines={1}>{item.address || 'Alamat belum tersedia'}</Text>
         <View style={styles.tagRow}>
           <Text style={styles.storeCode}>{item.external_bp_code || item.code}</Text>
           {!!item.branch && <Text style={styles.branchText}>{item.branch}</Text>}
           {item.has_location ? (
             <View style={styles.locationBadge}>
-              <ShieldCheck size={10} color="#166534" />
+              <ShieldCheck size={10} color={colors.success} />
               <Text style={styles.locationBadgeText}>Lokasi Lokal</Text>
             </View>
           ) : (
@@ -75,54 +83,68 @@ const StoreListScreen = () => {
         </View>
       </View>
       <View style={styles.storeAction}>
-        <View style={[styles.statusBadge, { backgroundColor: item.status === 'active' ? '#D1FAE5' : '#FEE2E2' }]}>
-          <Text style={[styles.statusText, { color: item.status === 'active' ? '#065F46' : '#991B1B' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: item.status === 'active' ? colors.successSoft : colors.dangerSoft }]}>
+          <Text style={[styles.statusText, { color: item.status === 'active' ? colors.success : colors.danger }]}>
             {item.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
           </Text>
         </View>
       </View>
-    </View>
+    </Surface>
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchSection}>
-        <View style={styles.searchBar}>
-          <Search size={20} color="#94A3B8" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Cari nama, kode, atau alamat..."
+    <AppScreen>
+      <PageHeader
+        title="Manajemen Toko"
+        subtitle="Master toko read-only dari SAP dan lokasi lokal."
+        onBack={() => navigation.goBack()}
+      />
+
+      <View style={styles.container}>
+        <View style={styles.searchSection}>
+          <SearchBar
             value={search}
             onChangeText={setSearch}
+            placeholder="Cari nama, kode, atau alamat..."
+            onSubmitEditing={fetchStores}
           />
         </View>
-      </View>
 
-      {loading && !refreshing ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#1E40AF" />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredStores}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderStoreItem}
-          onRefresh={onRefresh}
-          refreshing={refreshing}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>Tidak ada toko yang ditemukan.</Text>
-          }
-        />
-      )}
-    </View>
+        {loading && !refreshing ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredStores}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderStoreItem}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
+            contentContainerStyle={styles.list}
+            ListHeaderComponent={(
+              <Surface style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Total toko</Text>
+                <Text style={styles.summaryValue}>{filteredStores.length}</Text>
+              </Surface>
+            )}
+            ListEmptyComponent={(
+              <EmptyState
+                title="Tidak ada toko yang ditemukan"
+                description="Coba ubah kata kunci pencarian."
+                icon={<MapPin size={22} color={colors.primary} />}
+              />
+            )}
+          />
+        )}
+      </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
   },
   center: {
     flex: 1,
@@ -130,128 +152,118 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   searchSection: {
-    padding: 16,
-    backgroundColor: '#fff',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   list: {
-    padding: 16,
-    paddingBottom: 100,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 32,
+  },
+  summaryCard: {
+    marginBottom: spacing.md,
+    alignItems: 'flex-start',
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  summaryValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 4,
   },
   storeCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: spacing.sm,
+    gap: spacing.md,
   },
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
   },
   storeInfo: {
     flex: 1,
   },
   storeName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: '900',
+    color: colors.text,
   },
   storeAddress: {
     fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
+    color: colors.textMuted,
+    marginTop: 3,
   },
   tagRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    marginTop: 6,
+    marginTop: 8,
     gap: 8,
   },
   storeCode: {
     fontSize: 11,
-    color: '#1E40AF',
-    fontWeight: 'bold',
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    color: colors.primary,
+    fontWeight: '900',
+    backgroundColor: colors.primarySoft,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.full,
   },
   branchText: {
     fontSize: 11,
-    color: '#334155',
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    color: colors.text,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.full,
   },
   locationBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: colors.successSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.full,
   },
   locationBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#166534',
+    fontSize: 11,
+    color: colors.success,
+    fontWeight: '800',
   },
   pendingBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: colors.warningSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.full,
   },
   pendingBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#92400E',
+    fontSize: 11,
+    color: colors.warning,
+    fontWeight: '800',
   },
   storeAction: {
     alignItems: 'flex-end',
-    gap: 8,
   },
   statusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.full,
   },
   statusText: {
     fontSize: 10,
-    fontWeight: 'bold',
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 60,
-    color: '#94a3b8',
-    fontSize: 14,
+    fontWeight: '900',
   },
 });
 

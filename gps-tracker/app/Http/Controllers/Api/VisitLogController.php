@@ -43,6 +43,11 @@ class VisitLogController extends Controller
 
         if ($user->hasRole('sales')) {
             $query->where('user_id', $user->id);
+        } elseif ($user->isBranchAdmin()) {
+            $query->whereHas('user', function ($nested) use ($user) {
+                $nested->where('team_id', $user->team_id)
+                    ->whereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'sales'));
+            });
         } elseif ($user->hasRole('spv')) {
             $query->whereHas('user', function ($nested) use ($user) {
                 $nested->where('team_id', $user->team_id);
@@ -140,7 +145,7 @@ class VisitLogController extends Controller
             return response()->error('Unauthorized.', 403);
         }
 
-        if (! $request->user()->hasRole('admin') && $visitLog->checkout_at !== null) {
+        if (! $request->user()->hasRole('superadmin') && $visitLog->checkout_at !== null) {
             return response()->error('Kunjungan selesai tidak bisa dihapus oleh sales.', 422);
         }
 
@@ -161,8 +166,14 @@ class VisitLogController extends Controller
     {
         $user = $request->user();
 
-        if ($user->hasRole('admin')) {
+        if ($user->canAccessAllBranches()) {
             return true;
+        }
+
+        if ($user->isBranchAdmin()) {
+            return $user->team_id !== null
+                && (int) $user->team_id === (int) $visitLog->user?->team_id
+                && $visitLog->user?->hasRole('sales');
         }
 
         if ($user->hasRole('spv')) {
@@ -225,6 +236,11 @@ class VisitLogController extends Controller
             'name'    => $store?->name,
             'address' => $store?->address,
             'branch'  => $store?->branch,
+            'pic_name' => $store?->pic_name,
+            'pic_phone' => $store?->pic_phone,
+            'latitude' => $store?->location?->latitude,
+            'longitude' => $store?->location?->longitude,
+            'has_location' => $store?->hasLocation() ?? false,
         ];
 
         if ($includeSap) {

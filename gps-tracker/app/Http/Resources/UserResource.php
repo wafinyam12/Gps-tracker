@@ -16,6 +16,7 @@ class UserResource extends JsonResource
             'email'       => $this->email,
             'phone'       => $this->phone,
             'employee_id' => $this->employee_id,
+            'slp_code'    => $this->slpCode,
             'photo'       => $this->photo
                                 ? asset('storage/'.$this->photo)
                                 : null,
@@ -35,6 +36,7 @@ class UserResource extends JsonResource
             'name'          => $this->team->name,
             'code'          => $this->team->code,
             'area'          => $this->team->area,
+            'db_sap'        => $this->team->db_sap,
             'latitude'      => $this->team->location?->latitude,
             'longitude'     => $this->team->location?->longitude,
             'location'      => $this->team->location ? [

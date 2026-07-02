@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,15 +10,21 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Calendar, Users, AlertTriangle, ChevronRight } from 'lucide-react-native';
+import { Calendar, ChevronLeft, Users, AlertTriangle, ChevronRight } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import moment from 'moment';
 import { reportService } from '../../api/services/reportService';
 import { teamService } from '../../api/services/teamService';
+import { useAuth } from '../../context/AuthContext';
+import { getRoleName } from '../../utils/roles';
 
 const TeamSummaryScreen = () => {
   const navigation = useNavigation();
+  const { user } = useAuth();
+  const roleName = getRoleName(user);
+  const isSpv = roleName === 'spv';
+  const canChooseBranch = !isSpv;
   const [loading, setLoading] = useState(true);
   const [summaryData, setSummaryData] = useState(null);
   const [teams, setTeams] = useState([]);
@@ -30,8 +37,14 @@ const TeamSummaryScreen = () => {
   }, []);
 
   useEffect(() => {
+    if (isSpv && (user?.branch?.id || user?.team?.id)) {
+      setSelectedTeamId((user?.branch?.id || user?.team?.id).toString());
+    }
+  }, [isSpv, user]);
+
+  useEffect(() => {
     fetchSummary();
-  }, [selectedDate, selectedTeamId]);
+  }, [selectedDate, selectedTeamId, isSpv, user]);
 
   const fetchTeams = async () => {
     try {
@@ -50,12 +63,12 @@ const TeamSummaryScreen = () => {
       const response = await reportService.targetSummary({
         date_from: formattedDate,
         date_to: formattedDate,
-        team_id: selectedTeamId || undefined,
+        team_id: canChooseBranch ? selectedTeamId || undefined : user?.branch?.id || user?.team?.id || undefined,
       });
       setSummaryData(response.data?.data || response.data || null);
     } catch (error) {
       console.log('Error fetching summary', error.response?.data || error);
-      Alert.alert('Error', 'Gagal mengambil ringkasan team');
+      Alert.alert('Error', 'Gagal mengambil ringkasan cabang');
     } finally {
       setLoading(false);
     }
@@ -81,8 +94,8 @@ const TeamSummaryScreen = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E40AF" />
-        <Text style={styles.loadingText}>Memuat ringkasan team...</Text>
+        <ActivityIndicator size="large" color="#0F766E" />
+        <Text style={styles.loadingText}>Memuat ringkasan cabang...</Text>
       </View>
     );
   }
@@ -91,9 +104,12 @@ const TeamSummaryScreen = () => {
   const warnings = Array.isArray(summaryData?.warnings) ? summaryData.warnings : [];
 
   return (
-    <View style={styles.container}>
+      <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Ringkasan Visit Tim</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <ChevronLeft size={24} color="#1E293B" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Ringkasan Visit Cabang</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Alerts')} style={styles.alertBtn}>
           <AlertTriangle size={24} color="#EF4444" />
         </TouchableOpacity>
@@ -101,7 +117,7 @@ const TeamSummaryScreen = () => {
 
       <View style={styles.filterContainer}>
         <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.datePickerBtn}>
-          <Calendar size={18} color="#1E40AF" />
+          <Calendar size={18} color="#0F766E" />
           <Text style={styles.dateText}>{moment(selectedDate).format('DD MMMM YYYY')}</Text>
         </TouchableOpacity>
         {showDatePicker && (
@@ -112,18 +128,24 @@ const TeamSummaryScreen = () => {
             onChange={onDateChange}
           />
         )}
-        <View style={styles.teamPickerContainer}>
-          <Picker
-            selectedValue={selectedTeamId}
-            onValueChange={(itemValue) => setSelectedTeamId(itemValue)}
-            style={styles.teamPicker}
-          >
-            <Picker.Item label="Semua Team" value="" />
-            {teams.map((team) => (
-              <Picker.Item key={team.id} label={team.name} value={team.id.toString()} />
-            ))}
-          </Picker>
-        </View>
+        {canChooseBranch ? (
+          <View style={styles.teamPickerContainer}>
+            <Picker
+              selectedValue={selectedTeamId}
+              onValueChange={(itemValue) => setSelectedTeamId(itemValue)}
+              style={styles.teamPicker}
+            >
+              <Picker.Item label="Semua Cabang" value="" />
+              {teams.map((team) => (
+                <Picker.Item key={team.id} label={team.name} value={team.id.toString()} />
+              ))}
+            </Picker>
+          </View>
+        ) : (
+          <View style={styles.selectedBranchPill}>
+            <Text style={styles.selectedBranchText}>{user?.branch?.name || user?.team?.name || 'Cabang Saya'}</Text>
+          </View>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
@@ -155,7 +177,7 @@ const TeamSummaryScreen = () => {
           </View>
         )}
 
-        <Text style={styles.sectionTitle}>Progress Sales</Text>
+            <Text style={styles.sectionTitle}>Progress Sales</Text>
         {sales.length > 0 ? sales.map((item) => {
           const summary = item.summary || {};
           return (
@@ -203,7 +225,7 @@ const TeamSummaryScreen = () => {
         }) : (
           <Text style={styles.emptyText}>Tidak ada data sales untuk tanggal ini.</Text>
         )}
-        <View style={{ height: 40 }} />
+        <View style={{ height: Platform.OS === 'android' ? 64 : 40 }} />
       </ScrollView>
     </View>
   );
@@ -228,7 +250,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#fff',
     padding: 24,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -239,6 +261,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1E293B',
+    flex: 1,
+    textAlign: 'center',
+  },
+  backBtn: {
+    padding: 8,
   },
   alertBtn: {
     padding: 8,
@@ -257,7 +284,7 @@ const styles = StyleSheet.create({
   datePickerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#E7F1EF',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
@@ -266,7 +293,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#1E40AF',
+    color: '#0F766E',
   },
   teamPickerContainer: {
     backgroundColor: '#F8FAFC',
@@ -277,15 +304,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 150,
   },
+  selectedBranchPill: {
+    backgroundColor: '#E0F2FE',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minWidth: 150,
+    justifyContent: 'center',
+  },
+  selectedBranchText: {
+    color: '#075985',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   teamPicker: {
     height: 40,
   },
   scrollViewContent: {
     padding: 20,
-    paddingBottom: 100,
+    paddingBottom: Platform.OS === 'android' ? 124 : 100,
   },
   overviewCard: {
-    backgroundColor: '#1E40AF',
+    backgroundColor: '#0F766E',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -312,7 +352,7 @@ const styles = StyleSheet.create({
   },
   overviewStatLabel: {
     fontSize: 11,
-    color: '#BFDBFE',
+    color: '#BFE3DD',
     marginBottom: 4,
   },
   overviewStatValue: {
@@ -322,7 +362,7 @@ const styles = StyleSheet.create({
   },
   overviewNote: {
     marginTop: 10,
-    color: '#DBEAFE',
+    color: '#D9F3EE',
     fontSize: 12,
   },
   warningPanel: {

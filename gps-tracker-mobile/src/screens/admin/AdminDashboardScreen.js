@@ -1,213 +1,198 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { Users, UsersRound, LogOut, ChevronRight, BarChart3, MapPin, Store } from 'lucide-react-native';
+import React, { useMemo } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { canVisitStores, getRoleName } from '../../utils/roles';
+import {
+  BarChart3,
+  ChevronRight,
+  LogOut,
+  MapPin,
+  Store,
+  UserCircle,
+  Users,
+  UsersRound,
+} from 'lucide-react-native';
+import { useAuth } from '../../context/AuthContext';
+import { canVisitStores, getRoleDisplayName, getRoleName } from '../../utils/roles';
+import AppScreen from '../../components/ui/AppScreen';
+import PageHeader from '../../components/ui/PageHeader';
+import StatCard from '../../components/ui/StatCard';
+import { colors, radii, shadows, spacing } from '../../styles/theme';
 
 const AdminDashboardScreen = () => {
   const { user, logout } = useAuth();
   const navigation = useNavigation();
   const roleName = getRoleName(user) || 'admin';
-  const isAdmin = roleName === 'admin';
+  const canManageUsersAndBranches = ['admin', 'superadmin'].includes(roleName);
+  const canManageStores = roleName === 'superadmin';
   const canVisit = canVisitStores(user);
 
-  const menuItems = [
-    ...(canVisit ? [
-      {
-        title: 'Kunjungan Saya',
-        subtitle: 'Mulai visit, ringkasan, dan lokasi pribadi',
-        icon: <MapPin size={24} color="#1E40AF" />,
-        screen: 'Home',
-      },
-    ] : []),
-    ...(isAdmin ? [
+  const menuItems = useMemo(() => ([
+    ...(canVisit ? [{
+      title: 'Kunjungan Saya',
+      subtitle: 'Mulai visit, ringkasan, dan lokasi pribadi',
+      icon: <MapPin size={24} color={colors.primary} />,
+      screen: 'Home',
+    }] : []),
+    ...(canManageUsersAndBranches ? [
       {
         title: 'Manajemen User',
-        subtitle: 'Kelola data sales, supervisor, dan admin',
-        icon: <Users size={24} color="#1E40AF" />,
+        subtitle: 'Kelola data area manager, sales, dan admin cabang',
+        icon: <Users size={24} color={colors.primary} />,
         screen: 'UserList',
       },
       {
-        title: 'Manajemen Team',
-        subtitle: 'Atur unit bisnis dan area kerja',
-        icon: <UsersRound size={24} color="#1E40AF" />,
+        title: 'Manajemen Cabang',
+        subtitle: 'Atur unit bisnis, area kerja, dan lokasi cabang',
+        icon: <UsersRound size={24} color={colors.primary} />,
         screen: 'TeamList',
       },
+    ] : []),
+    ...(canManageStores ? [
       {
         title: 'Manajemen Toko',
-        subtitle: 'Master toko read-only dari SAP dummy',
-        icon: <Store size={24} color="#1E40AF" />,
+        subtitle: 'Master toko read-only dari SAP',
+        icon: <Store size={24} color={colors.primary} />,
         screen: 'StoreList',
       },
     ] : []),
     {
       title: 'Monitoring Kunjungan',
-      subtitle: 'Pantau posisi sales real-time',
-      icon: <MapPin size={24} color="#1E40AF" />,
+      subtitle: 'Pantau posisi sales dan cabang real-time',
+      icon: <MapPin size={24} color={colors.primary} />,
       screen: 'LiveMap',
     },
     {
       title: 'Ringkasan & Warning',
-      subtitle: 'Lihat progres visit dan audit warning',
-      icon: <BarChart3 size={24} color="#1E40AF" />,
+      subtitle: 'Lihat progres visit dan audit warning per cabang',
+      icon: <BarChart3 size={24} color={colors.primary} />,
       screen: 'TeamSummary',
     },
+    {
+      title: 'Profil Saya',
+      subtitle: 'Ubah profile, foto, password, dan keluar akun',
+      icon: <UserCircle size={24} color={colors.primary} />,
+      screen: 'Profile',
+    },
+  ]), [canManageStores, canManageUsersAndBranches, canVisit]);
+
+  const quickStats = [
+    { label: 'Role', value: getRoleDisplayName(roleName), tone: colors.primary },
+    { label: 'Akses Visit', value: canVisit ? 'Ya' : 'Tidak', tone: canVisit ? colors.success : colors.warning },
   ];
 
+  const openMenu = (screen) => {
+    navigation.navigate(screen);
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcomeText}>Selamat Datang,</Text>
-          <Text style={styles.userName}>{user?.name || 'Admin'}</Text>
-          <Text style={styles.userRole}>{roleName.toUpperCase()}</Text>
-        </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-          <LogOut size={20} color="#EF4444" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content}>
-        <Text style={styles.sectionTitle}>Dashboard Menu</Text>
-
-        {menuItems.map((item, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.menuCard}
-            onPress={() => navigation.navigate(item.screen)}
-          >
-            <View style={styles.iconContainer}>{item.icon}</View>
-            <View style={styles.menuInfo}>
-              <Text style={styles.menuTitle}>{item.title}</Text>
-              <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-            </View>
-            <ChevronRight size={20} color="#94A3B8" />
+    <AppScreen>
+      <PageHeader
+        variant="hero"
+        title={`Selamat datang, ${user?.name || 'Admin'}`}
+        subtitle={canManageStores
+          ? 'Pusat kendali untuk user, cabang, toko, dan monitoring harian.'
+          : 'Pusat kendali untuk user, cabang, dan monitoring harian.'}
+        eyebrow="Admin Console"
+        right={(
+          <TouchableOpacity onPress={logout} style={styles.logoutIcon} activeOpacity={0.85}>
+            <LogOut size={18} color="#fff" />
           </TouchableOpacity>
-        ))}
+        )}
+      />
 
+      <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Role</Text>
-            <Text style={styles.statValue}>{roleName.toUpperCase()}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Akses Visit</Text>
-            <Text style={styles.statValue}>{canVisit ? 'Ya' : 'Tidak'}</Text>
-          </View>
+          {quickStats.map((item) => (
+            <StatCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              tone={item.tone}
+              icon={<View style={[styles.statDot, { backgroundColor: item.tone }]} />}
+            />
+          ))}
+        </View>
+
+        <View style={styles.menuList}>
+          {menuItems.map((item) => (
+            <TouchableOpacity
+              key={item.title}
+              style={styles.menuCard}
+              onPress={() => openMenu(item.screen)}
+              activeOpacity={0.9}
+            >
+              <View style={styles.iconContainer}>{item.icon}</View>
+              <View style={styles.menuInfo}>
+                <Text style={styles.menuTitle}>{item.title}</Text>
+                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSoft} />
+            </TouchableOpacity>
+          ))}
         </View>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    backgroundColor: '#1E40AF',
-    padding: 24,
-    paddingTop: 60,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  welcomeText: {
-    color: '#BFDBFE',
-    fontSize: 14,
-  },
-  userName: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  userRole: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  logoutBtn: {
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 12,
-  },
   content: {
-    flex: 1,
-    padding: 24,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.md,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 16,
+  logoutIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.full,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  statDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  menuList: {
+    gap: spacing.sm,
   },
   menuCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    gap: spacing.md,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
   },
   iconContainer: {
-    backgroundColor: '#EFF6FF',
-    padding: 12,
-    borderRadius: 12,
-    marginRight: 16,
+    width: 46,
+    height: 46,
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   menuInfo: {
     flex: 1,
   },
   menuTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: '900',
+    color: colors.text,
   },
   menuSubtitle: {
+    marginTop: 3,
     fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginTop: 8,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E40AF',
-    marginTop: 4,
+    lineHeight: 18,
+    color: colors.textMuted,
   },
 });
 

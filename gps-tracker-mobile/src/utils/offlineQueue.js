@@ -4,15 +4,25 @@ import { Alert } from 'react-native';
 import apiClient from '../api/client';
 
 const OFFLINE_QUEUE_KEY = 'offlineQueue';
+const ALLOWED_PHOTO_TYPES = new Set(['checkin', 'checkout', 'product', 'other']);
 
 let isProcessingQueue = false;
 
 const buildRequestPayload = (endpoint, data, headers = {}) => {
   if (endpoint === '/visit/photos' && data && Array.isArray(data.photos)) {
     const formData = new FormData();
+    const sanitizedHeaders = Object.fromEntries(
+      Object.entries(headers).filter(([key]) => key.toLowerCase() !== 'content-type')
+    );
 
     Object.entries(data).forEach(([key, value]) => {
       if (key === 'photos' || value === undefined || value === null) {
+        return;
+      }
+
+      if (key === 'type') {
+        const resolvedType = ALLOWED_PHOTO_TYPES.has(value) ? value : 'other';
+        formData.append(key, resolvedType);
         return;
       }
 
@@ -29,10 +39,7 @@ const buildRequestPayload = (endpoint, data, headers = {}) => {
 
     return {
       data: formData,
-      headers: {
-        ...headers,
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: sanitizedHeaders,
     };
   }
 
@@ -46,7 +53,6 @@ export const offlineQueue = {
       const queue = JSON.parse(await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) || [];
       queue.push({ endpoint, method, data, headers, timestamp: new Date().toISOString() });
       await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-      Alert.alert('Offline Mode', 'Data Anda telah disimpan secara offline dan akan disinkronkan saat koneksi kembali.');
     } catch (error) {
       console.error('Error adding item to offline queue:', error);
       Alert.alert('Error', 'Gagal menyimpan data offline.');

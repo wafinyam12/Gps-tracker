@@ -1,26 +1,66 @@
 import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Navigation } from 'lucide-react-native';
+import AppScreen from '../components/ui/AppScreen';
+import Surface from '../components/ui/Surface';
+import { colors, radii, shadows } from '../styles/theme';
 
 const LoadingScreen = () => {
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color="#1E40AF" />
-      <Text style={styles.text}>Memuat aplikasi...</Text>
-    </View>
+    <AppScreen>
+      <View style={styles.container}>
+        <Surface style={styles.card}>
+          <View style={styles.brandMark}>
+            <Navigation size={22} color="#fff" />
+          </View>
+          <Text style={styles.title}>GPS Tracker</Text>
+          <Text style={styles.subtitle}>Menyiapkan session, sinkronisasi data, dan akses role Anda.</Text>
+
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Memuat aplikasi...</Text>
+        </Surface>
+      </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    padding: 20,
   },
-  text: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6b7280',
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    gap: 14,
+    ...shadows.card,
+  },
+  brandMark: {
+    width: 64,
+    height: 64,
+    borderRadius: radii.full,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  loadingText: {
+    marginTop: 2,
+    fontSize: 13,
+    color: colors.textMuted,
   },
 });
 

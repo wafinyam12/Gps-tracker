@@ -10,7 +10,7 @@ class Team extends Model
 {
     use HasSpatial;
 
-    protected $fillable = ['name', 'code', 'area', 'location', 'is_active'];
+    protected $fillable = ['name', 'code', 'area', 'db_sap', 'location', 'is_active'];
 
     protected $casts = [
         'location'  => Point::class,

@@ -18,6 +18,8 @@ class TeamController extends Controller
     public function index(Request $request)
     {
         $perPage = max(1, min((int) ($request->per_page ?? 20), 100));
+        $viewer = $request->user();
+        $scopeTeamId = $viewer?->managedTeamId();
 
         $teams = Team::withCount('members')
             ->when($request->search, function ($q) use ($request) {
@@ -29,9 +31,7 @@ class TeamController extends Controller
                         ->orWhere('area', 'like', "%{$search}%");
                 });
             })
-            ->when($request->user()?->hasRole('spv') && ! $request->user()?->hasAnyRole(['manager', 'admin']), fn ($q) =>
-                $q->where('id', $request->user()->team_id)
-            )
+            ->when($scopeTeamId !== null, fn ($q) => $q->where('id', $scopeTeamId))
             ->when(! is_null($request->is_active), fn($q) =>
                 $q->where('is_active', $request->boolean('is_active'))
             )
@@ -60,14 +60,15 @@ class TeamController extends Controller
      */
     public function store(TeamRequest $request)
     {
-        // Admin only can create teams
-        if (! $request->user()->hasRole('admin')) {
+        // Superadmin only can create branches
+        if (! $request->user()->hasRole('superadmin')) {
             return response()->error('Unauthorized action.', 403);
         }
         $team = Team::create([
             'name'      => $request->name,
             'code'      => $request->code,
             'area'      => $request->area,
+            'db_sap'    => strtoupper(trim((string) $request->db_sap)),
             'location'  => new Point(
                 latitude: (float) $request->latitude,
                 longitude: (float) $request->longitude,
@@ -84,8 +85,7 @@ class TeamController extends Controller
      */
     public function update(TeamRequest $request, Team $team)
     {
-        // Admin only can update teams
-        if (! $request->user()->hasRole('admin')) {
+        if (! $this->canEditTeam($request->user(), $team)) {
             return response()->error('Unauthorized action.', 403);
         }
 
@@ -93,6 +93,7 @@ class TeamController extends Controller
             'name'      => $request->name,
             'code'      => $request->code,
             'area'      => $request->area,
+            'db_sap'    => strtoupper(trim((string) $request->db_sap)),
             'location'  => new Point(
                 latitude: (float) $request->latitude,
                 longitude: (float) $request->longitude,
@@ -109,8 +110,8 @@ class TeamController extends Controller
      */
     public function toggleActive(Team $team)
     {
-        // Admin only can toggle status
-        if (! auth()->user()->hasRole('admin')) {
+        // Superadmin only can toggle branch status
+        if (! auth()->user()->hasRole('superadmin')) {
             return response()->error('Unauthorized action.', 403);
         }
 
@@ -127,6 +128,11 @@ class TeamController extends Controller
      */
     public function destroy(Team $team)
     {
+        // Superadmin only can delete branches
+        if (! auth()->user()->hasRole('superadmin')) {
+            return response()->error('Unauthorized action.', 403);
+        }
+
         // Cek jika masih ada anggota
         if ($team->members()->exists()) {
             return response()->error('Tidak bisa menghapus cabang yang masih memiliki anggota.', 422);
@@ -141,11 +147,24 @@ class TeamController extends Controller
     {
         $viewer = $request->user();
 
-        if ($viewer?->hasAnyRole(['admin', 'manager'])) {
+        if ($viewer?->canAccessAllBranches()) {
             return true;
         }
 
-        if ($viewer?->hasRole('spv')) {
+        if ($viewer?->isBranchScopedAdmin()) {
+            return $viewer->team_id !== null && (int) $viewer->team_id === (int) $team->id;
+        }
+
+        return false;
+    }
+
+    private function canEditTeam(?\App\Models\User $viewer, Team $team): bool
+    {
+        if ($viewer?->hasRole('superadmin')) {
+            return true;
+        }
+
+        if ($viewer?->isBranchAdmin()) {
             return $viewer->team_id !== null && (int) $viewer->team_id === (int) $team->id;
         }
 

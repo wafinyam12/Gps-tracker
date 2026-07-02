@@ -55,12 +55,14 @@ class StoreController extends Controller
     {
         $catalog->ensureCatalog(true, $request->user());
 
-        $source = filled($request->user()?->db_sap) && filled($request->user()?->slpCode)
+        $source = filled($request->user()?->sapDatabase()) && filled($request->user()?->sapSalesCode())
             ? 'sap_outstanding_receivable'
             : 'sap_dummy';
 
         $search = trim((string) $request->search);
-        $limit = $request->filled('limit') ? max(1, min((int) $request->limit, 500)) : null;
+        $page = max(1, (int) ($request->page ?? 1));
+        $perPage = max(1, min((int) ($request->per_page ?? 25), 100));
+        $shouldPaginate = $request->filled('paginate') || $request->filled('per_page') || $request->filled('page');
 
         $query = Store::query()
             ->select([
@@ -96,11 +98,33 @@ class StoreController extends Controller
             });
         }
 
-        if ($limit) {
-            $query->limit($limit);
+        if ($shouldPaginate) {
+            $stores = $query
+                ->orderBy('name')
+                ->orderBy('id')
+                ->paginate($perPage, ['*'], 'page', $page);
+
+            return response()->success([
+                'items' => $stores->getCollection()
+                    ->map(fn (Store $store) => (new StoreResource($store))->toArray($request))
+                    ->values()
+                    ->all(),
+                'meta' => [
+                    'current_page' => $stores->currentPage(),
+                    'per_page' => $stores->perPage(),
+                    'last_page' => $stores->lastPage(),
+                    'total' => $stores->total(),
+                    'from' => $stores->firstItem(),
+                    'to' => $stores->lastItem(),
+                    'has_more' => $stores->hasMorePages(),
+                ],
+            ]);
         }
 
-        $stores = $query->orderBy('name')->get();
+        $stores = $query
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
 
         return response()->success(
             $stores->map(fn (Store $store) => (new StoreResource($store))->toArray($request))->values()->all()

@@ -14,6 +14,7 @@ class TeamResource extends JsonResource
             'name'          => $this->name,
             'code'          => $this->code,
             'area'          => $this->area,
+            'db_sap'        => $this->db_sap,
             'latitude'      => $this->location?->latitude,
             'longitude'     => $this->location?->longitude,
             'location'      => $this->location ? [

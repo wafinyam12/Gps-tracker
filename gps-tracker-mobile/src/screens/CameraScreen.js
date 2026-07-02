@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, FlatList } from 'react-native';
+import { Platform, View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, FlatList } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Camera as CameraIcon, RefreshCcw, X, Check } from 'lucide-react-native';
 import { visitService } from '../api/services/visitService';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { offlineQueue } from '../utils/offlineQueue';
+import NetInfo from '@react-native-community/netinfo';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
 
@@ -19,6 +20,8 @@ const PhotoUploadScreen = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const cameraRef = useRef(null);
+  const allowedPhotoTypes = new Set(['checkin', 'checkout', 'product', 'other']);
+  const resolvedType = allowedPhotoTypes.has(type) ? type : 'other';
 
   useEffect(() => {
     if (!permission) {
@@ -71,7 +74,7 @@ const PhotoUploadScreen = () => {
 
     setIsProcessing(true);
     try {
-      await visitService.uploadPhotos(visitLogId, photos, latitude, longitude, type, {
+      await visitService.uploadPhotos(visitLogId, photos, latitude, longitude, resolvedType, {
         takenAt: takenAt || new Date().toISOString(),
         userId: userId || user?.id,
         username: username || user?.name,
@@ -79,11 +82,19 @@ const PhotoUploadScreen = () => {
       Alert.alert('Berhasil', 'Foto kunjungan berhasil diunggah.');
       navigation.goBack();
     } catch (e) {
-      console.log('Upload failed, adding to offline queue:', e.response?.data || e);
+      const netInfo = await NetInfo.fetch();
+      const isOnline = Boolean(netInfo.isConnected && netInfo.isInternetReachable !== false);
+      console.log('Upload failed, adding to offline queue:', {
+        message: e.message,
+        status: e.response?.status,
+        data: e.response?.data,
+        isConnected: netInfo.isConnected,
+        isInternetReachable: netInfo.isInternetReachable,
+      });
       try {
         await offlineQueue.addItem('/visit/photos', 'post', {
           visit_log_id: visitLogId,
-          type: type,
+          type: resolvedType,
           photos: photos.map((p, index) => ({
             uri: p.uri,
             name: `photo_${index}.jpg`,
@@ -94,9 +105,13 @@ const PhotoUploadScreen = () => {
           taken_at: takenAt || new Date().toISOString(),
           submitted_by_user_id: userId || user?.id,
           submitted_by_username: username || user?.name,
-        }, {
-          headers: { 'Content-Type': 'multipart/form-data' }
         });
+        Alert.alert(
+          isOnline ? 'Upload gagal' : 'Offline Mode',
+          isOnline
+            ? 'Server tidak bisa dijangkau saat ini. Foto disimpan lokal dan akan dicoba sinkronisasi lagi.'
+            : 'Data Anda telah disimpan secara offline dan akan disinkronkan saat koneksi kembali.'
+        );
         navigation.goBack();
       } catch (offlineError) {
         Alert.alert('Gagal', 'Gagal mengunggah foto dan gagal menyimpan ke antrian offline.');
@@ -107,7 +122,7 @@ const PhotoUploadScreen = () => {
   };
 
   if (!permission) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#1E40AF" /></View>;
+    return <View style={styles.center}><ActivityIndicator size="large" color="#0F766E" /></View>;
   }
 
   if (!permission.granted) {
@@ -200,7 +215,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
   },
   previewTitle: {
     color: '#fff',
@@ -230,17 +245,30 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   text: { color: '#fff', textAlign: 'center' },
-  btn: { backgroundColor: '#1E40AF', padding: 15, borderRadius: 8, marginTop: 10 },
+  btn: { backgroundColor: '#0F766E', padding: 15, borderRadius: 8, marginTop: 10 },
   btnText: { color: '#fff', fontWeight: 'bold' },
   closeBtn: { position: 'absolute', top: 50, left: 20, padding: 10 },
   cameraOverlay: { position: 'absolute', top: 100, width: '100%', alignItems: 'center' },
   overlayText: { color: '#fff', fontSize: 16, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   overlaySubText: { color: '#fff', fontSize: 12, marginTop: 10 },
-  captureContainer: { position: 'absolute', bottom: 40, width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  captureContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'android' ? 64 : 40,
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   captureBtn: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   captureInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff' },
   doneFab: { position: 'absolute', right: 40, width: 50, height: 50, borderRadius: 25, backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center' },
-  controls: { flexDirection: 'row', paddingBottom: 40, width: '100%', justifyContent: 'space-evenly', backgroundColor: '#000' },
+  controls: {
+    flexDirection: 'row',
+    paddingBottom: Platform.OS === 'android' ? 64 : 40,
+    width: '100%',
+    justifyContent: 'space-evenly',
+    backgroundColor: '#000',
+  },
   controlBtn: { alignItems: 'center', gap: 8, padding: 15, borderRadius: 12, minWidth: 140 },
   btnCancel: { backgroundColor: '#4B5563' },
   btnConfirm: { backgroundColor: '#10B981' },

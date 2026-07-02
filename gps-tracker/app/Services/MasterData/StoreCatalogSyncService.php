@@ -12,7 +12,7 @@ use Throwable;
 
 class StoreCatalogSyncService
 {
-    private const CACHE_PREFIX = 'store-catalog:v2';
+    private const CACHE_PREFIX = 'store-catalog:v3';
 
     public function __construct(
         private readonly LocalSapBusinessPartnerProvider $fallbackProvider,
@@ -101,8 +101,8 @@ class StoreCatalogSyncService
             } catch (Throwable $throwable) {
                 Log::warning('Failed to warm SAP store catalog', [
                     'user_id' => $user?->id,
-                    'db_sap' => $user?->db_sap,
-                    'slp_code' => $user?->slpCode,
+                    'db_sap' => $user?->sapDatabase(),
+                    'slp_code' => $user?->sapSalesCode(),
                     'error' => $throwable->getMessage(),
                 ]);
             } finally {
@@ -140,8 +140,8 @@ class StoreCatalogSyncService
             } catch (Throwable $throwable) {
                 Log::warning('Failed to sync SAP store catalog', [
                     'user_id' => $user?->id,
-                    'db_sap' => $user?->db_sap,
-                    'slp_code' => $user?->slpCode,
+                    'db_sap' => $user?->sapDatabase(),
+                    'slp_code' => $user?->sapSalesCode(),
                     'error' => $throwable->getMessage(),
                 ]);
 
@@ -209,7 +209,7 @@ class StoreCatalogSyncService
     private function resolveCatalogIdentity(?User $user): string
     {
         if ($this->hasSapCredentials($user)) {
-            return 'sap_outstanding_receivable:'.sha1(trim((string) $user?->db_sap).'|'.trim((string) $user?->slpCode));
+            return 'sap_outstanding_receivable:'.sha1(trim((string) $user?->sapDatabase()).'|'.trim((string) $user?->sapSalesCode()));
         }
 
         return 'sap_dummy';
@@ -217,7 +217,7 @@ class StoreCatalogSyncService
 
     private function hasSapCredentials(?User $user): bool
     {
-        return filled($user?->db_sap) && filled($user?->slpCode);
+        return filled($user?->sapDatabase()) && filled($user?->sapSalesCode());
     }
 
     private function hasCatalogRows(string $source): bool
@@ -248,6 +248,8 @@ class StoreCatalogSyncService
         $externalCode = $this->normalizeExternalCode($customer['card_code'] ?? null);
         $name = trim((string) ($customer['card_name'] ?? ''));
         $address = trim((string) ($customer['address'] ?? ''));
+        $picName = trim((string) ($customer['pic_name'] ?? ''));
+        $picPhone = trim((string) ($customer['pic_phone'] ?? ''));
 
         return [
             'external_bp_code' => $externalCode,
@@ -259,8 +261,8 @@ class StoreCatalogSyncService
             'city' => null,
             'status' => 'active',
             'geofence_radius' => 100,
-            'pic_name' => null,
-            'pic_phone' => null,
+            'pic_name' => $picName !== '' ? $picName : null,
+            'pic_phone' => $picPhone !== '' ? $picPhone : null,
             'is_priority' => false,
             'tags' => ['sap_business_partner', 'sap_outstanding_receivable'],
             'master_source' => 'sap_outstanding_receivable',
@@ -344,6 +346,8 @@ class StoreCatalogSyncService
             'card_code' => $customer['card_code'] ?? $customer['customer_code'] ?? null,
             'card_name' => $customer['card_name'] ?? $customer['customer_name'] ?? null,
             'address' => $customer['address'] ?? $customer['customer_address'] ?? null,
+            'pic_name' => $customer['pic_name'] ?? null,
+            'pic_phone' => $customer['pic_phone'] ?? null,
             'payment_terms' => $customer['payment_terms'] ?? null,
             'invoice_count' => (int) ($customer['invoice_count'] ?? $customer['total_document_outstanding'] ?? 0),
             'current_balance' => (float) ($customer['current_balance'] ?? $customer['total_balance'] ?? 0),
@@ -361,6 +365,8 @@ class StoreCatalogSyncService
             && $existing->area === $payload['area']
             && $existing->branch === $payload['branch']
             && $existing->city === $payload['city']
+            && $existing->pic_name === ($payload['pic_name'] ?? null)
+            && $existing->pic_phone === ($payload['pic_phone'] ?? null)
             && (int) $existing->geofence_radius === (int) $payload['geofence_radius']
             && (bool) $existing->is_priority === (bool) $payload['is_priority']
             && ($existing->status === $payload['status'])
@@ -368,6 +374,8 @@ class StoreCatalogSyncService
             && ($existingPayload['card_code'] ?? null) === ($payload['master_payload']['card_code'] ?? null)
             && ($existingPayload['card_name'] ?? null) === ($payload['master_payload']['card_name'] ?? null)
             && ($existingPayload['address'] ?? null) === ($payload['master_payload']['address'] ?? null)
+            && ($existingPayload['pic_name'] ?? null) === ($payload['master_payload']['pic_name'] ?? null)
+            && ($existingPayload['pic_phone'] ?? null) === ($payload['master_payload']['pic_phone'] ?? null)
             && ($existingPayload['payment_terms'] ?? null) === ($payload['master_payload']['payment_terms'] ?? null)
             && (float) ($existingPayload['current_balance'] ?? 0) === (float) ($payload['master_payload']['current_balance'] ?? 0)
             && (int) ($existingPayload['invoice_count'] ?? 0) === (int) ($payload['master_payload']['invoice_count'] ?? 0);

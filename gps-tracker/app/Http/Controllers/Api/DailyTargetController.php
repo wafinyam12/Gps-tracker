@@ -69,6 +69,9 @@ class DailyTargetController extends Controller
                         'name'            => $visitLog->store?->name,
                         'address'         => $visitLog->store?->address,
                         'branch'          => $visitLog->store?->branch,
+                        'latitude'        => $visitLog->store?->location?->latitude,
+                        'longitude'       => $visitLog->store?->location?->longitude,
+                        'has_location'    => $visitLog->store?->hasLocation() ?? false,
                     ],
                     'checkin_at'        => $visitLog->checkin_at?->toISOString(),
                     'checkout_at'       => $visitLog->checkout_at?->toISOString(),
@@ -90,6 +93,9 @@ class DailyTargetController extends Controller
                     'name'            => $openVisit->store?->name,
                     'address'         => $openVisit->store?->address,
                     'branch'          => $openVisit->store?->branch,
+                    'latitude'        => $openVisit->store?->location?->latitude,
+                    'longitude'       => $openVisit->store?->location?->longitude,
+                    'has_location'    => $openVisit->store?->hasLocation() ?? false,
                 ],
                 'checkin_at'   => $openVisit->checkin_at?->toISOString(),
                 'photos_count' => $openVisit->photos?->count() ?? 0,
@@ -160,15 +166,7 @@ class DailyTargetController extends Controller
 
     private function canManageTargetUser(User $viewer, User $target): bool
     {
-        if ($viewer->hasRole('admin')) {
-            return true;
-        }
-
-        if ($viewer->hasRole('spv')) {
-            return $viewer->team_id !== null && (int) $viewer->team_id === (int) $target->team_id;
-        }
-
-        return false;
+        return $viewer->canAccessUserRecord($target);
     }
 
     private function formatTarget(DailyTarget $target): array

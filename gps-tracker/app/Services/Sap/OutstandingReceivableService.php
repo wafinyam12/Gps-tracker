@@ -15,7 +15,7 @@ use Throwable;
 class OutstandingReceivableService
 {
     private const LOCAL_TIMEZONE = 'Asia/Jakarta';
-    private const CACHE_VERSION = 'v3';
+    private const CACHE_VERSION = 'v4';
 
     public function forStore(?Store $store, ?User $user): array
     {
@@ -27,8 +27,8 @@ class OutstandingReceivableService
     public function resolve(?User $user, ?string $requestedCardCode = null): array
     {
         $requestedCardCode = $this->normalizeCardCode($requestedCardCode);
-        $dbSap = $this->normalizeText($user?->db_sap);
-        $slpCode = $this->normalizeText($user?->slpCode);
+        $dbSap = $this->normalizeText($user?->sapDatabase());
+        $slpCode = $this->normalizeText($user?->sapSalesCode());
 
         if (! $dbSap || ! $slpCode) {
             return $this->unavailableResponse(
@@ -102,8 +102,8 @@ class OutstandingReceivableService
 
     public function customers(?User $user): Collection
     {
-        $dbSap = $this->normalizeText($user?->db_sap);
-        $slpCode = $this->normalizeText($user?->slpCode);
+        $dbSap = $this->normalizeText($user?->sapDatabase());
+        $slpCode = $this->normalizeText($user?->sapSalesCode());
 
         if (! $dbSap || ! $slpCode) {
             return collect();
@@ -169,6 +169,8 @@ class OutstandingReceivableService
     private function normalizeCustomer(array $customer): array
     {
         $paymentTerms = $this->extractText($customer, ['Payment Terms', 'payment_terms']);
+        $picName = $this->extractText($customer, ['PIC Name', 'Pic Name', 'pic_name', 'Contact Person', 'contact_person']);
+        $picPhone = $this->normalizePhoneNumber($this->extractValue($customer, ['Cellular', 'cellular', 'PIC Phone', 'Pic Phone', 'pic_phone', 'Phone', 'phone', 'Contact Phone', 'contact_phone']));
         $invoices = collect($customer['Invoices'] ?? [])
             ->filter(fn ($invoice) => is_array($invoice))
             ->map(fn (array $invoice) => $this->normalizeInvoice($invoice, $paymentTerms))
@@ -206,6 +208,8 @@ class OutstandingReceivableService
             'customer_name' => $this->extractText($customer, ['CardName', 'Customer Name', 'card_name']) ?? null,
             'address' => $this->extractText($customer, ['Address', 'Customer Address', 'address']) ?: null,
             'customer_address' => $this->extractText($customer, ['Address', 'Customer Address', 'address']) ?: null,
+            'pic_name' => $picName,
+            'pic_phone' => $picPhone,
             'payment_terms' => $paymentTerms,
             'credit_limit' => $creditLimit,
             'current_balance' => round($currentBalance ?? 0, 2),
@@ -227,9 +231,9 @@ class OutstandingReceivableService
         $docDate = $this->normalizeDateValue($this->extractValue($invoice, ['DocDate', 'Posting Date', 'posting_date', 'doc_date']));
         $explicitDueDate = $this->normalizeDateValue($this->extractValue($invoice, ['DocDueDate', 'Due Date', 'doc_due_date']));
         $dueDate = $this->parseDateOnly($explicitDueDate) ?? $this->estimateDueDate($docDate, $paymentTerms);
-        $docTotal = $this->extractFloat($invoice, ['DocTotal', 'doc_total']);
-        $paidToDate = $this->extractFloat($invoice, ['PaidToDate', 'paid_to_date']);
-        $balanceDue = $this->extractFloat($invoice, ['BalanceDue', 'balance_due']);
+        $docTotal = $this->extractFloat($invoice, ['DocTotal', 'doc_total', 'Document Total']);
+        $paidToDate = $this->extractFloat($invoice, ['PaidToDate', 'paid_to_date', 'Paid To Date']);
+        $balanceDue = $this->extractFloat($invoice, ['BalanceDue', 'balance_due', 'Outstanding Amount', 'Outstanding Balance']);
 
         if ($balanceDue === null && $docTotal !== null && $paidToDate !== null) {
             $balanceDue = round(max(0, $docTotal - $paidToDate), 2);
@@ -272,6 +276,8 @@ class OutstandingReceivableService
             'customer_name' => null,
             'address' => null,
             'customer_address' => null,
+            'pic_name' => null,
+            'pic_phone' => null,
             'payment_terms' => null,
             'credit_limit' => 0,
             'current_balance' => 0,
@@ -312,6 +318,8 @@ class OutstandingReceivableService
             'customer_name' => null,
             'address' => null,
             'customer_address' => null,
+            'pic_name' => null,
+            'pic_phone' => null,
             'payment_terms' => null,
             'credit_limit' => 0,
             'current_balance' => 0,
@@ -513,5 +521,33 @@ class OutstandingReceivableService
     private function normalizeText(mixed $value): string
     {
         return trim((string) $value);
+    }
+
+    private function normalizePhoneNumber(mixed $value): ?string
+    {
+        $text = $this->normalizeText($value);
+
+        if ($text === '') {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $text);
+        if (! is_string($digits) || $digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '62')) {
+            return '+'.$digits;
+        }
+
+        if (str_starts_with($digits, '0')) {
+            return '+62'.substr($digits, 1);
+        }
+
+        if (str_starts_with($digits, '8')) {
+            return '+62'.$digits;
+        }
+
+        return '+'.$digits;
     }
 }

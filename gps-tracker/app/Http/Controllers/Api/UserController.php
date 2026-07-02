@@ -21,10 +21,14 @@ class UserController extends Controller
     {
         $perPage = max(1, min((int) ($request->per_page ?? 20), 100));
         $search = trim((string) $request->search);
+        $viewer = $request->user();
+        $scopeTeamId = $viewer?->managedTeamId();
 
         $users = User::with(['roles', 'team'])
+            ->when($viewer?->isBranchAdmin(), fn ($q) => $q->whereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'sales')))
             ->when($request->role, fn ($q) => $q->role($request->role))
-            ->when($request->team_id, fn ($q) => $q->where('team_id', $request->team_id))
+            ->when($scopeTeamId !== null, fn ($q) => $q->where('team_id', $scopeTeamId))
+            ->when($viewer?->hasRole('superadmin') && $request->filled('team_id'), fn ($q) => $q->where('team_id', $request->team_id))
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($nested) use ($search) {
                     $nested->where('name', 'like', "%{$search}%")
@@ -48,6 +52,10 @@ class UserController extends Controller
      */
     public function show(User $user)
     {
+        if (! request()->user()->canAccessUserRecord($user)) {
+            return response()->error('Anda hanya dapat melihat data cabang sendiri.', 403);
+        }
+
         return new UserResource($user->load(['roles', 'team']));
     }
 
@@ -57,7 +65,15 @@ class UserController extends Controller
      */
     public function store(UserRequest $request)
     {
-        $teamId = $request->role === 'manager' ? null : $request->team_id;
+        $actor = $request->user();
+        $teamId = $actor?->isBranchAdmin()
+            ? $actor->team_id
+            : ($request->filled('team_id') ? $request->team_id : null);
+
+        if ($actor?->isBranchAdmin() && $request->role !== 'sales') {
+            return response()->error('Admin cabang hanya dapat membuat user sales di cabangnya sendiri.', 403);
+        }
+
         $username = strtolower(trim((string) $request->username));
 
         $user = User::create([
@@ -67,6 +83,7 @@ class UserController extends Controller
             'password'    => Hash::make($request->password),
             'phone'       => $request->phone,
             'employee_id' => $request->employee_id,
+            'slpCode'     => $request->role === 'sales' ? $request->slpCode : null,
             'team_id'     => $teamId,
             'is_active'   => $request->boolean('is_active', true),
         ]);
@@ -84,7 +101,20 @@ class UserController extends Controller
      */
     public function update(UserRequest $request, User $user)
     {
-        $teamId = $request->role === 'manager' ? null : $request->team_id;
+        $actor = $request->user();
+
+        if (! $actor->canAccessUserRecord($user)) {
+            return response()->error('Anda hanya dapat mengubah user cabang sendiri.', 403);
+        }
+
+        if ($actor->isBranchAdmin() && $request->role !== 'sales') {
+            return response()->error('Admin cabang hanya dapat mengubah user sales di cabangnya sendiri.', 403);
+        }
+
+        $teamId = $actor->isBranchAdmin()
+            ? $actor->team_id
+            : ($request->filled('team_id') ? $request->team_id : null);
+
         $username = strtolower(trim((string) $request->username));
 
         $data = [
@@ -93,6 +123,7 @@ class UserController extends Controller
             'email'       => $request->email,
             'phone'       => $request->phone,
             'employee_id' => $request->employee_id,
+            'slpCode'     => $request->role === 'sales' ? $request->slpCode : null,
             'team_id'     => $teamId,
             'is_active'   => $request->boolean('is_active', $user->is_active),
         ];
@@ -119,6 +150,10 @@ class UserController extends Controller
      */
     public function toggleActive(User $user)
     {
+        if (! request()->user()->canAccessUserRecord($user)) {
+            return response()->error('Anda hanya dapat mengubah user cabang sendiri.', 403);
+        }
+
         // Prevent menonaktifkan diri sendiri
         if ($user->id === request()->user()->id) {
             return response()->error('Tidak bisa menonaktifkan akun sendiri.', 422);
@@ -142,6 +177,10 @@ class UserController extends Controller
      */
     public function destroy(User $user)
     {
+        if (! request()->user()->canAccessUserRecord($user)) {
+            return response()->error('Anda hanya dapat menghapus user cabang sendiri.', 403);
+        }
+
         if ($user->id === request()->user()->id) {
             return response()->error('Tidak bisa menghapus akun sendiri.', 422);
         }
@@ -158,8 +197,12 @@ class UserController extends Controller
      */
     public function teams()
     {
+        $viewer = request()->user();
+        $scopeTeamId = $viewer?->managedTeamId();
+
         $teams = Team::withCount(['members' => fn($q) => $q->where('is_active', true)])
             ->where('is_active', true)
+            ->when($scopeTeamId !== null, fn ($q) => $q->where('id', $scopeTeamId))
             ->orderBy('name')
             ->get();
 

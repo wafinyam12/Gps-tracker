@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { Platform, View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, AlertTriangle, User, CheckCircle } from 'lucide-react-native';
 import { reportService } from '../../api/services/reportService';
@@ -56,7 +56,7 @@ const AlertListScreen = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E40AF" />
+        <ActivityIndicator size="large" color="#0F766E" />
       </View>
     );
   }
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
     paddingBottom: 16,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
@@ -116,6 +116,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 20,
+    paddingBottom: Platform.OS === 'android' ? 64 : 20,
   },
   card: {
     backgroundColor: '#fff',
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
   },
   tapText: {
     fontSize: 12,
-    color: '#1E40AF',
+    color: '#0F766E',
     fontWeight: 'bold',
     textAlign: 'right',
     marginTop: 10,

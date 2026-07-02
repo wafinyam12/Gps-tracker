@@ -1,17 +1,18 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import authEvents from '../utils/authEvents';
 
-const DEFAULT_BASE_URL = 'http://192.168.101.29:8000/api/v1';
+const DEFAULT_BASE_URL = Platform.select({
+  android: 'http://10.0.2.2:8000/api/v1',
+  ios: 'http://localhost:8000/api/v1',
+  web: 'http://localhost:8000/api/v1',
+  default: 'http://localhost:8000/api/v1',
+});
 
-const resolveBaseUrl = () => {
-  const configured = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
-
-  if (!configured) {
-    return DEFAULT_BASE_URL;
-  }
-
-  const normalized = configured.replace(/\/$/, '');
+const normalizeApiBaseUrl = (value) => {
+  const normalized = value.trim().replace(/\/$/, '');
 
   if (normalized.endsWith('/api/v1')) {
     return normalized;
@@ -24,13 +25,48 @@ const resolveBaseUrl = () => {
   return `${normalized}/api/v1`;
 };
 
+const getExpoDevHost = () => {
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    Constants.manifest?.hostUri;
+
+  if (!hostUri) {
+    return null;
+  }
+
+  const withoutScheme = hostUri.replace(/^[a-zA-Z]+:\/\//, '');
+  const hostPort = withoutScheme.split('/')[0];
+  const host = hostPort.split(':')[0];
+
+  if (!host || host === 'localhost' || host === '127.0.0.1') {
+    return null;
+  }
+
+  return host;
+};
+
+const resolveBaseUrl = () => {
+  const configured = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+
+  if (!configured) {
+    const devHost = getExpoDevHost();
+    if (devHost) {
+      return `http://${devHost}:8000/api/v1`;
+    }
+
+    return DEFAULT_BASE_URL;
+  }
+
+  return normalizeApiBaseUrl(configured);
+};
+
 const BASE_URL = resolveBaseUrl();
+console.log('[apiClient] Base URL:', BASE_URL);
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Accept': 'application/json',
-    'Content-Type': 'application/json',
   },
 });
 
@@ -50,9 +86,12 @@ apiClient.interceptors.response.use(
   async (error) => {
     const status = error.response?.status;
     const data = error.response?.data;
-    // Only logout on 401 (unauthenticated). 403 is permission denied, not auth error.
-    if (status === 401) {
-      console.log('API client detected auth error 401 - logging out');
+    const message = String(data?.message || '').toLowerCase();
+    const isInactiveAccount = message.includes('akun tidak aktif');
+
+    // Logout on 401 (unauthenticated) and on inactive accounts so stale sessions do not linger.
+    if (status === 401 || (status === 403 && isInactiveAccount)) {
+      console.log('API client detected auth error - logging out');
       try {
         await SecureStore.deleteItemAsync('user_token');
         await SecureStore.deleteItemAsync('user_data');

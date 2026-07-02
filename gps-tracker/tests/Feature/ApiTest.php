@@ -17,6 +17,7 @@ class ApiTest extends TestCase
     use RefreshDatabase, WithFaker;
 
     protected $adminUser;
+    protected $superAdminUser;
     protected $salesUser;
     protected $team;
 
@@ -30,6 +31,7 @@ class ApiTest extends TestCase
             Role::firstOrCreate(['name' => 'manager', 'guard_name' => $guard]);
             Role::firstOrCreate(['name' => 'sales', 'guard_name' => $guard]);
             Role::firstOrCreate(['name' => 'spv', 'guard_name' => $guard]);
+            Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => $guard]);
         }
 
         $this->team = Team::create([
@@ -48,6 +50,14 @@ class ApiTest extends TestCase
             'is_active' => true,
         ]);
         $this->adminUser->assignRole('admin');
+
+        $this->superAdminUser = User::create([
+            'name' => 'Super Admin User',
+            'email' => 'superadmin@example.com',
+            'password' => bcrypt('password'),
+            'is_active' => true,
+        ]);
+        $this->superAdminUser->assignRole('superadmin');
 
         $this->salesUser = User::create([
             'name' => 'Sales User',
@@ -104,13 +114,14 @@ class ApiTest extends TestCase
     }
 
     /** @test */
-    public function it_can_create_a_team_as_admin()
+    public function it_can_create_a_team_as_superadmin()
     {
-        Sanctum::actingAs($this->adminUser);
+        Sanctum::actingAs($this->superAdminUser);
         $response = $this->postJson('/api/v1/teams', [
             'code' => 'TEST02',
             'name' => 'Another Team',
             'area' => 'Test Area 2',
+            'db_sap' => 'NEW_TEST_DB',
             'latitude' => -6.180000,
             'longitude' => 106.820000,
             'is_active' => true,
@@ -123,9 +134,18 @@ class ApiTest extends TestCase
     }
 
     /** @test */
-    public function it_can_fetch_teams_as_admin()
+    public function it_can_fetch_teams_as_superadmin()
     {
-        Sanctum::actingAs($this->adminUser);
+        $otherTeam = Team::create([
+            'code' => 'TEST02',
+            'name' => 'Test Team B',
+            'area' => 'Test Area B',
+            'db_sap' => 'TEST_DB_B',
+            'location' => new Point(latitude: -6.210000, longitude: 106.830000),
+            'is_active' => true,
+        ]);
+
+        Sanctum::actingAs($this->superAdminUser);
         $response = $this->getJson('/api/v1/teams');
         $response->assertStatus(200);
 
@@ -135,7 +155,7 @@ class ApiTest extends TestCase
             : $payload;
 
         $this->assertIsArray($teams);
-        $this->assertNotEmpty($teams);
+        $this->assertCount(2, $teams);
         $this->assertArrayHasKey('id', $teams[0]);
         $this->assertArrayHasKey('name', $teams[0]);
         $this->assertArrayHasKey('code', $teams[0]);
@@ -143,6 +163,49 @@ class ApiTest extends TestCase
         $this->assertArrayHasKey('longitude', $teams[0]);
         $this->assertArrayHasKey('location', $teams[0]);
         $this->assertArrayHasKey('has_location', $teams[0]);
+        $this->assertContains($this->team->code, collect($teams)->pluck('code')->all());
+        $this->assertContains($otherTeam->code, collect($teams)->pluck('code')->all());
+    }
+
+    /** @test */
+    public function it_gets_403_when_branch_admin_attempts_to_create_team()
+    {
+        Sanctum::actingAs($this->adminUser);
+        $response = $this->postJson('/api/v1/teams', [
+            'code' => 'TEST03',
+            'name' => 'Forbidden Team',
+            'area' => 'Test Area 3',
+            'db_sap' => 'TEST_DB_FORBIDDEN',
+            'latitude' => -6.19,
+            'longitude' => 106.81,
+            'is_active' => true,
+        ]);
+        $response->assertStatus(403);
+    }
+
+    /** @test */
+    public function it_can_update_own_team_as_branch_admin()
+    {
+        Sanctum::actingAs($this->adminUser);
+        $response = $this->putJson('/api/v1/teams/'.$this->team->id, [
+            'code' => $this->team->code,
+            'name' => 'Test Team Updated',
+            'area' => 'Updated Area',
+            'db_sap' => 'TEST_DB_UPDATED',
+            'latitude' => -6.200000,
+            'longitude' => 106.816666,
+            'is_active' => true,
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.name', 'Test Team Updated')
+            ->assertJsonPath('data.db_sap', 'TEST_DB_UPDATED');
+
+        $this->assertDatabaseHas('teams', [
+            'id' => $this->team->id,
+            'name' => 'Test Team Updated',
+            'db_sap' => 'TEST_DB_UPDATED',
+        ]);
     }
 
     /** @test */

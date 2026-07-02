@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Location from 'expo-location';
 import MapView, { Circle, Marker } from 'react-native-maps';
-import { Crosshair, RefreshCw } from 'lucide-react-native';
+import { Crosshair, RefreshCw, MapPin } from 'lucide-react-native';
 import { storeService } from '../api/services/storeService';
+import AppScreen from '../components/ui/AppScreen';
+import Surface from '../components/ui/Surface';
+import { colors, radii, shadows, spacing } from '../styles/theme';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -115,85 +118,96 @@ const MyLocationScreen = () => {
   const region = location ? toRegion(location) : DEFAULT_REGION;
 
   return (
-    <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={region}
-        showsUserLocation
-        showsMyLocationButton
-      >
-        {location && (
-          <>
-            <Marker
-              coordinate={{
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              }}
-              title="Lokasi Saya"
-              pinColor="#1E40AF"
-            />
-            {typeof location.coords.accuracy === 'number' && (
-              <Circle
-                center={{
+    <AppScreen>
+      <View style={styles.container}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={region}
+          showsUserLocation
+          showsMyLocationButton
+        >
+          {location && (
+            <>
+              <Marker
+                coordinate={{
                   latitude: location.coords.latitude,
                   longitude: location.coords.longitude,
                 }}
-                radius={location.coords.accuracy}
-                strokeColor="rgba(30, 64, 175, 0.35)"
-                fillColor="rgba(30, 64, 175, 0.12)"
+                title="Lokasi Saya"
+                pinColor={colors.primary}
               />
+              {typeof location.coords.accuracy === 'number' && (
+                <Circle
+                  center={{
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                  }}
+                  radius={location.coords.accuracy}
+                  strokeColor="rgba(30, 64, 175, 0.35)"
+                  fillColor="rgba(30, 64, 175, 0.12)"
+                />
+              )}
+            </>
+          )}
+
+          {storePoints.map((store) => (
+            <Marker
+              key={store.code || store.id}
+              coordinate={{
+                latitude: store.latitude,
+                longitude: store.longitude,
+              }}
+              title={store.name || 'Toko'}
+              description={store.branch || store.address || ''}
+              pinColor="#16A34A"
+            />
+          ))}
+        </MapView>
+
+        <View style={styles.overlay}>
+          <Surface style={styles.statusCard}>
+            <View style={styles.statusHeader}>
+              <View style={styles.badge}>
+                <MapPin size={14} color={colors.primary} />
+                <Text style={styles.badgeText}>Lokasi Saya</Text>
+              </View>
+              <Text style={styles.badgeMeta}>{storePoints.length} titik toko</Text>
+            </View>
+
+            {loading ? (
+              <View style={styles.row}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.statusText}>Mencari GPS...</Text>
+              </View>
+            ) : errorMsg ? (
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            ) : (
+              <>
+                <Text style={styles.coordinateText}>
+                  {location.coords.latitude.toFixed(6)}, {location.coords.longitude.toFixed(6)}
+                </Text>
+                <Text style={styles.statusText}>
+                  Akurasi {Math.round(location.coords.accuracy || 0)} m
+                </Text>
+                <Text style={styles.statusText}>
+                  {storePoints.length > 0 ? `${storePoints.length} toko punya koordinat lokal` : 'Belum ada koordinat toko yang tersimpan'}
+                </Text>
+              </>
             )}
-          </>
-        )}
+          </Surface>
 
-        {storePoints.map((store) => (
-          <Marker
-            key={store.code || store.id}
-            coordinate={{
-              latitude: store.latitude,
-              longitude: store.longitude,
-            }}
-            title={store.name || 'Toko'}
-            description={store.branch || store.address || ''}
-            pinColor="#16A34A"
-          />
-        ))}
-      </MapView>
-
-      <View style={styles.statusCard}>
-        <Text style={styles.statusTitle}>Lokasi Saya</Text>
-        {loading ? (
-          <View style={styles.statusRow}>
-            <ActivityIndicator size="small" color="#1E40AF" />
-            <Text style={styles.statusText}>Mencari GPS...</Text>
+          <View style={styles.controls}>
+            <TouchableOpacity style={styles.controlBtn} onPress={() => centerToLocation()} activeOpacity={0.9}>
+              <Crosshair size={20} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.controlBtn} onPress={refreshLocation} activeOpacity={0.9}>
+              <RefreshCw size={20} color={colors.primary} />
+            </TouchableOpacity>
           </View>
-        ) : errorMsg ? (
-          <Text style={styles.errorText}>{errorMsg}</Text>
-        ) : (
-          <>
-            <Text style={styles.coordinateText}>
-              {location.coords.latitude.toFixed(6)}, {location.coords.longitude.toFixed(6)}
-            </Text>
-            <Text style={styles.statusText}>
-              Akurasi {Math.round(location.coords.accuracy || 0)} m
-            </Text>
-            <Text style={styles.statusText}>
-              {storePoints.length > 0 ? `${storePoints.length} toko punya koordinat lokal` : 'Belum ada koordinat toko yang tersimpan'}
-            </Text>
-          </>
-        )}
+        </View>
       </View>
-
-      <View style={styles.controls}>
-        <TouchableOpacity style={styles.controlBtn} onPress={() => centerToLocation()}>
-          <Crosshair size={22} color="#1E40AF" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlBtn} onPress={refreshLocation}>
-          <RefreshCw size={22} color="#1E40AF" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </AppScreen>
   );
 };
 
@@ -204,64 +218,77 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  statusCard: {
+  overlay: {
     position: 'absolute',
     left: 16,
     right: 16,
     top: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
+    gap: 12,
   },
-  statusTitle: {
-    color: '#1E293B',
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 6,
+  statusCard: {
+    gap: 10,
   },
-  statusRow: {
+  statusHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radii.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  badgeText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  badgeMeta: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   coordinateText: {
-    color: '#1E40AF',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.text,
+    fontWeight: '900',
+    fontFamily: 'monospace',
   },
   statusText: {
-    color: '#64748B',
     fontSize: 12,
-    marginTop: 2,
+    color: colors.textMuted,
+    lineHeight: 18,
   },
   errorText: {
-    color: '#EF4444',
-    fontSize: 12,
+    fontSize: 13,
+    color: colors.danger,
+    fontWeight: '700',
   },
   controls: {
-    position: 'absolute',
-    right: 16,
-    bottom: 32,
-    gap: 12,
+    flexDirection: 'row',
+    gap: 10,
   },
   controlBtn: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: '#fff',
+    borderRadius: radii.full,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
   },
 });
 

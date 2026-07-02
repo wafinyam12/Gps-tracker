@@ -2,8 +2,9 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
-import { getRoleName } from './src/utils/roles';
+import { canAccessMonitoring } from './src/utils/roles';
 import './src/utils/backgroundTracker';
+import { colors } from './src/styles/theme';
 
 // Screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -33,6 +34,24 @@ import MySummaryScreen from './src/screens/MySummaryScreen';
 
 const Stack = createStackNavigator();
 
+const sharedScreenOptions = {
+  headerBackTitleVisible: false,
+  headerTitleAlign: 'center',
+  headerTintColor: colors.text,
+  headerTitleStyle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  headerStyle: {
+    backgroundColor: colors.surface,
+    shadowColor: 'transparent',
+    elevation: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+};
+
 
 const AuthStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -41,7 +60,7 @@ const AuthStack = () => (
 );
 
 const AppStack = () => (
-  <Stack.Navigator>
+  <Stack.Navigator screenOptions={sharedScreenOptions}>
     <Stack.Screen
       name="Home"
       component={HomeScreen}
@@ -50,7 +69,7 @@ const AppStack = () => (
     <Stack.Screen
       name="StartVisit"
       component={StartVisitScreen}
-      options={{ title: 'Tambah Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="PhotoUpload"
@@ -60,37 +79,37 @@ const AppStack = () => (
     <Stack.Screen
       name="VisitForm"
       component={VisitFormScreen}
-      options={{ title: 'Data Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="VisitPhotoGallery"
       component={VisitPhotoGalleryScreen}
-      options={{ title: 'Galeri Foto Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="LiveMap"
       component={LiveMapScreen}
-      options={{ title: 'Live Monitoring' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="SalesDetail"
       component={SalesDetailScreen}
-      options={{ title: 'Detail Sales' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="TeamSummary"
       component={TeamSummaryScreen}
-      options={{ title: 'Ringkasan Tim' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="Alerts"
       component={AlertListScreen}
-      options={{ title: 'Anomali Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="MySummary"
       component={MySummaryScreen}
-      options={{ title: 'Ringkasan Saya' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="MyLocation"
@@ -100,13 +119,13 @@ const AppStack = () => (
     <Stack.Screen
       name="Profile"
       component={ProfileScreen}
-      options={{ title: 'Profil' }}
+      options={{ headerShown: false }}
     />
   </Stack.Navigator>
 );
 
 const AdminStack = () => (
-  <Stack.Navigator>
+  <Stack.Navigator screenOptions={sharedScreenOptions}>
     <Stack.Screen
       name="AdminDashboard"
       component={AdminDashboardScreen}
@@ -115,7 +134,7 @@ const AdminStack = () => (
     <Stack.Screen
       name="UserList"
       component={UserListScreen}
-      options={{ title: 'Manajemen User' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="UserForm"
@@ -125,7 +144,7 @@ const AdminStack = () => (
     <Stack.Screen
       name="TeamList"
       component={TeamListScreen}
-      options={{ title: 'Manajemen Team' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="TeamForm"
@@ -135,27 +154,27 @@ const AdminStack = () => (
     <Stack.Screen
       name="StoreList"
       component={StoreListScreen}
-      options={{ title: 'Manajemen Toko' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="LiveMap"
       component={LiveMapScreen}
-      options={{ title: 'Live Monitoring' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="SalesDetail"
       component={SalesDetailScreen}
-      options={{ title: 'Detail Sales' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="TeamSummary"
       component={TeamSummaryScreen}
-      options={{ title: 'Ringkasan Tim' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="Alerts"
       component={AlertListScreen}
-      options={{ title: 'Anomali Kunjungan' }}
+      options={{ headerShown: false }}
     />
     {/* Admin also needs access to monitoring features */}
     <Stack.Screen
@@ -166,7 +185,7 @@ const AdminStack = () => (
     <Stack.Screen
       name="StartVisit"
       component={StartVisitScreen}
-      options={{ title: 'Tambah Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="PhotoUpload"
@@ -176,17 +195,17 @@ const AdminStack = () => (
     <Stack.Screen
       name="VisitForm"
       component={VisitFormScreen}
-      options={{ title: 'Data Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="VisitPhotoGallery"
       component={VisitPhotoGalleryScreen}
-      options={{ title: 'Galeri Foto Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="MySummary"
       component={MySummaryScreen}
-      options={{ title: 'Ringkasan Saya' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="MyLocation"
@@ -196,7 +215,7 @@ const AdminStack = () => (
     <Stack.Screen
       name="Profile"
       component={ProfileScreen}
-      options={{ title: 'Profil' }}
+      options={{ headerShown: false }}
     />
   </Stack.Navigator>
 );
@@ -208,9 +227,7 @@ const RootNavigator = () => {
     return <LoadingScreen />;
   }
 
-  // Cek role untuk menentukan stack yang ditampilkan
-  const roleName = getRoleName(user);
-  const isAdminOrSpv = ['admin', 'spv'].includes(roleName);
+  const isAdminOrSpv = canAccessMonitoring(user);
 
   return (
     <NavigationContainer>

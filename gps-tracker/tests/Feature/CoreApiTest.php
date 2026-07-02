@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Storage;
@@ -29,6 +30,7 @@ class CoreApiTest extends TestCase
             Role::firstOrCreate(['name' => 'sales', 'guard_name' => $guard]);
             Role::firstOrCreate(['name' => 'spv', 'guard_name' => $guard]);
             Role::firstOrCreate(['name' => 'admin', 'guard_name' => $guard]);
+            Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => $guard]);
         }
     }
 
@@ -94,6 +96,86 @@ class CoreApiTest extends TestCase
             ->assertJsonPath('data.user.email', 'sales@example.com');
     }
 
+    public function test_authenticated_user_can_update_own_profile(): void
+    {
+        $user = User::factory()->create([
+            'username' => 'profile-user',
+            'email' => 'profile@example.com',
+            'phone' => '081200000001',
+            'is_active' => true,
+        ]);
+        $user->assignRole('sales');
+
+        Sanctum::actingAs($user);
+
+        $response = $this->putJson('/api/v1/auth/profile', [
+            'name' => 'Profile User Updated',
+            'username' => 'profile-updated',
+            'email' => 'profile-updated@example.com',
+            'phone' => '+6281299990000',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.user.name', 'Profile User Updated')
+            ->assertJsonPath('data.user.username', 'profile-updated')
+            ->assertJsonPath('data.user.email', 'profile-updated@example.com')
+            ->assertJsonPath('data.user.phone', '+6281299990000');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'username' => 'profile-updated',
+            'email' => 'profile-updated@example.com',
+        ]);
+    }
+
+    public function test_authenticated_user_can_change_own_password(): void
+    {
+        $user = User::factory()->create([
+            'username' => 'password-user',
+            'email' => 'password@example.com',
+            'password' => bcrypt('old-password'),
+            'is_active' => true,
+        ]);
+        $user->assignRole('sales');
+
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'old-password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ]);
+
+        $response->assertStatus(200);
+
+        $this->assertTrue(Hash::check('new-password', $user->fresh()->password));
+    }
+
+    public function test_authenticated_user_can_update_profile_photo(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create([
+            'username' => 'photo-user',
+            'email' => 'photo@example.com',
+            'is_active' => true,
+        ]);
+        $user->assignRole('sales');
+
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/auth/profile/photo', [
+            'photo' => UploadedFile::fake()->image('profile.jpg', 480, 480),
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.user.id', $user->id);
+
+        $photoPath = $user->fresh()->photo;
+        $this->assertNotNull($photoPath);
+        Storage::disk('public')->assertExists($photoPath);
+    }
+
     public function test_sales_can_see_dummy_available_stores(): void
     {
         $user = User::factory()->create(['is_active' => true]);
@@ -116,9 +198,18 @@ class CoreApiTest extends TestCase
 
     public function test_sales_with_sap_credentials_can_see_sap_available_stores(): void
     {
+        $branch = Team::create([
+            'code' => 'KLS-01',
+            'name' => 'Cabang Kalsel',
+            'area' => 'Kalimantan Selatan',
+            'db_sap' => 'SIMULASI_UDMW',
+            'location' => new Point(latitude: -3.320000, longitude: 114.590000),
+            'is_active' => true,
+        ]);
+
         $user = User::factory()->create([
             'is_active' => true,
-            'db_sap' => 'SIMULASI_UDMW',
+            'team_id' => $branch->id,
             'slpCode' => '48',
         ]);
         $user->assignRole('sales');
@@ -131,6 +222,8 @@ class CoreApiTest extends TestCase
                         'Customer Code' => 'A00000001',
                         'Customer Name' => 'SETIAWAN FITRI WANGI',
                         'Customer Address' => 'JL. YOS SUDARSO KM.05 KALIPURO, KALIPURO',
+                        'PIC Name' => 'Budi Santoso',
+                        'Cellular' => '081234567890',
                         'Current Balance' => '2678551351.090000',
                         'Balance Credit Limit' => '-2678551351.090000',
                         'Invoices' => [],
@@ -156,7 +249,73 @@ class CoreApiTest extends TestCase
         $this->assertSame('A00000001', $store['code'] ?? null);
         $this->assertSame('SETIAWAN FITRI WANGI', $store['name'] ?? null);
         $this->assertSame('JL. YOS SUDARSO KM.05 KALIPURO, KALIPURO', $store['address'] ?? null);
+        $this->assertSame('Budi Santoso', $store['pic_name'] ?? null);
+        $this->assertSame('+6281234567890', $store['pic_phone'] ?? null);
         $this->assertSame('sap_outstanding_receivable', $store['master_source'] ?? null);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_sales_can_paginate_sap_available_stores(): void
+    {
+        $branch = Team::create([
+            'code' => 'KLS-01',
+            'name' => 'Cabang Kalsel',
+            'area' => 'Kalimantan Selatan',
+            'db_sap' => 'SIMULASI_UDMW',
+            'location' => new Point(latitude: -3.320000, longitude: 114.590000),
+            'is_active' => true,
+        ]);
+
+        $user = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $branch->id,
+            'slpCode' => '48',
+        ]);
+        $user->assignRole('sales');
+        $token = $user->createToken('test')->plainTextToken;
+
+        Http::fake([
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SIMULASI_UDMW/48' => Http::response(
+                $this->sapOutstandingResponse([
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'A00000001',
+                        'Customer Name' => 'Alpha Store',
+                        'Customer Address' => 'Jl. Alpha No. 1',
+                        'Invoices' => [],
+                    ]),
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'A00000002',
+                        'Customer Name' => 'Beta Store',
+                        'Customer Address' => 'Jl. Beta No. 2',
+                        'Invoices' => [],
+                    ]),
+                ]),
+                200
+            ),
+        ]);
+
+        $pageOne = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/stores/available?page=1&per_page=1');
+
+        $pageOne->assertStatus(200)
+            ->assertJsonPath('data.meta.current_page', 1)
+            ->assertJsonPath('data.meta.per_page', 1)
+            ->assertJsonPath('data.meta.last_page', 2)
+            ->assertJsonPath('data.meta.has_more', true)
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.external_bp_code', 'A00000001');
+
+        $pageTwo = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/stores/available?page=2&per_page=1');
+
+        $pageTwo->assertStatus(200)
+            ->assertJsonPath('data.meta.current_page', 2)
+            ->assertJsonPath('data.meta.per_page', 1)
+            ->assertJsonPath('data.meta.last_page', 2)
+            ->assertJsonPath('data.meta.has_more', false)
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.external_bp_code', 'A00000002');
 
         Http::assertSentCount(1);
     }
@@ -188,6 +347,7 @@ class CoreApiTest extends TestCase
             'code' => 'SPV-01',
             'name' => 'Cabang SPV',
             'area' => 'Jakarta',
+            'db_sap' => 'SIMULASI_UDMW',
             'location' => new Point(latitude: -6.200000, longitude: 106.816666),
             'is_active' => true,
         ]);
@@ -224,15 +384,33 @@ class CoreApiTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_bulk_set_daily_targets(): void
+    public function test_branch_admin_can_bulk_set_daily_targets(): void
     {
-        $admin = User::factory()->create(['is_active' => true]);
+        $branch = Team::create([
+            'code' => 'BULK-01',
+            'name' => 'Cabang Bulk',
+            'area' => 'Jakarta',
+            'db_sap' => 'SIMULASI_UDMW',
+            'location' => new Point(latitude: -6.200000, longitude: 106.816666),
+            'is_active' => true,
+        ]);
+
+        $admin = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $branch->id,
+        ]);
         $admin->assignRole('admin');
         $token = $admin->createToken('test-admin')->plainTextToken;
 
-        $salesA = User::factory()->create(['is_active' => true]);
+        $salesA = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $branch->id,
+        ]);
         $salesA->assignRole('sales');
-        $salesB = User::factory()->create(['is_active' => true]);
+        $salesB = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $branch->id,
+        ]);
         $salesB->assignRole('sales');
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
@@ -257,6 +435,67 @@ class CoreApiTest extends TestCase
             'target_date' => '2026-06-16',
             'target_visits' => 6,
             'set_by' => $admin->id,
+        ]);
+    }
+
+    public function test_superadmin_can_bulk_set_daily_targets_across_branches(): void
+    {
+        $branchA = Team::create([
+            'code' => 'SUPER-01',
+            'name' => 'Cabang Super A',
+            'area' => 'Jakarta',
+            'db_sap' => 'SIMULASI_UDMW_A',
+            'location' => new Point(latitude: -6.200000, longitude: 106.816666),
+            'is_active' => true,
+        ]);
+
+        $branchB = Team::create([
+            'code' => 'SUPER-02',
+            'name' => 'Cabang Super B',
+            'area' => 'Bandung',
+            'db_sap' => 'SIMULASI_UDMW_B',
+            'location' => new Point(latitude: -6.914744, longitude: 107.609810),
+            'is_active' => true,
+        ]);
+
+        $superadmin = User::factory()->create(['is_active' => true]);
+        $superadmin->assignRole('superadmin');
+        $token = $superadmin->createToken('test-superadmin')->plainTextToken;
+
+        $salesA = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $branchA->id,
+        ]);
+        $salesA->assignRole('sales');
+
+        $salesB = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $branchB->id,
+        ]);
+        $salesB->assignRole('sales');
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/target/bulk-set', [
+                'target_date' => '2026-06-16',
+                'target_visits' => 8,
+                'user_ids' => [$salesA->id, $salesB->id],
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.targets.0.user_id', $salesA->id)
+            ->assertJsonPath('data.targets.1.user_id', $salesB->id);
+
+        $this->assertDatabaseHas('daily_targets', [
+            'user_id' => $salesA->id,
+            'target_date' => '2026-06-16',
+            'target_visits' => 8,
+            'set_by' => $superadmin->id,
+        ]);
+        $this->assertDatabaseHas('daily_targets', [
+            'user_id' => $salesB->id,
+            'target_date' => '2026-06-16',
+            'target_visits' => 8,
+            'set_by' => $superadmin->id,
         ]);
     }
 
@@ -303,9 +542,18 @@ class CoreApiTest extends TestCase
     {
         Carbon::setTestNow(Carbon::create(2026, 6, 20, 9, 0, 0, 'Asia/Jakarta'));
 
+        $branch = Team::create([
+            'code' => 'KLS-01',
+            'name' => 'Cabang Kalsel',
+            'area' => 'Kalimantan Selatan',
+            'db_sap' => 'SIMULASI_UDMW',
+            'location' => new Point(latitude: -3.320000, longitude: 114.590000),
+            'is_active' => true,
+        ]);
+
         $user = User::factory()->create([
             'is_active' => true,
-            'db_sap' => 'SIMULASI_UDMW',
+            'team_id' => $branch->id,
             'slpCode' => '48',
         ]);
         $user->assignRole('sales');
@@ -318,6 +566,8 @@ class CoreApiTest extends TestCase
                         'Customer Code' => 'A00000001',
                         'Customer Name' => 'SETIAWAN FITRI WANGI',
                         'Customer Address' => 'JL. YOS SUDARSO KM.05 KALIPURO, KALIPURO',
+                        'PIC Name' => 'Budi Santoso',
+                        'Cellular' => '081234567890',
                         'Current Balance' => '2678551351.090000',
                         'Balance Credit Limit' => '-2678551351.090000',
                         'Invoices' => [],
@@ -345,12 +595,16 @@ class CoreApiTest extends TestCase
             ->assertJsonPath('data.store.external_bp_code', 'A00000001')
             ->assertJsonPath('data.store.name', 'SETIAWAN FITRI WANGI')
             ->assertJsonPath('data.store.address', 'JL. YOS SUDARSO KM.05 KALIPURO, KALIPURO')
+            ->assertJsonPath('data.store.pic_name', 'Budi Santoso')
+            ->assertJsonPath('data.store.pic_phone', '+6281234567890')
             ->assertJsonPath('data.counted_as_target', true);
 
         $store = Store::where('external_bp_code', 'A00000001')->first();
         $this->assertNotNull($store);
         $this->assertSame('SETIAWAN FITRI WANGI', $store->name);
         $this->assertSame('JL. YOS SUDARSO KM.05 KALIPURO, KALIPURO', $store->address);
+        $this->assertSame('Budi Santoso', $store->pic_name);
+        $this->assertSame('+6281234567890', $store->pic_phone);
         $this->assertSame('sap_outstanding_receivable', $store->master_source);
         $this->assertTrue($store->hasLocation());
 
@@ -443,7 +697,11 @@ class CoreApiTest extends TestCase
                 'visit_result' => 'order_taken',
                 'notes' => 'Checkout test',
                 'form_data' => [
+                    'activity_type' => 'kirim_penawaran',
+                    'customer_response' => 'Minta follow up minggu depan',
                     'notes' => 'Checkout test',
+                    'pic_name' => 'Budi Santoso',
+                    'pic_phone' => '+6281234567890',
                 ],
             ]);
 
@@ -452,7 +710,17 @@ class CoreApiTest extends TestCase
                 'success' => true,
             ])
             ->assertJsonPath('data.visit_log_id', $visitLogId)
-            ->assertJsonPath('data.duration_minutes', 17);
+            ->assertJsonPath('data.duration_minutes', 17)
+            ->assertJsonPath('data.visit.form_data.activity_type', 'kirim_penawaran')
+            ->assertJsonPath('data.visit.form_data.customer_response', 'Minta follow up minggu depan')
+            ->assertJsonPath('data.visit.form_data.pic_name', 'Budi Santoso')
+            ->assertJsonPath('data.visit.form_data.pic_phone', '+6281234567890');
+
+        $visitLog = VisitLog::findOrFail($visitLogId);
+        $this->assertSame('kirim_penawaran', $visitLog->form_data['activity_type'] ?? null);
+        $this->assertSame('Minta follow up minggu depan', $visitLog->form_data['customer_response'] ?? null);
+        $this->assertSame('Budi Santoso', $visitLog->form_data['pic_name'] ?? null);
+        $this->assertSame('+6281234567890', $visitLog->form_data['pic_phone'] ?? null);
 
         $this->assertDatabaseHas('visit_logs', [
             'id' => $visitLogId,
@@ -516,9 +784,18 @@ class CoreApiTest extends TestCase
     {
         Carbon::setTestNow(Carbon::create(2026, 6, 20, 9, 0, 0, 'Asia/Jakarta'));
 
+        $branch = Team::create([
+            'code' => 'KLS-01',
+            'name' => 'Cabang Kalsel',
+            'area' => 'Kalimantan Selatan',
+            'db_sap' => 'SIMULASI_UDMW',
+            'location' => new Point(latitude: -3.320000, longitude: 114.590000),
+            'is_active' => true,
+        ]);
+
         $user = User::factory()->create([
             'is_active' => true,
-            'db_sap' => 'SIMULASI_UDMW',
+            'team_id' => $branch->id,
             'slpCode' => '48',
         ]);
         $user->assignRole('sales');
@@ -530,6 +807,8 @@ class CoreApiTest extends TestCase
             'name' => 'Toko SAP Utama',
             'address' => 'Jl. Contoh No. 1, Jakarta',
             'branch' => 'Jakarta Pusat',
+            'pic_name' => 'Siti Rahma',
+            'pic_phone' => '081299988877',
             'location' => new \MatanYadaev\EloquentSpatial\Objects\Point(
                 latitude: -6.20010,
                 longitude: 106.81660,
@@ -561,6 +840,8 @@ class CoreApiTest extends TestCase
                         'Customer Code' => 'A00000001',
                         'Customer Name' => 'SETIAWAN FITRI WANGI',
                         'Customer Address' => 'JL. YOS SUDARSO KM.05 KALIPURO, KALIPURO',
+                        'PIC Name' => 'Budi Santoso',
+                        'Cellular' => '081234567890',
                         'Current Balance' => '2678551351.090000',
                         'Payment Terms' => '30D',
                         'Invoices' => [
@@ -577,9 +858,13 @@ class CoreApiTest extends TestCase
             ->getJson("/api/v1/visits/{$visitLog->id}");
 
         $response->assertStatus(200)
+            ->assertJsonPath('data.visit.store.pic_name', 'Siti Rahma')
+            ->assertJsonPath('data.visit.store.pic_phone', '081299988877')
             ->assertJsonPath('data.visit.store.sap_outstanding_receivable.status', 'success')
             ->assertJsonPath('data.visit.store.sap_outstanding_receivable.card_code', 'A00000001')
             ->assertJsonPath('data.visit.store.sap_outstanding_receivable.card_name', 'SETIAWAN FITRI WANGI')
+            ->assertJsonPath('data.visit.store.sap_outstanding_receivable.pic_name', 'Budi Santoso')
+            ->assertJsonPath('data.visit.store.sap_outstanding_receivable.pic_phone', '+6281234567890')
             ->assertJsonPath('data.visit.store.sap_outstanding_receivable.payment_terms', '30D')
             ->assertJsonPath('data.visit.store.sap_outstanding_receivable.current_balance', 2678551351.09)
             ->assertJsonPath('data.visit.store.sap_outstanding_receivable.invoice_count', 2)
@@ -669,6 +954,7 @@ class CoreApiTest extends TestCase
             'code' => 'SPV-IN',
             'name' => 'Cabang Sendiri',
             'area' => 'Jakarta',
+            'db_sap' => 'SIMULASI_UDMW',
             'location' => new Point(latitude: -6.200000, longitude: 106.816666),
             'is_active' => true,
         ]);
@@ -677,6 +963,7 @@ class CoreApiTest extends TestCase
             'code' => 'SPV-OUT',
             'name' => 'Cabang Lain',
             'area' => 'Bandung',
+            'db_sap' => 'SIMULASI_UDMW',
             'location' => new Point(latitude: -6.914744, longitude: 107.609810),
             'is_active' => true,
         ]);

@@ -11,28 +11,37 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        $team = Team::create([
-            'name' => 'Tim Surabaya',
+        $branch = Team::create([
+            'name' => 'Cabang Surabaya',
             'code' => 'SBY-01',
             'area' => 'Surabaya',
+            'db_sap' => 'SIMULASI_UDMW',
         ]);
 
-        $admin = User::create([
-            'name'     => 'Admin GPS',
-            'username' => 'admin-gps',
-            'email'    => 'admin@gps.test',
+        $superadmin = User::create([
+            'name'     => 'Super Admin GPS',
+            'username' => 'superadmin-gps',
+            'email'    => 'superadmin@gps.test',
             'password' => Hash::make('password'),
-            'team_id'  => $team->id,
+        ]);
+        $superadmin->assignRole('superadmin');
+
+        $admin = User::create([
+            'name'     => 'Admin Cabang Surabaya',
+            'username' => 'admin-cabang-surabaya',
+            'email'    => 'admin-cabang@gps.test',
+            'password' => Hash::make('password'),
+            'team_id'  => $branch->id,
         ]);
         $admin->assignRole('admin');
 
         $spv = User::create([
-            'name'     => 'SPV Surabaya',
+            'name'     => 'Area Manager Surabaya',
             'username' => 'spv-surabaya',
             'email'    => 'spv@gps.test',
             'password' => Hash::make('password'),
             'phone'    => '081234567890',
-            'team_id'  => $team->id,
+            'team_id'  => $branch->id,
         ]);
         $spv->assignRole('spv');
 
@@ -43,9 +52,8 @@ class UserSeeder extends Seeder
             'password'    => Hash::make('password'),
             'phone'       => '081234567891',
             'employee_id' => 'EMP-001',
-            'team_id'     => $team->id,
+            'team_id'     => $branch->id,
             'slpCode'     => '48',
-            'db_sap'      => 'SIMULASI_UDMW',
         ]);
         $sales->assignRole('sales');
     }

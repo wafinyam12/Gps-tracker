@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
+import { Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
 import { storeService } from '../../api/services/storeService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ChevronLeft, Save, Trash2, MapPin } from 'lucide-react-native';
@@ -137,7 +137,7 @@ const StoreFormScreen = () => {
   if (initialLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E40AF" />
+        <ActivityIndicator size="large" color="#0F766E" />
       </View>
     );
   }
@@ -151,9 +151,9 @@ const StoreFormScreen = () => {
         <Text style={styles.headerTitle}>{isEdit ? 'Edit Toko' : 'Toko Baru'}</Text>
         <TouchableOpacity onPress={handleSave} disabled={loading}>
           {loading ? (
-            <ActivityIndicator size="small" color="#1E40AF" />
+            <ActivityIndicator size="small" color="#0F766E" />
           ) : (
-            <Save size={24} color="#1E40AF" />
+            <Save size={24} color="#0F766E" />
           )}
         </TouchableOpacity>
       </View>
@@ -175,8 +175,8 @@ const StoreFormScreen = () => {
             <Switch
               value={form.is_priority}
               onValueChange={(val) => setForm({ ...form, is_priority: val })}
-              trackColor={{ false: '#CBD5E1', true: '#93C5FD' }}
-              thumbColor={form.is_priority ? '#1E40AF' : '#F1F5F9'}
+              trackColor={{ false: '#CBD5E1', true: '#9CCFC7' }}
+              thumbColor={form.is_priority ? '#0F766E' : '#F1F5F9'}
             />
           </View>
         </View>
@@ -228,7 +228,7 @@ const StoreFormScreen = () => {
           <View style={styles.locationHeader}>
             <Text style={styles.label}>Koordinat GPS *</Text>
             <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>
-              <MapPin size={14} color="#1E40AF" />
+              <MapPin size={14} color="#0F766E" />
               <Text style={styles.locationBtnText}>Gunakan Lokasi Saat Ini</Text>
             </TouchableOpacity>
           </View>
@@ -296,8 +296,8 @@ const StoreFormScreen = () => {
           <Switch
             value={form.status === 'active'}
             onValueChange={(val) => setForm({ ...form, status: val ? 'active' : 'inactive' })}
-            trackColor={{ false: '#CBD5E1', true: '#93C5FD' }}
-            thumbColor={form.status === 'active' ? '#1E40AF' : '#F1F5F9'}
+            trackColor={{ false: '#CBD5E1', true: '#9CCFC7' }}
+            thumbColor={form.status === 'active' ? '#0F766E' : '#F1F5F9'}
           />
         </View>
 
@@ -308,7 +308,7 @@ const StoreFormScreen = () => {
           </TouchableOpacity>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: Platform.OS === 'android' ? 64 : 40 }} />
       </ScrollView>
     </View>
   );
@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#D9F3EE',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
   locationBtnText: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#1E40AF',
+    color: '#0F766E',
   },
   divider: {
     height: 1,

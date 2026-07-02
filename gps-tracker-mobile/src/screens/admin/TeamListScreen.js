@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
-import { userService } from '../../api/services/userService';
-import { Plus, Search, ChevronRight, UsersRound, MapPin } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { ChevronRight, MapPin, Plus, UsersRound } from 'lucide-react-native';
+import { useAuth } from '../../context/AuthContext';
+import { userService } from '../../api/services/userService';
+import AppScreen from '../../components/ui/AppScreen';
+import PageHeader from '../../components/ui/PageHeader';
+import SearchBar from '../../components/ui/SearchBar';
+import Surface from '../../components/ui/Surface';
+import EmptyState from '../../components/ui/EmptyState';
+import { colors, radii, shadows, spacing } from '../../styles/theme';
+import { getRoleName } from '../../utils/roles';
 
 const TeamListScreen = () => {
   const [teams, setTeams] = useState([]);
@@ -10,10 +18,9 @@ const TeamListScreen = () => {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const navigation = useNavigation();
-
-  useEffect(() => {
-    fetchTeams();
-  }, []);
+  const { user } = useAuth();
+  const currentRole = getRoleName(user);
+  const canCreateTeam = currentRole === 'superadmin';
 
   const fetchTeams = async () => {
     setLoading(true);
@@ -22,12 +29,18 @@ const TeamListScreen = () => {
       const payload = response.data?.data;
       setTeams(Array.isArray(payload) ? payload : payload?.data || []);
     } catch (error) {
-      Alert.alert('Error', 'Gagal mengambil data team');
+      Alert.alert('Error', 'Gagal mengambil data cabang');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    fetchTeams();
+  }, []);
+
+  const teamCount = useMemo(() => teams.length, [teams]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -38,78 +51,100 @@ const TeamListScreen = () => {
     <TouchableOpacity
       style={styles.teamCard}
       onPress={() => navigation.navigate('TeamForm', { teamId: item.id })}
+      activeOpacity={0.9}
     >
       <View style={styles.iconContainer}>
-        <UsersRound size={24} color="#1E40AF" />
+        <UsersRound size={22} color={colors.primary} />
       </View>
       <View style={styles.teamInfo}>
         <Text style={styles.teamName}>{item.name}</Text>
         <View style={styles.infoRow}>
           <Text style={styles.teamCode}>{item.code}</Text>
-          <Text style={styles.dot}> • </Text>
-          <MapPin size={12} color="#94A3B8" />
+          <MapPin size={12} color={colors.textSoft} style={styles.dotIcon} />
           <Text style={styles.areaText}>{item.area || 'Semua Area'}</Text>
         </View>
-        <Text style={styles.memberCount}>{item.members_count || 0} Anggota</Text>
+        <Text style={styles.dbSapText}>DB SAP: {item.db_sap || '-'}</Text>
+        <Text style={styles.memberCount}>{item.members_count || 0} anggota</Text>
+        <Text style={styles.locationText}>
+          {item.has_location
+            ? `Lokasi tersimpan${item.latitude != null && item.longitude != null ? ` (${Number(item.latitude).toFixed(5)}, ${Number(item.longitude).toFixed(5)})` : ''}`
+            : 'Belum ada lokasi cabang'}
+        </Text>
       </View>
       <View style={styles.teamAction}>
-        <View style={[styles.statusBadge, { backgroundColor: item.is_active ? '#D1FAE5' : '#FEE2E2' }]}>
-          <Text style={[styles.statusText, { color: item.is_active ? '#065F46' : '#991B1B' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: item.is_active ? colors.successSoft : colors.dangerSoft }]}>
+          <Text style={[styles.statusText, { color: item.is_active ? colors.success : colors.danger }]}>
             {item.is_active ? 'AKTIF' : 'NONAKTIF'}
           </Text>
         </View>
-        <ChevronRight size={18} color="#94A3B8" />
+        <ChevronRight size={18} color={colors.textSoft} />
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchSection}>
-        <View style={styles.searchBar}>
-          <Search size={20} color="#94A3B8" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Cari nama atau kode team..."
+    <AppScreen>
+      <PageHeader
+        title="Manajemen Cabang"
+        subtitle={canCreateTeam ? 'Kelola cabang dan lokasi operasional.' : 'Kelola cabang operasional Anda.'}
+        onBack={() => navigation.goBack()}
+        right={canCreateTeam ? (
+          <TouchableOpacity style={styles.fabMini} onPress={() => navigation.navigate('TeamForm')} activeOpacity={0.85}>
+            <Plus size={18} color="#fff" />
+          </TouchableOpacity>
+        ) : null}
+      />
+
+      <View style={styles.container}>
+        <View style={styles.searchSection}>
+          <SearchBar
             value={search}
             onChangeText={setSearch}
+            placeholder="Cari nama atau kode cabang..."
             onSubmitEditing={fetchTeams}
           />
         </View>
+
+        {loading && !refreshing ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={teams}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderTeamItem}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
+            contentContainerStyle={styles.list}
+            ListHeaderComponent={(
+              <Surface style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Total cabang</Text>
+                <Text style={styles.summaryValue}>{teamCount}</Text>
+              </Surface>
+            )}
+            ListEmptyComponent={(
+              <EmptyState
+                title="Tidak ada cabang yang ditemukan"
+                description={canCreateTeam
+                  ? 'Coba ubah kata kunci pencarian atau tambahkan cabang baru.'
+                  : 'Coba ubah kata kunci pencarian atau hubungi superadmin jika cabang belum muncul.'}
+                icon={<UsersRound size={22} color={colors.primary} />}
+                actionLabel={canCreateTeam ? 'Tambah Cabang' : undefined}
+                onAction={canCreateTeam ? () => navigation.navigate('TeamForm') : undefined}
+              />
+            )}
+          />
+        )}
+
       </View>
-
-      {loading && !refreshing ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#1E40AF" />
-        </View>
-      ) : (
-        <FlatList
-          data={teams}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderTeamItem}
-          onRefresh={onRefresh}
-          refreshing={refreshing}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>Tidak ada team yang ditemukan.</Text>
-          }
-        />
-      )}
-
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate('TeamForm')}
-      >
-        <Plus size={24} color="#fff" />
-      </TouchableOpacity>
-    </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
   },
   center: {
     flex: 1,
@@ -117,114 +152,113 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   searchSection: {
-    padding: 16,
-    backgroundColor: '#fff',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   list: {
-    padding: 16,
-    paddingBottom: 100,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 110,
+  },
+  summaryCard: {
+    marginBottom: spacing.md,
+    alignItems: 'flex-start',
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  summaryValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 4,
   },
   teamCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
   },
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: spacing.md,
   },
   teamInfo: {
     flex: 1,
   },
   teamName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: '900',
+    color: colors.text,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginTop: 3,
+    gap: 6,
+    flexWrap: 'wrap',
   },
   teamCode: {
     fontSize: 12,
-    color: '#1E40AF',
-    fontWeight: 'bold',
+    color: colors.primary,
+    fontWeight: '900',
   },
-  dot: {
-    fontSize: 12,
-    color: '#94a3b8',
+  dotIcon: {
+    marginTop: 1,
   },
   areaText: {
     fontSize: 12,
-    color: '#64748b',
-    marginLeft: 4,
+    color: colors.textMuted,
+  },
+  dbSapText: {
+    fontSize: 11,
+    color: colors.textSoft,
+    marginTop: 4,
   },
   memberCount: {
     fontSize: 11,
-    color: '#94a3b8',
-    marginTop: 2,
+    color: colors.textSoft,
+    marginTop: 4,
+  },
+  locationText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
   },
   teamAction: {
     alignItems: 'flex-end',
     gap: 8,
   },
   statusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.full,
   },
   statusText: {
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    backgroundColor: '#1E40AF',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
+  fabMini: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.full,
+    backgroundColor: colors.primary,
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#1E40AF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 60,
-    color: '#94a3b8',
-    fontSize: 14,
+    justifyContent: 'center',
   },
 });
 

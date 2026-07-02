@@ -1,19 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ArrowRight, Clock, MapPin, Navigation, PlusCircle, User } from 'lucide-react-native';
+import {
+  ArrowRight,
+  Clock,
+  MapPin,
+  Navigation,
+  PlusCircle,
+  User,
+  AlertTriangle,
+} from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useLocationTracker } from '../hooks/useLocationTracker';
 import { reportService } from '../api/services/reportService';
 import { canVisitStores } from '../utils/roles';
+import { canOpenRoute, openGoogleMapsRoute } from '../utils/maps';
+import PhotoPreviewModal from '../components/PhotoPreviewModal';
+import AppScreen from '../components/ui/AppScreen';
+import Surface from '../components/ui/Surface';
+import StatCard from '../components/ui/StatCard';
+import EmptyState from '../components/ui/EmptyState';
+import AppButton from '../components/ui/AppButton';
+import { colors, radii, shadows, spacing } from '../styles/theme';
 
 const HomeScreen = () => {
   const { user } = useAuth();
@@ -22,6 +40,9 @@ const HomeScreen = () => {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [photoPreviewIndex, setPhotoPreviewIndex] = useState(0);
+  const [photoPreviewItems, setPhotoPreviewItems] = useState([]);
 
   const canVisit = canVisitStores(user);
 
@@ -72,93 +93,174 @@ const HomeScreen = () => {
     }
   };
 
+  const handleOpenRoute = async (store) => {
+    try {
+      const opened = await openGoogleMapsRoute(store);
+
+      if (!opened) {
+        Alert.alert('Rute Belum Tersedia', 'Koordinat toko belum tersedia.');
+        return;
+      }
+    } catch (error) {
+      console.log('Open route error:', error.message);
+      Alert.alert('Gagal Membuka Maps', 'Tidak bisa membuka Google Maps dari perangkat ini.');
+    }
+  };
+
+  const openPhotoPreview = (items, index = 0) => {
+    const normalized = Array.isArray(items) ? items.filter((item) => item?.url) : [];
+    if (normalized.length === 0) {
+      return;
+    }
+
+    setPhotoPreviewItems(normalized);
+    setPhotoPreviewIndex(index);
+    setPhotoPreviewVisible(true);
+  };
+
+  const closePhotoPreview = () => {
+    setPhotoPreviewVisible(false);
+  };
+
   const summaryCards = useMemo(() => ([
     {
       label: 'Target',
       value: stats.target_visits ?? 0,
-      tone: '#1E40AF',
+      tone: colors.primary,
+      hint: 'Visit harian',
     },
     {
       label: 'Toko Unik',
       value: stats.unique_visits ?? 0,
-      tone: '#047857',
+      tone: colors.success,
+      hint: 'Hasil valid',
     },
     {
       label: 'Duplicate',
       value: stats.duplicate_visits ?? 0,
-      tone: '#B45309',
+      tone: colors.warning,
+      hint: 'Perlu cek ulang',
     },
     {
       label: 'Progress',
       value: `${stats.completion_pct ?? 0}%`,
-      tone: '#7C3AED',
+      tone: colors.purple,
+      hint: 'Pencapaian target',
     },
   ]), [stats]);
 
+  const actionTiles = [
+    {
+      label: openVisit ? 'Lanjut Visit' : 'Mulai Visit',
+      icon: <PlusCircle size={18} color={colors.primary} />,
+      onPress: handleOpenVisit,
+    },
+    {
+      label: 'Lokasi Saya',
+      icon: <Navigation size={18} color={colors.primary} />,
+      onPress: () => navigation.navigate('MyLocation'),
+    },
+    {
+      label: 'Ringkasan',
+      icon: <Clock size={18} color={colors.primary} />,
+      onPress: () => navigation.navigate('MySummary'),
+    },
+  ];
+
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E40AF" />
-      </View>
+      <AppScreen>
+        <View style={styles.center}>
+          <Surface style={styles.loadingCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Memuat dashboard...</Text>
+          </Surface>
+        </View>
+      </AppScreen>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.profileBtn} onPress={() => navigation.navigate('Profile')}>
-          {user?.profile_photo_url || user?.avatar_url ? (
-            <Image source={{ uri: user.profile_photo_url || user.avatar_url }} style={styles.profileImage} />
-          ) : (
-            <View style={styles.profileFallback}>
-              <User size={22} color="#fff" />
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.headerCopy}>
-          <Text style={styles.userName}>{user?.name || 'Sales'}</Text>
-          <Text style={styles.userTeam}>{user?.team?.name || 'No Team'}</Text>
-        </View>
-
-        <View style={styles.trackingPill}>
-          <View style={[styles.dot, { backgroundColor: isTracking ? '#10B981' : '#EF4444' }]} />
-          <Text style={styles.trackingText}>{isTracking ? 'GPS Aktif' : 'GPS Mati'}</Text>
-        </View>
-      </View>
-
-      <View style={styles.actionBar}>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleOpenVisit}>
-          <PlusCircle size={18} color="#1E40AF" />
-          <Text style={styles.actionLabel}>{openVisit ? 'Lanjut Visit' : 'Mulai Visit'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('MyLocation')}>
-          <Navigation size={18} color="#1E40AF" />
-          <Text style={styles.actionLabel}>Lokasi Saya</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('MySummary')}>
-          <Clock size={18} color="#1E40AF" />
-          <Text style={styles.actionLabel}>Ringkasan</Text>
-        </TouchableOpacity>
-      </View>
-
+    <AppScreen>
       <FlatList
-        style={styles.content}
+        style={styles.list}
+        contentContainerStyle={styles.content}
         data={visits}
         keyExtractor={(item) => String(item.id)}
-        ListHeaderComponent={
+        refreshing={refreshing}
+        onRefresh={() => {
+          setRefreshing(true);
+          fetchSummary();
+        }}
+        ListHeaderComponent={(
           <>
-            <View style={styles.summaryGrid}>
-              {summaryCards.map((item) => (
-                <View key={item.label} style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>{item.label}</Text>
-                  <Text style={[styles.summaryValue, { color: item.tone }]}>{item.value}</Text>
+            <Surface style={styles.heroCard}>
+              <View style={styles.heroRow}>
+                <TouchableOpacity style={styles.profileBtn} onPress={() => navigation.navigate('Profile')}>
+                  {user?.photo ? (
+                    <Image source={{ uri: user.photo }} style={styles.profileImage} />
+                  ) : (
+                    <View style={styles.profileFallback}>
+                      <User size={22} color="#fff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.heroCopy}>
+                  <Text style={styles.greeting}>Selamat datang</Text>
+                  <Text style={styles.userName} numberOfLines={1}>{user?.name || 'Sales'}</Text>
+                  <Text style={styles.userTeam} numberOfLines={1}>
+                    {user?.branch?.name || user?.team?.name || 'Tanpa Cabang'}
+                  </Text>
                 </View>
+
+                <View style={[styles.trackingPill, isTracking ? styles.trackingOn : styles.trackingOff]}>
+                  <View style={[styles.dot, { backgroundColor: isTracking ? '#10B981' : '#F43F5E' }]} />
+                  <Text style={styles.trackingText}>{isTracking ? 'GPS Aktif' : 'GPS Mati'}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.heroNote}>
+                Fokus ke visit harian, data lokal otomatis tersinkron, dan akses menyesuaikan role Anda.
+              </Text>
+            </Surface>
+
+            <View style={styles.actionGrid}>
+              {actionTiles.map((item) => (
+                <TouchableOpacity key={item.label} style={styles.actionTile} onPress={item.onPress}>
+                  <View style={styles.actionIcon}>{item.icon}</View>
+                  <Text style={styles.actionLabel}>{item.label}</Text>
+                </TouchableOpacity>
               ))}
             </View>
 
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Ringkasan Hari Ini</Text>
+              <Text style={styles.sectionMeta}>
+                {summary?.period?.date || 'Hari ini'}
+              </Text>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.statsScroll}
+            >
+              {summaryCards.map((item) => (
+                <StatCard
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  hint={item.hint}
+                  tone={item.tone}
+                  icon={<View style={[styles.statDot, { backgroundColor: item.tone }]} />}
+                  style={styles.statCard}
+                />
+              ))}
+            </ScrollView>
+
             {openVisit && (
-              <TouchableOpacity style={styles.openVisitCard} onPress={handleOpenVisit}>
+              <Surface style={styles.openVisitCard}>
                 <View style={styles.openVisitCopy}>
                   <Text style={styles.openVisitLabel}>Visit aktif</Text>
                   <Text style={styles.openVisitTitle} numberOfLines={1}>
@@ -168,30 +270,55 @@ const HomeScreen = () => {
                     {openVisit.store?.branch || openVisit.store?.address || 'Detail belum tersedia'}
                   </Text>
                 </View>
-                <ArrowRight size={18} color="#1E40AF" />
-              </TouchableOpacity>
+                <View style={styles.openVisitActions}>
+                  {canOpenRoute(openVisit.store) && (
+                    <AppButton
+                      label="Rute"
+                      onPress={() => handleOpenRoute(openVisit.store)}
+                      fullWidth={false}
+                      variant="soft"
+                      icon={<Navigation size={16} color={colors.primary} />}
+                    />
+                  )}
+                  <AppButton
+                    label="Buka"
+                    onPress={handleOpenVisit}
+                    fullWidth={false}
+                    variant="secondary"
+                    icon={<ArrowRight size={16} color={colors.primary} />}
+                  />
+                </View>
+              </Surface>
             )}
 
             {warnings.length > 0 && (
-              <View style={styles.warningCard}>
-                <Text style={styles.warningTitle}>Warning audit</Text>
+              <Surface style={styles.warningCard}>
+                <View style={styles.warningHeader}>
+                  <AlertTriangle size={18} color={colors.warning} />
+                  <Text style={styles.warningTitle}>Audit Warning</Text>
+                </View>
                 {warnings.slice(0, 2).map((warning, index) => (
                   <Text key={`${warning.date || index}-${index}`} style={styles.warningText}>
                     {warning.message || `Hari ${warning.date} belum mencapai target.`}
                   </Text>
                 ))}
-              </View>
+              </Surface>
             )}
 
-            <Text style={styles.sectionTitle}>Visit Terbaru</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Visit Terbaru</Text>
+              <Text style={styles.sectionMeta}>{visits.length} item</Text>
+            </View>
           </>
-        }
+        )}
         renderItem={({ item }) => {
           const isDuplicate = Boolean(item.is_duplicate);
           const isCounted = Boolean(item.counted_as_target);
+          const photoPreviews = Array.isArray(item.photos_preview) ? item.photos_preview : [];
+          const photoCount = Number(item.photos_count || 0);
 
           return (
-            <TouchableOpacity style={styles.visitCard} onPress={() => handleVisitPress(item)}>
+            <Surface style={styles.visitCard}>
               <View style={styles.visitHeader}>
                 <View style={styles.visitTitleWrap}>
                   <Text style={styles.visitTitle} numberOfLines={1}>{item.store?.name || 'Toko'}</Text>
@@ -200,97 +327,178 @@ const HomeScreen = () => {
                   </Text>
                 </View>
                 <View style={[styles.badge, isDuplicate ? styles.badgeDuplicate : styles.badgeNormal]}>
-                  <Text style={styles.badgeText}>{isDuplicate ? 'DUPLICATE' : (isCounted ? 'VALID' : 'TIDAK HITUNG')}</Text>
+                  <Text style={styles.badgeText}>
+                    {isDuplicate ? 'DUPLICATE' : (isCounted ? 'VALID' : 'TIDAK HITUNG')}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.visitMetaRow}>
-                <MapPin size={14} color="#64748B" />
-          <Text style={styles.visitMetaText}>
+                <MapPin size={14} color={colors.textMuted} />
+                <Text style={styles.visitMetaText}>
                   {item.visit_date || '-'} {item.checkin_at ? `- ${new Date(item.checkin_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}
-          </Text>
+                </Text>
               </View>
 
               <Text style={styles.visitResult}>
                 Hasil: {item.visit_result || 'belum disubmit'}
               </Text>
-            </TouchableOpacity>
+
+              {canOpenRoute(item.store) && (
+                <TouchableOpacity
+                  style={styles.routeButton}
+                  onPress={() => handleOpenRoute(item.store)}
+                  activeOpacity={0.85}
+                >
+                  <Navigation size={14} color={colors.primary} />
+                  <Text style={styles.routeButtonText}>Rute</Text>
+                </TouchableOpacity>
+              )}
+
+              {photoCount > 0 && (
+                <View style={styles.photoSection}>
+                  <Text style={styles.photoLabel}>{photoCount} foto</Text>
+                  <View style={styles.photoPreviewRow}>
+                    {photoPreviews.map((photo, index) => (
+                      <TouchableOpacity
+                        key={photo.id}
+                        activeOpacity={0.9}
+                        onPress={(event) => {
+                          event?.stopPropagation?.();
+                          openPhotoPreview(photoPreviews, index);
+                        }}
+                      >
+                        <Image
+                          source={{ uri: photo.url }}
+                          style={styles.photoThumb}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                    {photoCount > photoPreviews.length && (
+                      <View style={[styles.photoThumb, styles.photoThumbMore]}>
+                        <Text style={styles.photoThumbMoreText}>
+                          +{photoCount - photoPreviews.length}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+            </Surface>
           );
         }}
-        refreshing={refreshing}
-        onRefresh={() => {
-          setRefreshing(true);
-          fetchSummary();
-        }}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Belum ada visit tercatat hari ini.</Text>
-          </View>
-        }
-        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={(
+          <EmptyState
+            title="Belum ada visit tercatat"
+            description="Saat Anda memulai visit hari ini, ringkasan dan daftar transaksi akan tampil di sini."
+            icon={<Clock size={22} color={colors.primary} />}
+            actionLabel={openVisit ? 'Lanjut Visit' : 'Mulai Visit'}
+            onAction={handleOpenVisit}
+          />
+        )}
+        ListFooterComponent={<View style={{ height: 24 }} />}
       />
-    </View>
+
+      <PhotoPreviewModal
+        visible={photoPreviewVisible}
+        photos={photoPreviewItems}
+        initialIndex={photoPreviewIndex}
+        title="Foto Kunjungan"
+        onClose={closePhotoPreview}
+      />
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  list: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 32,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    padding: 20,
   },
-  header: {
-    backgroundColor: '#1E40AF',
-    paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 18,
+  loadingCard: {
+    alignItems: 'center',
+    gap: 12,
+    minWidth: 220,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  heroCard: {
+    backgroundColor: colors.primary,
+    borderColor: 'rgba(255,255,255,0.18)',
+    marginBottom: 16,
+    ...shadows.card,
+  },
+  heroRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   profileBtn: {
-    width: 42,
-    height: 42,
+    width: 52,
+    height: 52,
   },
   profileFallback: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 52,
+    height: 52,
+    borderRadius: radii.full,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   profileImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 52,
+    height: 52,
+    borderRadius: radii.full,
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
-  headerCopy: {
+  heroCopy: {
     flex: 1,
+  },
+  greeting: {
+    color: '#BFE3DD',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   userName: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 2,
   },
   userTeam: {
-    color: '#DBEAFE',
-    fontSize: 12,
+    color: '#D9F3EE',
+    fontSize: 13,
     marginTop: 2,
   },
   trackingPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.16)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+    paddingVertical: 7,
+    borderRadius: radii.full,
+    borderWidth: 1,
+  },
+  trackingOn: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  trackingOff: {
+    backgroundColor: 'rgba(244, 63, 94, 0.16)',
+    borderColor: 'rgba(244, 63, 94, 0.3)',
   },
   dot: {
     width: 8,
@@ -299,177 +507,224 @@ const styles = StyleSheet.create({
   },
   trackingText: {
     color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
   },
-  actionBar: {
-    marginHorizontal: 16,
-    marginTop: -10,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 12,
+  heroNote: {
+    marginTop: 14,
+    color: '#D9F3EE',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  actionGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    elevation: 2,
+    gap: 10,
+    marginBottom: 18,
   },
-  actionBtn: {
-    alignItems: 'center',
-    gap: 6,
+  actionTile: {
     flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingVertical: 14,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.soft,
+  },
+  actionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionLabel: {
     fontSize: 12,
-    color: '#1E293B',
+    lineHeight: 16,
+    fontWeight: '800',
+    color: colors.text,
     textAlign: 'center',
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  listContent: {
-    paddingBottom: 24,
-  },
-  summaryGrid: {
-    marginTop: 16,
+  sectionHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  sectionMeta: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '700',
+  },
+  statsScroll: {
     gap: 10,
+    paddingRight: 4,
+    marginBottom: 18,
   },
-  summaryCard: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
+  statCard: {
+    width: 154,
+    flex: 0,
   },
-  summaryLabel: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginTop: 6,
+  statDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   openVisitCard: {
-    marginTop: 14,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 12,
-    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 16,
   },
   openVisitCopy: {
     flex: 1,
-    paddingRight: 8,
+    gap: 4,
+  },
+  openVisitActions: {
+    alignItems: 'flex-end',
+    gap: 8,
   },
   openVisitLabel: {
     fontSize: 11,
-    color: '#1E40AF',
-    fontWeight: '700',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    color: colors.warning,
+    letterSpacing: 0.4,
   },
   openVisitTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 3,
+    fontSize: 16,
+    fontWeight: '900',
+    color: colors.text,
   },
   openVisitMeta: {
     fontSize: 12,
-    color: '#475569',
-    marginTop: 2,
+    color: colors.textMuted,
   },
   warningCard: {
-    marginTop: 14,
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    borderRadius: 12,
-    padding: 14,
+    marginBottom: 16,
+    gap: 8,
+  },
+  warningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   warningTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#B45309',
-    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.warning,
   },
   warningText: {
-    fontSize: 12,
-    color: '#92400E',
-    marginTop: 4,
-  },
-  sectionTitle: {
-    marginTop: 18,
-    marginBottom: 10,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
   },
   visitCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
     marginBottom: 12,
+    gap: 10,
   },
   visitHeader: {
     flexDirection: 'row',
+    gap: 12,
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
   },
   visitTitleWrap: {
     flex: 1,
+    gap: 2,
   },
   visitTitle: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: '900',
+    color: colors.text,
   },
   visitMeta: {
     fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    color: colors.textMuted,
   },
   badge: {
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.full,
   },
   badgeNormal: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: colors.successSoft,
   },
   badgeDuplicate: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: colors.warningSoft,
   },
   badgeText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontWeight: '900',
+    color: colors.text,
+    letterSpacing: 0.4,
   },
   visitMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 10,
   },
   visitMetaText: {
     fontSize: 12,
-    color: '#64748B',
+    color: colors.textMuted,
   },
   visitResult: {
     fontSize: 13,
-    color: '#1E293B',
-    marginTop: 8,
+    color: colors.text,
+    fontWeight: '700',
   },
-  emptyState: {
-    paddingVertical: 40,
+  routeButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: radii.full,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.primarySoft,
   },
-  emptyText: {
-    fontSize: 13,
-    color: '#94A3B8',
+  routeButtonText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  photoSection: {
+    gap: 8,
+  },
+  photoLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  photoPreviewRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  photoThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+  },
+  photoThumbMore: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  photoThumbMoreText: {
+    color: colors.primary,
+    fontWeight: '900',
   },
 });
 

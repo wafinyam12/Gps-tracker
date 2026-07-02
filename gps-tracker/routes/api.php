@@ -21,6 +21,9 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
         Route::prefix('auth')->group(function () {
             Route::get('me', [AuthController::class, 'me']);
+            Route::put('profile', [AuthController::class, 'updateProfile']);
+            Route::post('profile/photo', [AuthController::class, 'updateProfilePhoto']);
+            Route::post('change-password', [AuthController::class, 'changePassword']);
             Route::post('logout', [AuthController::class, 'logout']);
             Route::post('logout-all', [AuthController::class, 'logoutAll']);
             Route::post('refresh', [AuthController::class, 'refresh']);
@@ -43,11 +46,11 @@ Route::prefix('v1')->group(function () {
             Route::get('target/today', [DailyTargetController::class, 'today']);
         });
 
-        Route::middleware('role:sales|spv|manager|admin')->group(function () {
+        Route::middleware('role:sales|spv|manager|admin|superadmin')->group(function () {
             Route::get('stores/available', [StoreController::class, 'available']);
         });
 
-        Route::middleware('role:sales|spv|admin')->group(function () {
+        Route::middleware('role:sales|spv|admin|superadmin')->group(function () {
             Route::get('stores', [StoreController::class, 'index']);
             Route::get('stores/filters', [StoreController::class, 'filters']);
             Route::get('stores/{store}', [StoreController::class, 'show']);
@@ -61,7 +64,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('visit/photos/{photo}', [VisitPhotoController::class, 'destroy']);
         });
 
-        Route::middleware('role:spv|manager|admin')->group(function () {
+        Route::middleware('role:spv|manager|admin|superadmin')->group(function () {
             Route::get('location/live', [LocationController::class, 'liveSales']);
             Route::get('location/history/{user}', [LocationController::class, 'history']);
             Route::get('location/{user}', [LocationController::class, 'salesLocation']);
@@ -72,7 +75,7 @@ Route::prefix('v1')->group(function () {
             Route::get('target/summary', [VisitMonitoringController::class, 'summary']);
             Route::get('target/detail/{user}', [VisitMonitoringController::class, 'detail']);
             Route::post('target/set', [DailyTargetController::class, 'set'])
-                ->middleware('role:spv|admin');
+                ->middleware('role:spv|admin|superadmin');
 
             Route::get('reports/per-sales', [ReportController::class, 'perSales']);
             Route::get('reports/per-store', [ReportController::class, 'perStore']);
@@ -83,7 +86,7 @@ Route::prefix('v1')->group(function () {
                 ->middleware('throttle:export');
         });
 
-        Route::middleware('role:admin')->group(function () {
+        Route::middleware('role:admin|superadmin')->group(function () {
             Route::post('target/bulk-set', [DailyTargetController::class, 'bulkSet']);
 
             Route::get('users', [UserController::class, 'index']);
@@ -93,10 +96,13 @@ Route::prefix('v1')->group(function () {
             Route::patch('users/{user}/toggle-active', [UserController::class, 'toggleActive']);
             Route::delete('users/{user}', [UserController::class, 'destroy']);
 
-            Route::post('teams', [TeamController::class, 'store']);
+            Route::post('teams', [TeamController::class, 'store'])
+                ->middleware('role:superadmin');
             Route::put('teams/{team}', [TeamController::class, 'update']);
-            Route::patch('teams/{team}/toggle-active', [TeamController::class, 'toggleActive']);
-            Route::delete('teams/{team}', [TeamController::class, 'destroy']);
+            Route::patch('teams/{team}/toggle-active', [TeamController::class, 'toggleActive'])
+                ->middleware('role:superadmin');
+            Route::delete('teams/{team}', [TeamController::class, 'destroy'])
+                ->middleware('role:superadmin');
         });
     });
 });

@@ -78,6 +78,15 @@ Pastikan Anda memiliki perangkat lunak berikut terinstal di sistem Anda:
     ```
     *(Ganti `nama_database_anda`, `user_database_anda`, dan `password_database_anda` dengan kredensial database Anda. Pastikan database dengan nama yang sesuai sudah dibuat di server MySQL Anda.)*
 
+    Jika backend memakai integrasi SAP outstanding receivable, pastikan variabel berikut juga tersedia di `.env`:
+    ```dotenv
+    SAP_OUTSTANDING_RECEIVABLE_BASE_URL=https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable
+    SAP_OUTSTANDING_RECEIVABLE_TIMEOUT=15
+    SAP_OUTSTANDING_RECEIVABLE_CACHE_MINUTES=10
+    ```
+    Jika endpoint SAP di environment produksi berbeda, cukup ubah variabel ini tanpa perlu mengubah kode.
+    Setelah mengubah `.env` di server produksi, jalankan `php artisan optimize:clear` atau minimal `php artisan config:clear` supaya nilai baru terbaca.
+
 6.  **Jalankan Migrasi Database:**
     Jalankan migrasi untuk membuat tabel database yang diperlukan oleh aplikasi:
     ```bash

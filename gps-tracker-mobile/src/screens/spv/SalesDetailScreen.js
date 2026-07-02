@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Dimensions } from 'react-native';
+import { Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { locationService } from '../../api/services/locationService';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -86,7 +86,7 @@ const SalesDetailScreen = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E40AF" />
+        <ActivityIndicator size="large" color="#0F766E" />
       </View>
     );
   }
@@ -107,12 +107,15 @@ const SalesDetailScreen = () => {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>{userData?.name}</Text>
-          <Text style={styles.headerSubtitle}>{userData?.team?.name || 'No Team'}</Text>
+          <Text style={styles.headerSubtitle}>{userData?.branch?.name || userData?.team?.name || 'Tanpa Cabang'}</Text>
         </View>
         <View style={styles.statusDot(userData?.is_online)} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+      >
         <View style={styles.mapContainer}>
           <MapView
             style={styles.map}
@@ -130,13 +133,13 @@ const SalesDetailScreen = () => {
                   longitude: lastLoc.longitude,
                 }}
                 title="Posisi Terakhir"
-                pinColor="#1E40AF"
+                pinColor="#0F766E"
               />
             )}
             {polylineCoords.length > 1 && (
               <Polyline
                 coordinates={polylineCoords}
-                strokeColor="#1E40AF"
+                strokeColor="#0F766E"
                 strokeWidth={3}
               />
             )}
@@ -197,7 +200,7 @@ const SalesDetailScreen = () => {
           <Text style={styles.historyBtnText}>Lihat Riwayat Perjalanan Penuh</Text>
         </TouchableOpacity>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: Platform.OS === 'android' ? 64 : 40 }} />
       </ScrollView>
     </View>
   );
@@ -217,7 +220,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -243,6 +246,9 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   }),
   content: {
+    paddingBottom: Platform.OS === 'android' ? 40 : 16,
+  },
+  scroll: {
     flex: 1,
   },
   mapContainer: {
@@ -282,7 +288,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#1E40AF',
+    color: '#0F766E',
   },
   detailList: {
     gap: 20,
@@ -303,7 +309,7 @@ const styles = StyleSheet.create({
   },
   historyBtn: {
     flexDirection: 'row',
-    backgroundColor: '#1E40AF',
+    backgroundColor: '#0F766E',
     margin: 20,
     padding: 16,
     borderRadius: 12,

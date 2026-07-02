@@ -35,6 +35,88 @@ class User extends Authenticatable
         return $this->belongsTo(Team::class);
     }
 
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole('superadmin');
+    }
+
+    public function isBranchAdmin(): bool
+    {
+        return $this->hasRole('admin');
+    }
+
+    public function isBranchScopedAdmin(): bool
+    {
+        return $this->hasAnyRole(['admin', 'spv']);
+    }
+
+    public function canAccessAllBranches(): bool
+    {
+        return $this->hasAnyRole(['superadmin', 'manager']);
+    }
+
+    public function managedTeamId(): ?int
+    {
+        if ($this->canAccessAllBranches()) {
+            return null;
+        }
+
+        if ($this->isBranchScopedAdmin()) {
+            return $this->team_id ? (int) $this->team_id : null;
+        }
+
+        return null;
+    }
+
+    public function canManageUsersInOwnBranch(): bool
+    {
+        return $this->hasAnyRole(['superadmin', 'admin']);
+    }
+
+    public function canAccessTeamId(?int $teamId): bool
+    {
+        if ($this->canAccessAllBranches()) {
+            return true;
+        }
+
+        if ($teamId === null || ! $this->isBranchScopedAdmin()) {
+            return false;
+        }
+
+        return $this->team_id !== null && (int) $this->team_id === (int) $teamId;
+    }
+
+    public function canAccessUserRecord(User $target): bool
+    {
+        if ($this->canAccessAllBranches()) {
+            return true;
+        }
+
+        if ($this->isBranchAdmin()) {
+            return $this->team_id !== null
+                && (int) $this->team_id === (int) $target->team_id
+                && $target->hasRole('sales');
+        }
+
+        if ($this->hasRole('spv')) {
+            return $this->team_id !== null && (int) $this->team_id === (int) $target->team_id;
+        }
+
+        return $this->id === $target->id;
+    }
+
+    public function sapDatabase(): ?string
+    {
+        return $this->team?->db_sap ?: ($this->db_sap ?: null);
+    }
+
+    public function sapSalesCode(): ?string
+    {
+        $value = trim((string) $this->slpCode);
+
+        return $value !== '' ? $value : null;
+    }
+
     public function dailyTargets()
     {
         return $this->hasMany(DailyTarget::class);

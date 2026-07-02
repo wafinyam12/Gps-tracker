@@ -164,8 +164,14 @@ class VisitMonitoringController extends Controller
 
     private function canViewUser(User $viewer, User $target): bool
     {
-        if ($viewer->hasAnyRole(['admin', 'manager'])) {
+        if ($viewer->canAccessAllBranches()) {
             return true;
+        }
+
+        if ($viewer->isBranchAdmin()) {
+            return $viewer->team_id !== null
+                && (int) $viewer->team_id === (int) $target->team_id
+                && $target->hasRole('sales');
         }
 
         if ($viewer->hasRole('spv')) {

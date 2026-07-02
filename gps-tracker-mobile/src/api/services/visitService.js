@@ -66,9 +66,11 @@ export const visitService = {
   },
 
   uploadPhotos: async (visitLogId, photos, latitude, longitude, type = 'checkin', metadata = {}) => {
+    const allowedTypes = new Set(['checkin', 'checkout', 'product', 'other']);
+    const resolvedType = allowedTypes.has(type) ? type : 'other';
     const formData = new FormData();
     formData.append('visit_log_id', visitLogId);
-    formData.append('type', type);
+    formData.append('type', resolvedType);
     if (latitude !== undefined && latitude !== null) formData.append('latitude', String(latitude));
     if (longitude !== undefined && longitude !== null) formData.append('longitude', String(longitude));
     if (metadata.takenAt) formData.append('taken_at', metadata.takenAt);
@@ -83,11 +85,7 @@ export const visitService = {
       });
     });
 
-    const response = await apiClient.post('/visit/photos', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await apiClient.post('/visit/photos', formData);
     return response.data;
   },
 

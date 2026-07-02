@@ -80,11 +80,12 @@ class LocationController extends Controller
     {
         try {
             $teamId = $this->resolveTeamScope($request);
+            $roles = $request->user()?->isBranchAdmin() ? ['sales'] : ['sales', 'spv'];
 
             $users = User::query()
                 ->with(['team', 'latestPing'])
                 ->where('is_active', true)
-                ->whereHas('roles', fn ($query) => $query->whereIn('name', ['sales', 'spv']))
+                ->whereHas('roles', fn ($query) => $query->whereIn('name', $roles))
                 ->when($teamId, fn ($query) => $query->where('team_id', $teamId))
                 ->orderBy('name')
                 ->get();
@@ -207,8 +208,9 @@ class LocationController extends Controller
     {
         $viewer = $request->user();
 
-        if ($viewer?->hasRole('spv')) {
-            return $viewer->team_id;
+        $managedTeamId = $viewer?->managedTeamId();
+        if ($managedTeamId !== null) {
+            return $managedTeamId;
         }
 
         $requestedTeamId = $request->integer('team_id');
@@ -218,8 +220,14 @@ class LocationController extends Controller
 
     private function canViewUser(User $viewer, User $target): bool
     {
-        if ($viewer->hasAnyRole(['admin', 'manager'])) {
+        if ($viewer->canAccessAllBranches()) {
             return true;
+        }
+
+        if ($viewer->isBranchAdmin()) {
+            return $viewer->team_id !== null
+                && (int) $viewer->team_id === (int) $target->team_id
+                && $target->hasRole('sales');
         }
 
         if ($viewer->hasRole('spv')) {

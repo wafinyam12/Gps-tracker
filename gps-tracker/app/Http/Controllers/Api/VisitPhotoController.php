@@ -121,16 +121,12 @@ class VisitPhotoController extends Controller
     {
         $user = $request->user();
 
-        // Sales/SPV hanya bisa hapus foto miliknya sendiri; admin bisa hapus semua.
-        if (! $user->hasRole('admin')) {
-            if ($photo->visitLog->user_id !== $user->id) {
-                return response()->error('Unauthorized.', 403);
-            }
+        if (! $this->canAccessVisitLog($user, $photo->visitLog)) {
+            return response()->error('Unauthorized.', 403);
+        }
 
-            // Foto tidak bisa dihapus setelah checkout oleh user lapangan.
-            if ($photo->visitLog->checkout_at !== null) {
-                return response()->error('Foto tidak bisa dihapus setelah checkout.', 422);
-            }
+        if (! $user->hasRole('superadmin') && $photo->visitLog->checkout_at !== null) {
+            return response()->error('Foto tidak bisa dihapus setelah checkout.', 422);
         }
 
         // Hapus file dari storage
@@ -179,8 +175,14 @@ class VisitPhotoController extends Controller
 
     private function canAccessVisitLog(User $viewer, VisitLog $visitLog): bool
     {
-        if ($viewer->hasAnyRole(['admin', 'manager'])) {
+        if ($viewer->canAccessAllBranches()) {
             return true;
+        }
+
+        if ($viewer->isBranchAdmin()) {
+            return $viewer->team_id !== null
+                && (int) $viewer->team_id === (int) $visitLog->user?->team_id
+                && $visitLog->user?->hasRole('sales');
         }
 
         if ($viewer->hasRole('spv')) {

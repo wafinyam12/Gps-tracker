@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ChangePasswordRequest;
+use App\Http\Requests\UpdateProfilePhotoRequest;
+use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\MasterData\StoreCatalogSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -26,7 +30,7 @@ class AuthController extends Controller
         ]);
 
         $login = $this->normalizeLoginIdentifier($request->username);
-        $user = User::with('roles')
+        $user = User::with(['roles', 'team'])
             ->where(function ($query) use ($login) {
                 $query->whereRaw('LOWER(username) = ?', [$login])
                     ->orWhereRaw('LOWER(email) = ?', [$login]);
@@ -91,6 +95,52 @@ class AuthController extends Controller
         ]);
     }
 
+    public function updateProfile(UpdateProfileRequest $request)
+    {
+        $user = $request->user();
+
+        $user->update([
+            'name'     => trim((string) $request->name),
+            'username' => Str::lower(trim((string) $request->username)),
+            'email'    => trim((string) $request->email),
+            'phone'    => $request->filled('phone') ? trim((string) $request->phone) : null,
+        ]);
+
+        return response()->success([
+            'user' => new UserResource($user->fresh()->load(['roles', 'team'])),
+        ], 'Profile berhasil diperbarui.');
+    }
+
+    public function changePassword(ChangePasswordRequest $request)
+    {
+        $user = $request->user();
+
+        $user->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        return response()->success(null, 'Password berhasil diperbarui.');
+    }
+
+    public function updateProfilePhoto(UpdateProfilePhotoRequest $request)
+    {
+        $user = $request->user();
+        $oldPhoto = $user->photo;
+        $path = $request->file('photo')->store('profile_photos', 'public');
+
+        $user->update([
+            'photo' => $path,
+        ]);
+
+        if ($oldPhoto && $oldPhoto !== $path) {
+            Storage::disk('public')->delete($oldPhoto);
+        }
+
+        return response()->success([
+            'user' => new UserResource($user->fresh()->load(['roles', 'team'])),
+        ], 'Foto profile berhasil diperbarui.');
+    }
+
     /**
      * Refresh token — revoke lama, buat baru
      */
@@ -116,7 +166,7 @@ class AuthController extends Controller
             return;
         }
 
-        if (! filled($user->db_sap) || ! filled($user->slpCode)) {
+        if (! filled($user->sapDatabase()) || ! filled($user->sapSalesCode())) {
             return;
         }
 
@@ -128,8 +178,8 @@ class AuthController extends Controller
             } catch (\Throwable $throwable) {
                 Log::warning('Failed to warm SAP store catalog after login', [
                     'user_id' => $user->id,
-                    'db_sap' => $user->db_sap,
-                    'slp_code' => $user->slpCode,
+                    'db_sap' => $user->sapDatabase(),
+                    'slp_code' => $user->sapSalesCode(),
                     'error' => $throwable->getMessage(),
                 ]);
             }

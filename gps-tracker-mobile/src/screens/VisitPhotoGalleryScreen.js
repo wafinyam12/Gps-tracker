@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { Platform, View, Text, StyleSheet, FlatList, Image, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { visitService } from '../api/services/visitService';
 import { ChevronLeft, Trash2, MapPin } from 'lucide-react-native';
 import moment from 'moment';
+import PhotoPreviewModal from '../components/PhotoPreviewModal';
 
 const VisitPhotoGalleryScreen = () => {
   const navigation = useNavigation();
@@ -20,6 +21,21 @@ const VisitPhotoGalleryScreen = () => {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [photoPreviewIndex, setPhotoPreviewIndex] = useState(0);
+
+  const openPhotoPreview = (index = 0) => {
+    if (photos.length === 0) {
+      return;
+    }
+
+    setPhotoPreviewIndex(index);
+    setPhotoPreviewVisible(true);
+  };
+
+  const closePhotoPreview = () => {
+    setPhotoPreviewVisible(false);
+  };
 
   useEffect(() => {
     fetchPhotos();
@@ -69,7 +85,12 @@ const VisitPhotoGalleryScreen = () => {
 
   const renderPhotoItem = ({ item }) => (
     <View style={styles.photoCard}>
-      <Image source={{ uri: item.url }} style={styles.photoImage} />
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => openPhotoPreview(photos.findIndex((photo) => photo.id === item.id))}
+      >
+        <Image source={{ uri: item.url }} style={styles.photoImage} />
+      </TouchableOpacity>
       <View style={styles.photoDetails}>
         <Text style={styles.photoType}>Tipe: {item.type}</Text>
         <View style={styles.locationInfo}>
@@ -91,7 +112,7 @@ const VisitPhotoGalleryScreen = () => {
   if (loading && !refreshing) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1E40AF" />
+        <ActivityIndicator size="large" color="#0F766E" />
         <Text style={styles.loadingText}>Memuat galeri foto...</Text>
       </View>
     );
@@ -118,6 +139,14 @@ const VisitPhotoGalleryScreen = () => {
         onRefresh={onRefresh}
         refreshing={refreshing}
       />
+
+      <PhotoPreviewModal
+        visible={photoPreviewVisible}
+        photos={photos}
+        initialIndex={photoPreviewIndex}
+        title="Foto Kunjungan"
+        onClose={closePhotoPreview}
+      />
     </View>
   );
 };
@@ -142,7 +171,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
     paddingBottom: 16,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
@@ -155,7 +184,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: Platform.OS === 'android' ? 64 : 40,
   },
   photoCard: {
     backgroundColor: '#fff',
@@ -179,7 +208,7 @@ const styles = StyleSheet.create({
   photoType: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#1E40AF',
+    color: '#0F766E',
     marginBottom: 4,
   },
   locationInfo: {
