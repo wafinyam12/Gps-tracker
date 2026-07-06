@@ -13,7 +13,7 @@ const LoadingScreen = () => {
           <View style={styles.brandMark}>
             <Navigation size={22} color="#fff" />
           </View>
-          <Text style={styles.title}>GPS Tracker</Text>
+          <Text style={styles.title}>Sales Daily</Text>
           <Text style={styles.subtitle}>Menyiapkan session, sinkronisasi data, dan akses role Anda.</Text>
 
           <ActivityIndicator size="large" color={colors.primary} />

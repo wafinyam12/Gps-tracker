@@ -81,7 +81,7 @@ export const startBackgroundTracking = async () => {
       timeInterval: 300000, // Tiap 5 menit jika background untuk hemat baterai
       distanceInterval: 50,  // Atau tiap 50 meter
       foregroundService: {
-        notificationTitle: "GPS Tracker Aktif",
+        notificationTitle: "Sales Daily Aktif",
         notificationBody: "Melacak posisi sales untuk visit harian",
         notificationColor: "#FF0000",
       },

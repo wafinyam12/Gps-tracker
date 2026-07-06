@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>@yield('title', 'CRM Audit') - GPS Tracker</title>
+    <title>@yield('title', 'Dashboard') - {{ config('app.name', 'Sales Daily') }}</title>
     <style>
         :root {
             color-scheme: dark;
@@ -239,10 +239,10 @@
         <header class="topbar">
             <div class="topbar-inner">
                 <a class="brand" href="{{ route('crm.dashboard') }}">
-                    <div class="brand-mark">CRM</div>
+                    <div class="brand-mark">SD</div>
                     <div>
-                        <div class="brand-title">CRM Audit</div>
-                        <div class="brand-subtitle">GPS Tracker Reporting</div>
+                        <div class="brand-title">Sales Daily</div>
+                        <div class="brand-subtitle">Visit & Order Reporting</div>
                     </div>
                 </a>
                 @auth

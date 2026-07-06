@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "gps-tracker-mobile",
-    "slug": "gps-tracker-mobile",
+    "name": "Sales Daily",
+    "slug": "sales-daily",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

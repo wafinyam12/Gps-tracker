@@ -447,7 +447,7 @@
 <main class="page">
     <div class="hero">
         <div>
-            <h1>CRM Audit & Reporting</h1>
+            <h1>Sales Daily Dashboard</h1>
             <p class="hero-copy">Pusat analisis data kunjungan sales untuk manager dan direksi: performa, kepatuhan visit, exception audit, dan laporan siap export.</p>
         </div>
         <div class="hero-meta">

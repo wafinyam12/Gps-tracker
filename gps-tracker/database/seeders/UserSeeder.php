@@ -19,9 +19,9 @@ class UserSeeder extends Seeder
         ]);
 
         $superadmin = User::create([
-            'name'     => 'Super Admin GPS',
-            'username' => 'superadmin-gps',
-            'email'    => 'superadmin@gps.test',
+            'name'     => 'Super Admin Sales Daily',
+            'username' => 'superadmin-sales-daily',
+            'email'    => 'superadmin@salesdaily.test',
             'password' => Hash::make('password'),
         ]);
         $superadmin->assignRole('superadmin');
@@ -29,7 +29,7 @@ class UserSeeder extends Seeder
         $admin = User::create([
             'name'     => 'Admin Cabang Surabaya',
             'username' => 'admin-cabang-surabaya',
-            'email'    => 'admin-cabang@gps.test',
+            'email'    => 'admin-cabang@salesdaily.test',
             'password' => Hash::make('password'),
             'team_id'  => $branch->id,
         ]);
@@ -38,7 +38,7 @@ class UserSeeder extends Seeder
         $spv = User::create([
             'name'     => 'Area Manager Surabaya',
             'username' => 'spv-surabaya',
-            'email'    => 'spv@gps.test',
+            'email'    => 'spv@salesdaily.test',
             'password' => Hash::make('password'),
             'phone'    => '081234567890',
             'team_id'  => $branch->id,
@@ -48,7 +48,7 @@ class UserSeeder extends Seeder
         $sales = User::create([
             'name'        => 'Sales Satu',
             'username'    => 'sales-satu',
-            'email'       => 'sales1@gps.test',
+            'email'       => 'sales1@salesdaily.test',
             'password'    => Hash::make('password'),
             'phone'       => '081234567891',
             'employee_id' => 'EMP-001',

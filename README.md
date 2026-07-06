@@ -1,15 +1,15 @@
-# GPS Tracker App
+# Sales Daily App
 
 ## Ringkasan Mobile Apps
 
-Aplikasi **GPS Tracker** adalah solusi mobile yang dirancang untuk memantau dan mencatat lokasi perangkat secara real-time. Aplikasi ini sangat berguna untuk berbagai skenario, seperti pelacakan armada kendaraan, pemantauan aset, keamanan pribadi, atau bahkan untuk mencatat jejak perjalanan. Dengan antarmuka yang intuitif, pengguna dapat dengan mudah melihat posisi terkini dari perangkat yang dipantau, melihat riwayat perjalanan, dan menerima notifikasi penting.
+Aplikasi **Sales Daily** adalah solusi mobile dan dashboard untuk aktivitas harian tim sales: check-in/check-out visit, rekap order, bukti foto, validasi lokasi, dan laporan performa cabang. Sistem ini membantu manager melihat aktivitas sales secara rapi tanpa membuat identitas produk terasa seperti aplikasi pelacak semata.
 
 ### Kegunaan Utama:
-- **Pelacakan Real-time:** Menampilkan lokasi perangkat yang dipantau di peta secara instan.
-- **Riwayat Perjalanan:** Menyimpan dan menampilkan rute perjalanan sebelumnya dengan detail waktu dan lokasi.
-- **Geofencing:** Fitur yang memungkinkan pembuatan zona geografis virtual. Pengguna akan menerima notifikasi saat perangkat masuk atau keluar dari zona tersebut.
-- **Manajemen Perangkat:** Menambahkan, mengelola, dan mengonfigurasi beberapa perangkat yang akan dipantau.
-- **Notifikasi:** Peringatan otomatis untuk peristiwa tertentu, seperti perangkat keluar jalur, baterai rendah, atau kecepatan berlebih.
+- **Daily Visit:** Mencatat kunjungan sales, foto, catatan, dan status check-in/check-out.
+- **Sales Reporting:** Menampilkan rekap aktivitas, order, durasi visit, dan performa cabang.
+- **Location Validation:** Memastikan titik kunjungan valid untuk kebutuhan audit operasional.
+- **Customer Coverage:** Membantu memantau coverage toko/customer per sales dan cabang.
+- **Notifikasi:** Peringatan otomatis untuk aktivitas atau exception penting.
 
 ## Tech Stack
 
@@ -44,7 +44,7 @@ Pastikan Anda memiliki perangkat lunak berikut terinstal di sistem Anda:
     Buka terminal atau command prompt Anda dan kloning repositori proyek:
     ```bash
     git clone <URL_REPOSITORI_ANDA>
-    cd gps-tracker
+    cd <folder-proyek>
     ```
     *(Ganti `<URL_REPOSITORI_ANDA>` dengan URL repositori Git Anda)*
 
@@ -161,10 +161,10 @@ Berikut adalah beberapa contoh endpoint API yang mungkin tersedia di backend:
 ## Fitur Utama
 
 -   Manajemen pengguna (registrasi, login, logout)
--   Pencatatan dan penyimpanan data lokasi GPS.
--   Visualisasi data lokasi di peta.
--   Riwayat perjalanan.
--   Pengaturan geofencing.
+-   Pencatatan visit sales harian.
+-   Validasi lokasi dan bukti foto kunjungan.
+-   Visualisasi aktivitas sales di peta.
+-   Rekap performa cabang dan sales.
 -   Sistem notifikasi.
 
 ## Kontribusi

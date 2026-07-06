@@ -1,4 +1,5 @@
 {
+    "name": "sales-daily-backend",
     "private": true,
     "type": "module",
     "scripts": {

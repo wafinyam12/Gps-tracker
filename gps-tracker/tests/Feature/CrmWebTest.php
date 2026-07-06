@@ -101,7 +101,7 @@ class CrmWebTest extends TestCase
             ->get('/crm?date_from=2026-06-16&date_to=2026-06-16');
 
         $response->assertOk()
-            ->assertSee('CRM Audit & Reporting', false)
+            ->assertSee('Sales Daily Dashboard', false)
             ->assertSee('Cabang A')
             ->assertSee('Cabang B')
             ->assertSee('Sales A')

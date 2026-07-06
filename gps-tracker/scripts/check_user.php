@@ -6,7 +6,7 @@ $kernel->bootstrap();
 
 use App\Models\User;
 
-$email = 'sales1@gps.test';
+$email = 'sales1@salesdaily.test';
 $user = User::where('email', $email)->first();
 if (! $user) {
     echo "NOT_FOUND\n";

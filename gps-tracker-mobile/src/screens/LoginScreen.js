@@ -133,7 +133,7 @@ const LoginScreen = () => {
                 <User size={18} color={colors.textSoft} style={styles.icon} />
                 <TextInput
                   style={styles.input}
-                  placeholder="contoh: sales-satu atau sales1@gps.test"
+                  placeholder="contoh: sales-satu atau sales1@salesdaily.test"
                   value={username}
                   onChangeText={setUsername}
                   autoCapitalize="none"
