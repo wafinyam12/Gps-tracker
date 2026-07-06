@@ -21,6 +21,7 @@ import { visitService } from '../api/services/visitService';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openGoogleMapsRoute } from '../utils/maps';
+import { evaluateVisitLocation } from '../utils/locationIntegrity';
 
 const VISIT_RESULTS = [
   { label: 'Ada Order', value: 'order_taken' },
@@ -209,7 +210,7 @@ function VisitFormScreen({ route, navigation }) {
       }
 
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
       });
       if (!isMountedRef.current) {
         return null;
@@ -280,18 +281,31 @@ function VisitFormScreen({ route, navigation }) {
     navigation.navigate('StartVisit');
   }, [navigation]);
 
-  const handleTakePhoto = () => {
+  const handleTakePhoto = async () => {
     if (!resolvedVisitLogId) {
       Alert.alert('Belum Bisa', 'ID kunjungan belum tersedia.');
       return;
     }
 
+    const location = await requestLocation();
+    if (!location?.coords) {
+      return;
+    }
+
+    const integrity = evaluateVisitLocation(location);
+    if (!integrity.isValid) {
+      Alert.alert(integrity.title, integrity.message);
+      return;
+    }
+
+    const locationPayload = integrity.payload;
+
     navigation.navigate('PhotoUpload', {
       visitLogId: resolvedVisitLogId,
       type: 'other',
-      latitude: currentLocation?.coords?.latitude,
-      longitude: currentLocation?.coords?.longitude,
-      takenAt: new Date().toISOString(),
+      latitude: locationPayload.latitude,
+      longitude: locationPayload.longitude,
+      takenAt: locationPayload.location_recorded_at || new Date().toISOString(),
       userId: user?.id,
       username: user?.name,
     });
@@ -343,7 +357,7 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const handleSubmit = async () => {
-    const location = currentLocation || await requestLocation();
+    const location = await requestLocation();
     if (!location?.coords) {
       return;
     }
@@ -353,15 +367,25 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
+    const integrity = evaluateVisitLocation(location);
+    if (!integrity.isValid) {
+      Alert.alert(integrity.title, integrity.message);
+      return;
+    }
+
     setSaving(true);
     try {
+      const locationPayload = integrity.payload;
       const response = await visitService.checkOut(
         resolvedVisitLogId,
         form.visitResult,
         form.notes.trim(),
         {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
+          latitude: locationPayload.latitude,
+          longitude: locationPayload.longitude,
+          accuracy: locationPayload.accuracy,
+          isMockLocation: locationPayload.is_mock_location,
+          locationRecordedAt: locationPayload.location_recorded_at,
           formData: {
             activity_type: form.activityType || null,
             customer_response: form.customerResponse.trim() || null,

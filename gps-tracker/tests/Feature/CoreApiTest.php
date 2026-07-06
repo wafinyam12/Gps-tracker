@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Store;
 use App\Models\Team;
+use App\Models\LocationPing;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Models\User;
@@ -538,6 +539,67 @@ class CoreApiTest extends TestCase
         $this->assertTrue($store->hasLocation());
     }
 
+    public function test_sales_cannot_start_visit_with_mock_location(): void
+    {
+        $user = User::factory()->create(['is_active' => true]);
+        $user->assignRole('sales');
+        $token = $user->createToken('test')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/visit/start', [
+                'external_bp_code' => 'SAP-DMY-FAKE-001',
+                'store_name' => 'Toko Fake GPS',
+                'store_address' => 'Jl. Contoh Fake',
+                'branch' => 'Jakarta Pusat',
+                'latitude' => -6.21462,
+                'longitude' => 106.82172,
+                'accuracy' => 10,
+                'is_mock_location' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.reason', 'mock_location');
+
+        $this->assertDatabaseCount('visit_logs', 0);
+    }
+
+    public function test_sales_cannot_start_visit_after_impossible_location_jump(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 6, 16, 9, 0, 0, 'Asia/Jakarta'));
+
+        $user = User::factory()->create(['is_active' => true]);
+        $user->assignRole('sales');
+        $token = $user->createToken('test')->plainTextToken;
+
+        LocationPing::create([
+            'user_id' => $user->id,
+            'location' => new Point(latitude: -6.200000, longitude: 106.816666),
+            'accuracy' => 18,
+            'is_mock_location' => false,
+            'recorded_at' => now('Asia/Jakarta')->subMinute(),
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/visit/start', [
+                'external_bp_code' => 'SAP-DMY-TELEPORT-001',
+                'store_name' => 'Toko Teleport',
+                'store_address' => 'Jl. Contoh Teleport',
+                'branch' => 'Surabaya',
+                'latitude' => -7.250445,
+                'longitude' => 112.768845,
+                'accuracy' => 5,
+                'is_mock_location' => false,
+                'location_recorded_at' => now('Asia/Jakarta')->toISOString(),
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.reason', 'impossible_travel');
+
+        $this->assertDatabaseCount('visit_logs', 0);
+    }
+
     public function test_sales_can_start_visit_using_sap_synced_store_data(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 6, 20, 9, 0, 0, 'Asia/Jakarta'));
@@ -726,6 +788,48 @@ class CoreApiTest extends TestCase
             'id' => $visitLogId,
             'visit_result' => 'order_taken',
             'duration_minutes' => 17,
+        ]);
+    }
+
+    public function test_sales_cannot_checkout_with_mock_location(): void
+    {
+        $user = User::factory()->create(['is_active' => true]);
+        $user->assignRole('sales');
+        $token = $user->createToken('test')->plainTextToken;
+
+        $startResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/visit/start', [
+                'external_bp_code' => 'SAP-DMY-0004',
+                'store_name' => 'Toko Dummy Kelapa Gading',
+                'store_address' => 'Jl. Boulevard Raya, Jakarta Utara',
+                'branch' => 'Jakarta Utara',
+                'latitude' => -6.15886,
+                'longitude' => 106.90718,
+                'accuracy' => 10,
+                'is_mock_location' => false,
+            ]);
+
+        $startResponse->assertStatus(201);
+        $visitLogId = $startResponse->json('data.visit_log_id');
+
+        $checkoutResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/visit/checkout', [
+                'visit_log_id' => $visitLogId,
+                'latitude' => -6.15886,
+                'longitude' => 106.90718,
+                'accuracy' => 10,
+                'is_mock_location' => true,
+                'visit_result' => 'order_taken',
+                'notes' => 'Checkout fake GPS',
+            ]);
+
+        $checkoutResponse->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.reason', 'mock_location');
+
+        $this->assertDatabaseHas('visit_logs', [
+            'id' => $visitLogId,
+            'checkout_at' => null,
         ]);
     }
 

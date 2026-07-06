@@ -18,6 +18,7 @@ import { visitService } from '../api/services/visitService';
 import { storeService } from '../api/services/storeService';
 import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openGoogleMapsRoute } from '../utils/maps';
+import { evaluateVisitLocation } from '../utils/locationIntegrity';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -213,7 +214,7 @@ const StartVisitScreen = ({ navigation }) => {
       }
 
       const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
       });
       setLocation(current);
       return current;
@@ -265,23 +266,31 @@ const StartVisitScreen = ({ navigation }) => {
   };
 
   const startVisit = async (store) => {
-    const currentLocation = location || await requestLocation();
+    const currentLocation = await requestLocation();
     if (!currentLocation?.coords) {
+      return;
+    }
+
+    const integrity = evaluateVisitLocation(currentLocation);
+    if (!integrity.isValid) {
+      Alert.alert(integrity.title, integrity.message);
       return;
     }
 
     setStarting(true);
     try {
+      const locationPayload = integrity.payload;
       const response = await visitService.startVisit({
         store_id: store.id,
         external_bp_code: store.external_bp_code || store.code,
         store_name: store.name,
         store_address: store.address,
         branch: store.branch,
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        accuracy: currentLocation.coords.accuracy,
-        is_mock_location: currentLocation.mocked || false,
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        accuracy: locationPayload.accuracy,
+        is_mock_location: locationPayload.is_mock_location,
+        location_recorded_at: locationPayload.location_recorded_at,
       });
 
       const payload = response.data || {};

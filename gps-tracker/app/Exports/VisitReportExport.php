@@ -127,8 +127,10 @@ class VisitReportExport implements
 
     private function resolveTeamScope(): ?int
     {
-        if ($this->viewer?->hasRole('spv')) {
-            return $this->viewer->team_id;
+        $managedTeamId = $this->viewer?->managedTeamId();
+
+        if ($managedTeamId !== null) {
+            return $managedTeamId;
         }
 
         return $this->teamId;

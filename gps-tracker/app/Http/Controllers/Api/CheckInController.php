@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\VisitLog;
+use App\Services\LocationIntegrityService;
 use App\Services\MasterData\StoreCatalogSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ class CheckInController extends Controller
 
     public function __construct(
         private readonly StoreCatalogSyncService $catalog,
+        private readonly LocationIntegrityService $locationIntegrity,
     ) {
     }
 
@@ -40,6 +42,9 @@ class CheckInController extends Controller
             'visit_log_id'      => 'nullable|exists:visit_logs,id',
             'latitude'          => 'required|numeric|between:-90,90',
             'longitude'         => 'required|numeric|between:-180,180',
+            'accuracy'          => 'nullable|numeric|min:0',
+            'is_mock_location'  => 'nullable|boolean',
+            'location_recorded_at' => 'nullable|date',
             'notes'             => 'nullable|string|max:1000',
             'visit_result'      => 'required|in:order_taken,no_order,closed,not_found,postponed',
             'form_data'         => 'nullable|array',
@@ -47,6 +52,10 @@ class CheckInController extends Controller
             'submitted_by_user_id'  => 'nullable|integer',
             'submitted_by_username' => 'nullable|string|max:255',
         ]);
+
+        if ($integrityError = $this->locationIntegrity->visitLocationIntegrityError($request)) {
+            return response()->error($integrityError['message'], 422, $integrityError['errors']);
+        }
 
         $user = $request->user();
         $visitLog = $this->resolveVisitLog($request, $user->id);
@@ -116,7 +125,12 @@ class CheckInController extends Controller
             'longitude'         => 'required|numeric|between:-180,180',
             'accuracy'          => 'nullable|numeric|min:0',
             'is_mock_location'  => 'nullable|boolean',
+            'location_recorded_at' => 'nullable|date',
         ]);
+
+        if ($integrityError = $this->locationIntegrity->visitLocationIntegrityError($request)) {
+            return response()->error($integrityError['message'], 422, $integrityError['errors']);
+        }
 
         $user = $request->user();
         $isMock = $request->boolean('is_mock_location', false);
@@ -342,6 +356,9 @@ class CheckInController extends Controller
             'client_timestamp' => $request->input('submitted_at'),
             'client_user_id'   => $request->input('submitted_by_user_id'),
             'client_username'  => $request->input('submitted_by_username'),
+            'location_recorded_at' => $request->input('location_recorded_at'),
+            'location_accuracy' => $request->input('accuracy'),
+            'is_mock_location'  => $request->boolean('is_mock_location', false),
         ];
 
         return $formData;

@@ -136,4 +136,14 @@ class User extends Authenticatable
     {
         return $this->hasOne(LocationPing::class)->latestOfMany('recorded_at');
     }
+
+    public function latestTrustedPing()
+    {
+        return $this->hasOne(LocationPing::class)->ofMany([
+            'recorded_at' => 'max',
+            'id' => 'max',
+        ], function ($query) {
+            $query->where('is_mock_location', false);
+        });
+    }
 }

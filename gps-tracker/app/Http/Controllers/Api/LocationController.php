@@ -7,11 +7,18 @@ use App\Http\Resources\TeamResource;
 use App\Models\LocationPing;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\LocationIntegrityService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class LocationController extends Controller
 {
+    public function __construct(
+        private readonly LocationIntegrityService $locationIntegrity,
+    ) {
+    }
+
     /**
      * Terima ping lokasi dari mobile (dipanggil tiap interval)
      * Role: sales
@@ -43,32 +50,55 @@ class LocationController extends Controller
             $bearing = null;
         }
 
+        $reportedMockLocation = $request->boolean('is_mock_location', false);
+        $recordedAt = $request->filled('recorded_at')
+            ? Carbon::parse($request->recorded_at)
+            : now();
+        $accuracy = $request->filled('accuracy') ? (float) $request->accuracy : null;
+        $integrity = $this->locationIntegrity->pingIntegrity(
+            $user,
+            (float) $request->latitude,
+            (float) $request->longitude,
+            $accuracy,
+            $recordedAt,
+            $reportedMockLocation,
+        );
+        $isMockLocation = ! $integrity['trusted'];
+
         $ping = LocationPing::create([
             'user_id'          => $user->id,
             'location'         => new Point(
                 latitude: $request->latitude,
                 longitude: $request->longitude,
             ),
-            'accuracy'         => $request->accuracy,
+            'accuracy'         => $accuracy,
             'speed'            => $speed,
             'bearing'          => $bearing,
             'battery'          => $request->battery,
             'is_moving'        => $request->boolean('is_moving', false),
-            'is_mock_location' => $request->boolean('is_mock_location', false),
-            'recorded_at'      => $request->recorded_at ?? now(),
+            'is_mock_location' => $isMockLocation,
+            'recorded_at'      => $recordedAt,
         ]);
 
-        // Update last_location & last_seen_at di user
-        $user->update([
-            'last_location' => new Point(
+        $userPayload = [
+            'last_seen_at' => now(),
+        ];
+
+        // Fake/mock GPS tetap disimpan sebagai audit, tetapi tidak menggeser posisi trusted user.
+        if (! $isMockLocation) {
+            $userPayload['last_location'] = new Point(
                 latitude: $request->latitude,
                 longitude: $request->longitude,
-            ),
-            'last_seen_at'  => now(),
-        ]);
+            );
+        }
+
+        $user->update($userPayload);
 
         return response()->success([
-            'ping_id' => $ping->id,
+            'ping_id'          => $ping->id,
+            'is_mock_location' => $ping->is_mock_location,
+            'trusted'          => ! $isMockLocation,
+            'integrity_reason' => $integrity['reason'],
         ], 'Location recorded.', 201);
     }
 
@@ -83,7 +113,7 @@ class LocationController extends Controller
             $roles = $request->user()?->isBranchAdmin() ? ['sales'] : ['sales', 'spv'];
 
             $users = User::query()
-                ->with(['team', 'latestPing'])
+                ->with(['team', 'latestTrustedPing'])
                 ->where('is_active', true)
                 ->whereHas('roles', fn ($query) => $query->whereIn('name', $roles))
                 ->when($teamId, fn ($query) => $query->where('team_id', $teamId))
@@ -170,8 +200,8 @@ class LocationController extends Controller
             return response()->error('Anda hanya dapat melihat cabang sendiri.', 403);
         }
 
-        $user->loadMissing(['team', 'latestPing']);
-        $ping = $user->latestPing;
+        $user->loadMissing(['team', 'latestTrustedPing']);
+        $ping = $user->latestTrustedPing;
 
         if (! $ping) {
             return response()->json([
@@ -261,7 +291,7 @@ class LocationController extends Controller
 
     private function formatLiveUser(User $user): array
     {
-        $ping = $user->latestPing;
+        $ping = $user->latestTrustedPing;
 
         return [
             'user_id'      => $user->id,

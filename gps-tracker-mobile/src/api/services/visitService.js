@@ -6,6 +6,7 @@ const normalizeCheckInPayload = (storeOrVisit, latitude, longitude, options = {}
     longitude,
     accuracy: options.accuracy,
     is_mock_location: options.isMockLocation || false,
+    location_recorded_at: options.locationRecordedAt,
   };
 
   if (storeOrVisit && typeof storeOrVisit === 'object' && !Array.isArray(storeOrVisit)) {
@@ -57,6 +58,9 @@ export const visitService = {
       notes,
       latitude: options.latitude,
       longitude: options.longitude,
+      accuracy: options.accuracy,
+      is_mock_location: options.isMockLocation || false,
+      location_recorded_at: options.locationRecordedAt,
       form_data: options.formData,
       submitted_at: options.submittedAt,
       submitted_by_user_id: options.userId,

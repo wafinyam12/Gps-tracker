@@ -272,6 +272,65 @@ class ApiTest extends TestCase
     }
 
     /** @test */
+    public function it_audits_mock_location_ping_without_trusting_it()
+    {
+        Sanctum::actingAs($this->salesUser);
+
+        $trustedResponse = $this->postJson('/api/v1/location/ping', [
+            'latitude' => -6.200000,
+            'longitude' => 106.816666,
+            'accuracy' => 12,
+            'recorded_at' => now()->subMinute()->toISOString(),
+            'is_mock_location' => false,
+        ]);
+
+        $trustedResponse->assertStatus(201)
+            ->assertJsonPath('data.trusted', true);
+
+        $mockResponse = $this->postJson('/api/v1/location/ping', [
+            'latitude' => -7.250445,
+            'longitude' => 112.768845,
+            'accuracy' => 5,
+            'recorded_at' => now()->toISOString(),
+            'is_mock_location' => true,
+        ]);
+
+        $mockResponse->assertStatus(201)
+            ->assertJsonPath('data.trusted', false)
+            ->assertJsonPath('data.is_mock_location', true);
+
+        $teleportResponse = $this->postJson('/api/v1/location/ping', [
+            'latitude' => -7.250445,
+            'longitude' => 112.768845,
+            'accuracy' => 5,
+            'recorded_at' => now()->toISOString(),
+            'is_mock_location' => false,
+        ]);
+
+        $teleportResponse->assertStatus(201)
+            ->assertJsonPath('data.trusted', false)
+            ->assertJsonPath('data.is_mock_location', true)
+            ->assertJsonPath('data.integrity_reason', 'impossible_travel');
+
+        $this->assertDatabaseHas('location_pings', [
+            'user_id' => $this->salesUser->id,
+            'is_mock_location' => 1,
+        ]);
+
+        $this->salesUser->refresh();
+        $this->assertSame(-6.200000, round($this->salesUser->last_location->latitude, 6));
+        $this->assertSame(106.816666, round($this->salesUser->last_location->longitude, 6));
+
+        Sanctum::actingAs($this->adminUser);
+        $liveResponse = $this->getJson('/api/v1/location/live');
+
+        $liveResponse->assertStatus(200)
+            ->assertJsonPath('data.users.0.location.latitude', -6.2)
+            ->assertJsonPath('data.users.0.location.longitude', 106.816666)
+            ->assertJsonPath('data.users.0.location.is_mock_location', false);
+    }
+
+    /** @test */
     public function it_scopes_live_locations_for_manager_and_spv()
     {
         $branchB = Team::create([
