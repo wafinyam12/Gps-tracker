@@ -20,25 +20,9 @@ import { useAuth } from '../context/AuthContext';
 import { visitService } from '../api/services/visitService';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import { normalizePhoneNumber } from '../utils/phone';
-import { canOpenRoute, openGoogleMapsRoute } from '../utils/maps';
+import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
-
-const VISIT_RESULTS = [
-  { label: 'Ada Order', value: 'order_taken' },
-  { label: 'Tidak Ada Order', value: 'no_order' },
-  { label: 'Toko Tutup', value: 'closed' },
-  { label: 'Tidak Ditemukan', value: 'not_found' },
-  { label: 'Ditunda', value: 'postponed' },
-];
-
-const ACTIVITY_TYPES = [
-  { label: 'Sosialisasi Produk', value: 'sosialisasi_produk' },
-  { label: 'Kirim Penawaran', value: 'kirim_penawaran' },
-  { label: 'Kirim Contoh', value: 'kirim_contoh' },
-  { label: 'Proses Purchase Order (PO)', value: 'proses_po' },
-  { label: 'Proses Tagihan', value: 'proses_tagihan' },
-  { label: 'Dll', value: 'dll' },
-];
+import { ACTIVITY_TYPES, VISIT_RESULTS } from '../utils/visitOptions';
 
 const EMPTY_FORM = {
   visitResult: 'order_taken',
@@ -83,12 +67,23 @@ const formatDateOnly = (value) => {
   return `${day} ${monthName} ${year}`;
 };
 
+const formatTimeOnly = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(value).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const getInvoiceReference = (invoice) => invoice?.invoice_no || invoice?.doc_num || invoice?.doc_entry || '-';
 const getInvoiceType = (invoice) => invoice?.document_type || 'Invoice';
 
 function VisitFormScreen({ route, navigation }) {
   const { user } = useAuth();
-  const { visitLogId: routeVisitLogId } = route.params || {};
+  const { visitLogId: routeVisitLogId, mode } = route.params || {};
 
   const [visitLogId, setVisitLogId] = useState(routeVisitLogId || null);
   const [visit, setVisit] = useState(null);
@@ -104,6 +99,8 @@ function VisitFormScreen({ route, navigation }) {
 
   const resolvedVisitLogId = visitLogId || routeVisitLogId || null;
   const isCheckedOut = Boolean(visit?.checkout_at);
+  const isDetailMode = mode === 'detail';
+  const canEditVisit = !isCheckedOut && !isDetailMode;
   const store = visit?.store || {};
   const hasStoreRoute = canOpenRoute(store);
   const sapOutstanding = store?.sap_outstanding_receivable || null;
@@ -150,6 +147,18 @@ function VisitFormScreen({ route, navigation }) {
   ));
   const photoPreviews = Array.isArray(visit?.photos_preview) ? visit.photos_preview : [];
   const photoCount = Number(visit?.photos_count || 0);
+  const checkinTime = formatTimeOnly(visit?.checkin_at);
+  const checkoutTime = formatTimeOnly(visit?.checkout_at);
+  const visitTimelineText = canEditVisit
+    ? (
+      currentLocation?.coords
+        ? `${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`
+        : 'Mencari lokasi...'
+    )
+    : [
+      checkinTime ? `Check-in ${checkinTime}` : null,
+      checkoutTime ? `Checkout ${checkoutTime}` : null,
+    ].filter(Boolean).join(' | ') || formatDateOnly(visit?.visit_date);
 
   const hydrateForm = useCallback((visitData) => {
     const visitFormData = visitData?.form_data || {};
@@ -229,10 +238,10 @@ function VisitFormScreen({ route, navigation }) {
   }, []);
 
   useEffect(() => {
-    if (!currentLocation) {
+    if (canEditVisit && !currentLocation) {
       requestLocation();
     }
-  }, [currentLocation, requestLocation]);
+  }, [canEditVisit, currentLocation, requestLocation]);
 
   useEffect(() => {
     setShowAllInvoices(false);
@@ -272,6 +281,15 @@ function VisitFormScreen({ route, navigation }) {
     });
   }, [navigation]);
 
+  const handleBackPress = useCallback(() => {
+    if (isDetailMode && navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    backToHome();
+  }, [backToHome, isDetailMode, navigation]);
+
   const returnToStoreList = useCallback(() => {
     if (navigation.canGoBack()) {
       navigation.goBack();
@@ -282,6 +300,10 @@ function VisitFormScreen({ route, navigation }) {
   }, [navigation]);
 
   const handleTakePhoto = async () => {
+    if (!canEditVisit) {
+      return;
+    }
+
     if (!resolvedVisitLogId) {
       Alert.alert('Belum Bisa', 'ID kunjungan belum tersedia.');
       return;
@@ -313,7 +335,7 @@ function VisitFormScreen({ route, navigation }) {
 
   const handleOpenRoute = async () => {
     try {
-      const opened = await openGoogleMapsRoute(store);
+      const opened = await openMapRoute(store);
 
       if (!opened) {
         Alert.alert('Rute Belum Tersedia', 'Koordinat toko belum tersedia.');
@@ -357,6 +379,10 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const handleSubmit = async () => {
+    if (!canEditVisit) {
+      return;
+    }
+
     const location = await requestLocation();
     if (!location?.coords) {
       return;
@@ -438,12 +464,14 @@ function VisitFormScreen({ route, navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topBarBack} onPress={backToHome} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.topBarBack} onPress={handleBackPress} activeOpacity={0.85}>
           <ArrowLeft size={18} color="#0F766E" />
         </TouchableOpacity>
         <View style={styles.topBarCopy}>
-          <Text style={styles.topBarTitle}>Form Visit</Text>
-          <Text style={styles.topBarSubtitle}>Kembali ke Home kapan saja bila perlu.</Text>
+          <Text style={styles.topBarTitle}>{canEditVisit ? 'Form Visit' : 'Detail Visit'}</Text>
+          <Text style={styles.topBarSubtitle}>
+            {canEditVisit ? 'Lengkapi hasil kunjungan sebelum checkout.' : 'Data kunjungan yang sudah tersimpan.'}
+          </Text>
         </View>
       </View>
 
@@ -467,9 +495,7 @@ function VisitFormScreen({ route, navigation }) {
           <View style={styles.metaRow}>
             <MapPin size={16} color="#64748B" />
             <Text style={styles.metaText}>
-              {currentLocation?.coords
-                ? `${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`
-                : 'Mencari lokasi...'}
+              {visitTimelineText}
             </Text>
           </View>
 
@@ -664,12 +690,14 @@ function VisitFormScreen({ route, navigation }) {
           </View>
         )}
 
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.actionBtn, styles.photoBtn]} onPress={handleTakePhoto}>
-            <Camera size={20} color="#fff" />
-            <Text style={styles.actionBtnText}>Foto Wajib</Text>
-          </TouchableOpacity>
-        </View>
+        {canEditVisit && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={[styles.actionBtn, styles.photoBtn]} onPress={handleTakePhoto}>
+              <Camera size={20} color="#fff" />
+              <Text style={styles.actionBtnText}>Foto Wajib</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.formCard}>
           <Text style={styles.fieldLabel}>PIC Toko / Customer</Text>
@@ -679,7 +707,7 @@ function VisitFormScreen({ route, navigation }) {
             onChangeText={(value) => setField('picName', value)}
             placeholder={storePicName || 'Nama PIC yang ditemui'}
             placeholderTextColor="#94A3B8"
-            editable={!isCheckedOut}
+            editable={canEditVisit}
           />
           <Text style={styles.fieldHint}>
             Diisi manual karena PIC bisa berbeda di tiap kunjungan.
@@ -697,10 +725,19 @@ function VisitFormScreen({ route, navigation }) {
             <Picker
               selectedValue={form.activityType}
               onValueChange={(value) => setField('activityType', value)}
-              enabled={!isCheckedOut}
+              enabled={canEditVisit}
+              mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}
+              dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
             >
               {ACTIVITY_TYPES.map((item) => (
-                <Picker.Item key={item.value} label={item.label} value={item.value} />
+                <Picker.Item
+                  key={item.value}
+                  label={item.label}
+                  value={item.value}
+                  color="#1E293B"
+                />
               ))}
             </Picker>
           </View>
@@ -710,10 +747,19 @@ function VisitFormScreen({ route, navigation }) {
             <Picker
               selectedValue={form.visitResult}
               onValueChange={(value) => setField('visitResult', value)}
-              enabled={!isCheckedOut}
+              enabled={canEditVisit}
+              mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}
+              dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
             >
               {VISIT_RESULTS.map((item) => (
-                <Picker.Item key={item.value} label={item.label} value={item.value} />
+                <Picker.Item
+                  key={item.value}
+                  label={item.label}
+                  value={item.value}
+                  color="#1E293B"
+                />
               ))}
             </Picker>
           </View>
@@ -726,7 +772,7 @@ function VisitFormScreen({ route, navigation }) {
             placeholder="Respon singkat customer setelah kunjungan"
             placeholderTextColor="#94A3B8"
             multiline
-            editable={!isCheckedOut}
+            editable={canEditVisit}
           />
 
           <Text style={styles.fieldLabel}>Catatan</Text>
@@ -737,7 +783,7 @@ function VisitFormScreen({ route, navigation }) {
             placeholder="Catatan singkat visit"
             placeholderTextColor="#94A3B8"
             multiline
-            editable={!isCheckedOut}
+            editable={canEditVisit}
           />
         </View>
 
@@ -781,16 +827,26 @@ function VisitFormScreen({ route, navigation }) {
           </View>
         )}
 
-        <TouchableOpacity
-          style={[styles.saveBtn, saving && styles.disabledBtn, isCheckedOut && styles.disabledBtn]}
-          onPress={handleSubmit}
-          disabled={saving || isCheckedOut}
-        >
-          {saving ? <ActivityIndicator color="#fff" /> : <Save size={20} color="#fff" />}
-          <Text style={styles.saveBtnText}>{isCheckedOut ? 'Visit Sudah Selesai' : 'Simpan Visit'}</Text>
-        </TouchableOpacity>
+        {canEditVisit ? (
+          <TouchableOpacity
+            style={[styles.saveBtn, saving && styles.disabledBtn]}
+            onPress={handleSubmit}
+            disabled={saving}
+          >
+            {saving ? <ActivityIndicator color="#fff" /> : <Save size={20} color="#fff" />}
+            <Text style={styles.saveBtnText}>Simpan Visit</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.backDetailBtn}
+            onPress={handleBackPress}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.backDetailBtnText}>Kembali</Text>
+          </TouchableOpacity>
+        )}
 
-        {!isCheckedOut && (
+        {canEditVisit && (
           <TouchableOpacity
             style={[styles.cancelBtn, (saving || cancelling) && styles.disabledBtn]}
             onPress={handleCancelVisit}
@@ -1213,7 +1269,16 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#004181',
+  },
+  picker: {
+    minHeight: 48,
+    color: Platform.OS === 'android' ? '#FFFFFF' : '#ffffff',
+    backgroundColor: Platform.OS === 'android' ? '#004181' : '#7a96b1',
+  },
+  pickerItem: {
+    color: '#1E293B',
+    fontSize: 15,
   },
   input: {
     backgroundColor: '#F8FAFC',
@@ -1316,6 +1381,21 @@ const styles = StyleSheet.create({
   },
   saveBtnText: {
     color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  backDetailBtn: {
+    marginTop: 16,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  backDetailBtnText: {
+    color: '#0F766E',
     fontSize: 15,
     fontWeight: '800',
   },

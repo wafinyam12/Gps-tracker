@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,13 +12,13 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
-import MapView, { Marker } from 'react-native-maps';
 import { ArrowLeft, MapPin, Navigation, Search } from 'lucide-react-native';
 import { visitService } from '../api/services/visitService';
 import { storeService } from '../api/services/storeService';
 import { normalizePhoneNumber } from '../utils/phone';
-import { canOpenRoute, openGoogleMapsRoute } from '../utils/maps';
+import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
+import OpenStreetMapView from '../components/maps/OpenStreetMapView';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -92,7 +92,6 @@ const dedupeStores = (items) => {
 };
 
 const StartVisitScreen = ({ navigation }) => {
-  const mapRef = useRef(null);
   const requestSeqRef = useRef(0);
   const [search, setSearch] = useState('');
   const [location, setLocation] = useState(null);
@@ -254,15 +253,6 @@ const StartVisitScreen = ({ navigation }) => {
 
   const focusStore = (store) => {
     setSelectedStore(store);
-
-    if (Number.isFinite(store.latitude) && Number.isFinite(store.longitude)) {
-      mapRef.current?.animateToRegion({
-        latitude: store.latitude,
-        longitude: store.longitude,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      }, 500);
-    }
   };
 
   const startVisit = async (store) => {
@@ -333,7 +323,7 @@ const StartVisitScreen = ({ navigation }) => {
 
   const handleOpenRoute = async (store) => {
     try {
-      const opened = await openGoogleMapsRoute(store);
+      const opened = await openMapRoute(store);
 
       if (!opened) {
         Alert.alert('Rute Belum Tersedia', 'Koordinat toko belum tersedia.');
@@ -349,6 +339,37 @@ const StartVisitScreen = ({ navigation }) => {
       routes: [{ name: 'Home' }],
     });
   }, [navigation]);
+
+  const mapMarkers = useMemo(() => {
+    const points = [];
+
+    if (location?.coords) {
+      points.push({
+        id: 'current-location',
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        title: 'Lokasi Saya',
+        description: `${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}`,
+        color: '#0F766E',
+      });
+    }
+
+    stores
+      .filter((store) => Number.isFinite(store.latitude) && Number.isFinite(store.longitude))
+      .forEach((store) => {
+        const selected = selectedStore?.id === store.id;
+        points.push({
+          id: `store-${store.id || store.external_bp_code || store.code}`,
+          latitude: store.latitude,
+          longitude: store.longitude,
+          title: store.name || 'Toko',
+          description: store.external_bp_code || store.code || store.address || '',
+          color: selected ? '#F59E0B' : '#16A34A',
+        });
+      });
+
+    return points;
+  }, [location, selectedStore?.id, stores]);
 
   const renderStore = ({ item }) => {
     const isSelected = selectedStore?.id === item.id;
@@ -400,40 +421,12 @@ const StartVisitScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.mapWrap}>
-        <MapView
-          ref={mapRef}
+        <OpenStreetMapView
           style={styles.map}
-          initialRegion={DEFAULT_REGION}
-          showsUserLocation
-          showsMyLocationButton
-        >
-          {location?.coords && (
-            <Marker
-              coordinate={{
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              }}
-              title="Lokasi Saya"
-              pinColor="#0F766E"
-            />
-          )}
-
-          {stores
-            .filter((store) => Number.isFinite(store.latitude) && Number.isFinite(store.longitude))
-            .map((store) => (
-              <Marker
-                key={store.external_bp_code || store.code}
-                coordinate={{
-                  latitude: store.latitude,
-                  longitude: store.longitude,
-                }}
-                title={store.name}
-                description={store.external_bp_code || store.code}
-                pinColor={selectedStore?.id === store.id ? '#F59E0B' : '#16A34A'}
-                onPress={() => setSelectedStore(store)}
-              />
-            ))}
-        </MapView>
+          center={location?.coords || DEFAULT_REGION}
+          markers={mapMarkers}
+          zoom={14}
+        />
 
         <View style={styles.locationCard}>
           <View style={styles.locationHeader}>

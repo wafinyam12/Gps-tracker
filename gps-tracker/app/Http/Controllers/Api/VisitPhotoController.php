@@ -142,9 +142,7 @@ class VisitPhotoController extends Controller
      */
     private function processAndStore($file, int $visitLogId, ?float $latitude = null, ?float $longitude = null, ?Carbon $takenAt = null): string
     {
-        $filename  = Str::uuid().'.'.'jpg'; // selalu convert ke jpg
         $directory = ($takenAt ?? now(self::LOCAL_TIMEZONE))->format('Y/m/d').'/'.$visitLogId;
-        $fullPath  = $directory.'/'.$filename;
 
         $manager = new ImageManager(new GdDriver());
 
@@ -159,6 +157,9 @@ class VisitPhotoController extends Controller
             $binary = $this->exifService->embedGps($binary, $latitude, $longitude, $takenAt);
         }
 
+        $filename = $this->hashedFilename($binary, $visitLogId);
+        $fullPath = $directory.'/'.$filename;
+
         $stored = Storage::disk('visit_photos')->put($fullPath, $binary);
 
         if (! $stored) {
@@ -166,6 +167,14 @@ class VisitPhotoController extends Controller
         }
 
         return $fullPath;
+    }
+
+    private function hashedFilename(string $binary, int $visitLogId): string
+    {
+        $payloadHash = hash('sha256', $binary);
+        $entropy = $visitLogId.'|'.$payloadHash.'|'.Str::random(40).'|'.microtime(true);
+
+        return hash_hmac('sha256', $entropy, (string) config('app.key')).'.jpg';
     }
 
     private function photoUrl(string $path): string

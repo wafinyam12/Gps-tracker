@@ -60,11 +60,36 @@ return [
             'report' => false,
         ],
 
+        'r2' => [
+            'driver' => 's3',
+            'key' => env('R2_ACCESS_KEY_ID'),
+            'secret' => env('R2_SECRET_ACCESS_KEY'),
+            'region' => env('R2_REGION', env('R2_DEFAULT_REGION', 'auto')),
+            'bucket' => env('R2_BUCKET'),
+            'url' => env('R2_URL'),
+            'endpoint' => env('R2_ENDPOINT'),
+            'use_path_style_endpoint' => true,
+            'directory_separator' => '/',
+            'throw' => true,
+            'report' => false,
+        ],
+
         'visit_photos' => [
-            'driver'     => 'local',
-            'root'       => storage_path('app/public/visit_photos'),
-            'url'        => env('APP_URL') . '/storage/visit_photos',
-            'visibility' => 'public',
+            'driver' => env('VISIT_PHOTOS_DRIVER', 'local'),
+            'root' => env('VISIT_PHOTOS_DRIVER', 'local') === 's3'
+                ? (env('VISIT_PHOTOS_ROOT') ?: 'crm/visit-photo')
+                : storage_path('app/public/visit_photos'),
+            'key' => env('R2_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
+            'secret' => env('R2_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
+            'region' => env('R2_REGION', env('R2_DEFAULT_REGION', env('AWS_DEFAULT_REGION', 'auto'))),
+            'bucket' => env('VISIT_PHOTOS_BUCKET') ?: env('R2_BUCKET', env('AWS_BUCKET')),
+            'url' => env('VISIT_PHOTOS_URL') ?: env('R2_URL', env('APP_URL') . '/storage/visit_photos'),
+            'endpoint' => env('R2_ENDPOINT') ?: env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('R2_USE_PATH_STYLE_ENDPOINT', env('AWS_USE_PATH_STYLE_ENDPOINT', true)),
+            'directory_separator' => '/',
+            'visibility' => env('VISIT_PHOTOS_VISIBILITY', env('VISIT_PHOTOS_DRIVER', 'local') === 's3' ? 'private' : 'public'),
+            'throw' => true,
+            'report' => false,
         ],
 
     ],

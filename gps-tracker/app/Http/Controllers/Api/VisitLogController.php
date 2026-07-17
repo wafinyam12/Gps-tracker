@@ -267,8 +267,6 @@ class VisitLogController extends Controller
 
     private function photoUrl(string $path): string
     {
-        $baseUrl = rtrim(request()->getSchemeAndHttpHost() ?: config('app.url'), '/');
-
-        return $baseUrl.'/storage/visit_photos/'.$path;
+        return Storage::disk('visit_photos')->url($path);
     }
 }

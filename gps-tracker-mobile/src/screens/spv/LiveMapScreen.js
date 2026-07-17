@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -9,12 +9,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Callout, Marker } from 'react-native-maps';
 import moment from 'moment';
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, RefreshCw, Clock } from 'lucide-react-native';
+import { ChevronLeft, RefreshCw } from 'lucide-react-native';
 import { locationService } from '../../api/services/locationService';
 import { storeService } from '../../api/services/storeService';
+import OpenStreetMapView from '../../components/maps/OpenStreetMapView';
 
 const normalizeStore = (store) => ({
   id: store.id,
@@ -42,7 +42,6 @@ const LiveMapScreen = () => {
   const [storeTargets, setStoreTargets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const mapRef = useRef(null);
   const hasCenteredRef = useRef(false);
   const navigation = useNavigation();
 
@@ -97,7 +96,6 @@ const LiveMapScreen = () => {
             longitudeDelta: 0.0421,
           };
           setRegion(newRegion);
-          mapRef.current?.animateToRegion(newRegion, 1000);
           hasCenteredRef.current = true;
         }
       }
@@ -120,6 +118,49 @@ const LiveMapScreen = () => {
     fetchLocations();
   };
 
+  const mapMarkers = useMemo(() => {
+    const userMarkers = locations
+      .filter((item) => item.location)
+      .map((item) => ({
+        id: `user-${item.user_id}`,
+        kind: 'user',
+        userId: item.user_id,
+        latitude: item.location.latitude,
+        longitude: item.location.longitude,
+        title: item.name || 'Sales',
+        description: `${item.branch?.name || item.team || 'Tanpa Cabang'} - ${item.last_seen_at ? moment(item.last_seen_at).format('HH:mm') : 'Baru saja'}`,
+        color: item.is_online ? '#10B981' : '#EF4444',
+      }));
+
+    const branchMarkers = branchLocations.map((branch) => ({
+      id: `branch-${branch.id}`,
+      kind: 'branch',
+      latitude: branch.latitude,
+      longitude: branch.longitude,
+      title: branch.name || 'Cabang',
+      description: branch.code || branch.area || 'Lokasi cabang',
+      color: '#0E7490',
+    }));
+
+    const storeMarkers = storeTargets.map((store) => ({
+      id: `store-${store.id}`,
+      kind: 'store',
+      latitude: store.latitude,
+      longitude: store.longitude,
+      title: store.name || 'Toko',
+      description: store.branch || store.address || 'Alamat belum tersedia',
+      color: '#F59E0B',
+    }));
+
+    return [...userMarkers, ...branchMarkers, ...storeMarkers];
+  }, [branchLocations, locations, storeTargets]);
+
+  const handleMarkerPress = (marker) => {
+    if (marker?.kind === 'user' && marker.userId) {
+      navigation.navigate('SalesDetail', { userId: marker.userId });
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -131,84 +172,13 @@ const LiveMapScreen = () => {
 
   return (
       <View style={styles.container}>
-        <MapView
-          ref={mapRef}
+        <OpenStreetMapView
           style={styles.map}
-        initialRegion={region}
-        showsUserLocation
-        showsMyLocationButton
-      >
-        {locations.map((item) => {
-          if (!item.location) {
-            return null;
-          }
-
-          return (
-            <Marker
-              key={item.user_id}
-              coordinate={{
-                latitude: item.location.latitude,
-                longitude: item.location.longitude,
-              }}
-              pinColor={item.is_online ? '#10B981' : '#EF4444'}
-            >
-              <Callout onPress={() => navigation.navigate('SalesDetail', { userId: item.user_id })}>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutName}>{item.name}</Text>
-                  <Text style={styles.calloutTeam}>{item.branch?.name || item.team || 'Tanpa Cabang'}</Text>
-                  <View style={styles.calloutTime}>
-                    <Clock size={10} color="#64748B" />
-                    <Text style={styles.calloutTimeText}>
-                      {item.last_seen_at ? moment(item.last_seen_at).format('HH:mm') : 'Baru saja'}
-                    </Text>
-                  </View>
-                  <Text style={styles.calloutLink}>Lihat Detail {'>'}</Text>
-                </View>
-              </Callout>
-            </Marker>
-          );
-        })}
-
-        {branchLocations.map((branch) => (
-          <Marker
-            key={`branch-${branch.id}`}
-            coordinate={{
-              latitude: branch.latitude,
-              longitude: branch.longitude,
-            }}
-            pinColor="#0E7490"
-          >
-            <Callout>
-              <View style={styles.callout}>
-                <Text style={styles.calloutName}>{branch.name || 'Cabang'}</Text>
-                <Text style={styles.calloutTeam}>{branch.code || branch.area || 'Lokasi cabang'}</Text>
-                <Text style={styles.calloutTimeText}>
-                  {branch.is_active ? 'Cabang aktif' : 'Cabang nonaktif'}
-                </Text>
-              </View>
-            </Callout>
-          </Marker>
-        ))}
-
-        {storeTargets.map((store) => (
-          <Marker
-            key={`store-${store.id}`}
-            coordinate={{
-              latitude: store.latitude,
-              longitude: store.longitude,
-            }}
-            pinColor="#F59E0B"
-          >
-            <Callout>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutName}>{store.name || 'Toko'}</Text>
-                  <Text style={styles.calloutTeam}>{store.branch || store.address || 'Alamat belum tersedia'}</Text>
-                  <Text style={styles.calloutTimeText}>Koordinat lokal tersimpan</Text>
-                </View>
-            </Callout>
-          </Marker>
-          ))}
-        </MapView>
+          center={region}
+          markers={mapMarkers}
+          zoom={12}
+          onMarkerPress={handleMarkerPress}
+        />
 
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
         <ChevronLeft size={18} color="#0F766E" />
@@ -251,18 +221,17 @@ const LiveMapScreen = () => {
               style={styles.userCard}
               onPress={() => {
                 if (item.location) {
-                  const target = {
+                  setRegion({
                     latitude: item.location.latitude,
                     longitude: item.location.longitude,
                     latitudeDelta: 0.01,
                     longitudeDelta: 0.01,
-                  };
-                  mapRef.current?.animateToRegion(target, 1000);
+                  });
                 }
               }}
             >
               <View style={[styles.statusIndicator, { backgroundColor: item.is_online ? '#10B981' : '#EF4444' }]} />
-              <Text style={styles.userCardName} numberOfLines={1}>{item.name}</Text>
+              <Text style={styles.userCardName}>{item.name}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -270,7 +239,6 @@ const LiveMapScreen = () => {
     </View>
   );
 };
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -359,37 +327,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-  },
-  callout: {
-    width: 160,
-    padding: 8,
-  },
-  calloutName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  calloutTeam: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  calloutTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-  },
-  calloutTimeText: {
-    fontSize: 10,
-    color: '#94A3B8',
-  },
-  calloutLink: {
-    fontSize: 11,
-    color: '#0F766E',
-    fontWeight: 'bold',
-    marginTop: 8,
-    textAlign: 'right',
   },
   overlayBottom: {
     position: 'absolute',

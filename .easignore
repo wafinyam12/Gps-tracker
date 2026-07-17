@@ -1,0 +1,23 @@
+# EAS only needs the Expo mobile app for Android builds.
+# Exclude Laravel backend and deployment artifacts so Windows junctions/symlinks
+# such as gps-tracker/public/storage are not packed into the build tarball.
+gps-tracker/**
+postman/**
+
+# Workspace-level dependencies and local artifacts
+node_modules/**
+*.zip
+
+# Git and local editor files
+.git/**
+.agents/**
+.claude/**
+.codex/**
+.vscode/**
+.idea/**
+
+# Logs/temp
+*.log
+tmp/**
+dist/**
+build/**

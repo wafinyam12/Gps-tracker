@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Dimensions } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { locationService } from '../../api/services/locationService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ChevronLeft, MapPin, Clock, Navigation, Calendar } from 'lucide-react-native';
+import OpenStreetMapView from '../../components/maps/OpenStreetMapView';
 
 const toRadians = (value) => (value * Math.PI) / 180;
 
@@ -98,6 +98,14 @@ const SalesDetailScreen = () => {
       latitude: h.latitude,
       longitude: h.longitude,
     }));
+  const mapMarkers = lastLoc ? [{
+    id: 'last-location',
+    latitude: lastLoc.latitude,
+    longitude: lastLoc.longitude,
+    title: 'Posisi Terakhir',
+    description: userData?.last_seen_at_human || userData?.last_seen_at || '',
+    color: '#0F766E',
+  }] : [];
 
   return (
     <View style={styles.container}>
@@ -117,33 +125,16 @@ const SalesDetailScreen = () => {
         contentContainerStyle={styles.content}
       >
         <View style={styles.mapContainer}>
-          <MapView
+          <OpenStreetMapView
             style={styles.map}
-            initialRegion={{
+            center={{
               latitude: lastLoc?.latitude || -6.2,
               longitude: lastLoc?.longitude || 106.8,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
             }}
-          >
-            {lastLoc && (
-              <Marker
-                coordinate={{
-                  latitude: lastLoc.latitude,
-                  longitude: lastLoc.longitude,
-                }}
-                title="Posisi Terakhir"
-                pinColor="#0F766E"
-              />
-            )}
-            {polylineCoords.length > 1 && (
-              <Polyline
-                coordinates={polylineCoords}
-                strokeColor="#0F766E"
-                strokeWidth={3}
-              />
-            )}
-          </MapView>
+            markers={mapMarkers}
+            polyline={polylineCoords}
+            zoom={13}
+          />
         </View>
 
         <View style={styles.infoSection}>

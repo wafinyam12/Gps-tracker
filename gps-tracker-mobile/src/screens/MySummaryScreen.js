@@ -14,6 +14,7 @@ import { ArrowRight, AlertTriangle, CalendarDays, Clock, Target } from 'lucide-r
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import AppScreen from '../components/ui/AppScreen';
 import PageHeader from '../components/ui/PageHeader';
+import { getVisitResultLabel } from '../utils/visitOptions';
 
 const MySummaryScreen = () => {
   const navigation = useNavigation();
@@ -72,6 +73,15 @@ const MySummaryScreen = () => {
 
   const closePhotoPreview = () => {
     setPhotoPreviewVisible(false);
+  };
+
+  const handleVisitPress = (visit) => {
+    if (visit?.id) {
+      navigation.navigate('VisitForm', {
+        visitLogId: visit.id,
+        ...(visit.checkout_at ? { mode: 'detail' } : {}),
+      });
+    }
   };
 
   if (loading) {
@@ -145,7 +155,7 @@ const MySummaryScreen = () => {
           </>
         )}
         renderItem={({ item }) => (
-          <View style={styles.visitCard}>
+          <TouchableOpacity style={styles.visitCard} activeOpacity={0.9} onPress={() => handleVisitPress(item)}>
             <View style={styles.visitTopRow}>
               <View style={styles.visitCopy}>
                 <Text style={styles.visitTitle}>{item.store?.name || 'Toko'}</Text>
@@ -159,7 +169,7 @@ const MySummaryScreen = () => {
             <Text style={styles.visitInfo}>
               {item.visit_date || '-'} {item.checkin_at ? `- ${new Date(item.checkin_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}
             </Text>
-            <Text style={styles.visitInfo}>Hasil: {item.visit_result || 'belum disubmit'}</Text>
+            <Text style={styles.visitInfo}>Hasil: {getVisitResultLabel(item.visit_result)}</Text>
             {!!item.notes && <Text style={styles.visitNotes} numberOfLines={2}>{item.notes}</Text>}
 
             {Number(item.photos_count || 0) > 0 && (
@@ -184,7 +194,12 @@ const MySummaryScreen = () => {
                 </View>
               </View>
             )}
-          </View>
+
+            <View style={styles.detailLinkRow}>
+              <Text style={styles.detailLinkText}>Lihat detail input</Text>
+              <ArrowRight size={14} color="#0F766E" />
+            </View>
+          </TouchableOpacity>
         )}
         ListEmptyComponent={(
           <View style={styles.emptyState}>
@@ -349,6 +364,20 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     marginTop: 8,
     lineHeight: 17,
+  },
+  detailLinkRow: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  detailLinkText: {
+    color: '#0F766E',
+    fontSize: 12,
+    fontWeight: '800',
   },
   photoSection: {
     marginTop: 10,

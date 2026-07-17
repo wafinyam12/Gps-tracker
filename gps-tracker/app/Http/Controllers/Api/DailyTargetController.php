@@ -9,6 +9,7 @@ use App\Models\VisitLog;
 use App\Services\Visits\VisitAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class DailyTargetController extends Controller
 {
@@ -201,8 +202,6 @@ class DailyTargetController extends Controller
 
     private function photoUrl(string $path): string
     {
-        $baseUrl = rtrim(request()->getSchemeAndHttpHost() ?: config('app.url'), '/');
-
-        return $baseUrl.'/storage/visit_photos/'.$path;
+        return Storage::disk('visit_photos')->url($path);
     }
 }

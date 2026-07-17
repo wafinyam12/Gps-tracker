@@ -33,7 +33,7 @@ export const buildGoogleMapsRouteUrl = (target) => {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
 };
 
-export const openGoogleMapsRoute = async (target) => {
+export const openMapRoute = async (target) => {
   const url = buildGoogleMapsRouteUrl(target);
 
   if (!url) {

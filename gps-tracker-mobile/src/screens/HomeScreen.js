@@ -24,7 +24,8 @@ import { useAuth } from '../context/AuthContext';
 import { useLocationTracker } from '../hooks/useLocationTracker';
 import { reportService } from '../api/services/reportService';
 import { canVisitStores } from '../utils/roles';
-import { canOpenRoute, openGoogleMapsRoute } from '../utils/maps';
+import { canOpenRoute, openMapRoute } from '../utils/maps';
+import { getVisitResultLabel } from '../utils/visitOptions';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import AppScreen from '../components/ui/AppScreen';
 import Surface from '../components/ui/Surface';
@@ -89,13 +90,16 @@ const HomeScreen = () => {
 
   const handleVisitPress = (visit) => {
     if (visit?.id) {
-      navigation.navigate('VisitForm', { visitLogId: visit.id });
+      navigation.navigate('VisitForm', {
+        visitLogId: visit.id,
+        ...(visit.checkout_at ? { mode: 'detail' } : {}),
+      });
     }
   };
 
   const handleOpenRoute = async (store) => {
     try {
-      const opened = await openGoogleMapsRoute(store);
+      const opened = await openMapRoute(store);
 
       if (!opened) {
         Alert.alert('Rute Belum Tersedia', 'Koordinat toko belum tersedia.');
@@ -318,73 +322,83 @@ const HomeScreen = () => {
           const photoCount = Number(item.photos_count || 0);
 
           return (
-            <Surface style={styles.visitCard}>
-              <View style={styles.visitHeader}>
-                <View style={styles.visitTitleWrap}>
-                  <Text style={styles.visitTitle} numberOfLines={1}>{item.store?.name || 'Toko'}</Text>
-                  <Text style={styles.visitMeta} numberOfLines={1}>
-                    {item.store?.branch || item.store?.address || 'Belum ada detail'}
-                  </Text>
-                </View>
-                <View style={[styles.badge, isDuplicate ? styles.badgeDuplicate : styles.badgeNormal]}>
-                  <Text style={styles.badgeText}>
-                    {isDuplicate ? 'DUPLICATE' : (isCounted ? 'VALID' : 'TIDAK HITUNG')}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.visitMetaRow}>
-                <MapPin size={14} color={colors.textMuted} />
-                <Text style={styles.visitMetaText}>
-                  {item.visit_date || '-'} {item.checkin_at ? `- ${new Date(item.checkin_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}
-                </Text>
-              </View>
-
-              <Text style={styles.visitResult}>
-                Hasil: {item.visit_result || 'belum disubmit'}
-              </Text>
-
-              {canOpenRoute(item.store) && (
-                <TouchableOpacity
-                  style={styles.routeButton}
-                  onPress={() => handleOpenRoute(item.store)}
-                  activeOpacity={0.85}
-                >
-                  <Navigation size={14} color={colors.primary} />
-                  <Text style={styles.routeButtonText}>Rute</Text>
-                </TouchableOpacity>
-              )}
-
-              {photoCount > 0 && (
-                <View style={styles.photoSection}>
-                  <Text style={styles.photoLabel}>{photoCount} foto</Text>
-                  <View style={styles.photoPreviewRow}>
-                    {photoPreviews.map((photo, index) => (
-                      <TouchableOpacity
-                        key={photo.id}
-                        activeOpacity={0.9}
-                        onPress={(event) => {
-                          event?.stopPropagation?.();
-                          openPhotoPreview(photoPreviews, index);
-                        }}
-                      >
-                        <Image
-                          source={{ uri: photo.url }}
-                          style={styles.photoThumb}
-                        />
-                      </TouchableOpacity>
-                    ))}
-                    {photoCount > photoPreviews.length && (
-                      <View style={[styles.photoThumb, styles.photoThumbMore]}>
-                        <Text style={styles.photoThumbMoreText}>
-                          +{photoCount - photoPreviews.length}
-                        </Text>
-                      </View>
-                    )}
+            <TouchableOpacity activeOpacity={0.9} onPress={() => handleVisitPress(item)}>
+              <Surface style={styles.visitCard}>
+                <View style={styles.visitHeader}>
+                  <View style={styles.visitTitleWrap}>
+                    <Text style={styles.visitTitle} numberOfLines={1}>{item.store?.name || 'Toko'}</Text>
+                    <Text style={styles.visitMeta} numberOfLines={1}>
+                      {item.store?.branch || item.store?.address || 'Belum ada detail'}
+                    </Text>
+                  </View>
+                  <View style={[styles.badge, isDuplicate ? styles.badgeDuplicate : styles.badgeNormal]}>
+                    <Text style={styles.badgeText}>
+                      {isDuplicate ? 'DUPLICATE' : (isCounted ? 'VALID' : 'TIDAK HITUNG')}
+                    </Text>
                   </View>
                 </View>
-              )}
-            </Surface>
+
+                <View style={styles.visitMetaRow}>
+                  <MapPin size={14} color={colors.textMuted} />
+                  <Text style={styles.visitMetaText}>
+                    {item.visit_date || '-'} {item.checkin_at ? `- ${new Date(item.checkin_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                  </Text>
+                </View>
+
+                <Text style={styles.visitResult}>
+                  Hasil: {getVisitResultLabel(item.visit_result)}
+                </Text>
+
+                {canOpenRoute(item.store) && (
+                  <TouchableOpacity
+                    style={styles.routeButton}
+                    onPress={(event) => {
+                      event?.stopPropagation?.();
+                      handleOpenRoute(item.store);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Navigation size={14} color={colors.primary} />
+                    <Text style={styles.routeButtonText}>Rute</Text>
+                  </TouchableOpacity>
+                )}
+
+                {photoCount > 0 && (
+                  <View style={styles.photoSection}>
+                    <Text style={styles.photoLabel}>{photoCount} foto</Text>
+                    <View style={styles.photoPreviewRow}>
+                      {photoPreviews.map((photo, index) => (
+                        <TouchableOpacity
+                          key={photo.id}
+                          activeOpacity={0.9}
+                          onPress={(event) => {
+                            event?.stopPropagation?.();
+                            openPhotoPreview(photoPreviews, index);
+                          }}
+                        >
+                          <Image
+                            source={{ uri: photo.url }}
+                            style={styles.photoThumb}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                      {photoCount > photoPreviews.length && (
+                        <View style={[styles.photoThumb, styles.photoThumbMore]}>
+                          <Text style={styles.photoThumbMoreText}>
+                            +{photoCount - photoPreviews.length}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.detailLinkRow}>
+                  <Text style={styles.detailLinkText}>Lihat detail input</Text>
+                  <ArrowRight size={14} color={colors.primary} />
+                </View>
+              </Surface>
+            </TouchableOpacity>
           );
         }}
         ListEmptyComponent={(
@@ -694,6 +708,20 @@ const styles = StyleSheet.create({
     borderColor: colors.primarySoft,
   },
   routeButtonText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  detailLinkRow: {
+    marginTop: 2,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  detailLinkText: {
     color: colors.primary,
     fontSize: 12,
     fontWeight: '900',

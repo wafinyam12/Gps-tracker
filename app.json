@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "63b4ed63-94fd-442b-9f84-8957b02bae2f"
+      }
+    },
+    "android": {
+      "package": "com.nyma.salesdailyworkspace"
+    }
+  }
+}

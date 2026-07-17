@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Location from 'expo-location';
-import MapView, { Circle, Marker } from 'react-native-maps';
 import { Crosshair, RefreshCw, MapPin } from 'lucide-react-native';
 import { storeService } from '../api/services/storeService';
 import AppScreen from '../components/ui/AppScreen';
 import Surface from '../components/ui/Surface';
 import { colors, radii, shadows, spacing } from '../styles/theme';
+import OpenStreetMapView from '../components/maps/OpenStreetMapView';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -33,9 +33,9 @@ const normalizeStore = (store) => ({
 });
 
 const MyLocationScreen = () => {
-  const mapRef = useRef(null);
   const subscriptionRef = useRef(null);
   const [location, setLocation] = useState(null);
+  const [mapCenter, setMapCenter] = useState(DEFAULT_REGION);
   const [storePoints, setStorePoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -45,7 +45,7 @@ const MyLocationScreen = () => {
       return;
     }
 
-    mapRef.current?.animateToRegion(toRegion(nextLocation), 600);
+    setMapCenter(toRegion(nextLocation));
   };
 
   const loadStorePoints = async () => {
@@ -116,54 +116,57 @@ const MyLocationScreen = () => {
   }, []);
 
   const region = location ? toRegion(location) : DEFAULT_REGION;
+  const mapMarkers = useMemo(() => {
+    const points = [];
+
+    if (location?.coords) {
+      points.push({
+        id: 'current-location',
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        title: 'Lokasi Saya',
+        description: `Akurasi ${Math.round(location.coords.accuracy || 0)} m`,
+        color: colors.primary,
+      });
+    }
+
+    storePoints.forEach((store) => {
+      points.push({
+        id: `store-${store.id || store.code}`,
+        latitude: store.latitude,
+        longitude: store.longitude,
+        title: store.name || 'Toko',
+        description: store.branch || store.address || '',
+        color: '#16A34A',
+      });
+    });
+
+    return points;
+  }, [location, storePoints]);
+  const accuracyCircles = useMemo(() => {
+    if (!location?.coords || typeof location.coords.accuracy !== 'number') {
+      return [];
+    }
+
+    return [{
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      radius: location.coords.accuracy,
+      strokeColor: 'rgba(30, 64, 175, 0.35)',
+      fillColor: 'rgba(30, 64, 175, 0.12)',
+    }];
+  }, [location]);
 
   return (
     <AppScreen>
       <View style={styles.container}>
-        <MapView
-          ref={mapRef}
+        <OpenStreetMapView
           style={styles.map}
-          initialRegion={region}
-          showsUserLocation
-          showsMyLocationButton
-        >
-          {location && (
-            <>
-              <Marker
-                coordinate={{
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
-                }}
-                title="Lokasi Saya"
-                pinColor={colors.primary}
-              />
-              {typeof location.coords.accuracy === 'number' && (
-                <Circle
-                  center={{
-                    latitude: location.coords.latitude,
-                    longitude: location.coords.longitude,
-                  }}
-                  radius={location.coords.accuracy}
-                  strokeColor="rgba(30, 64, 175, 0.35)"
-                  fillColor="rgba(30, 64, 175, 0.12)"
-                />
-              )}
-            </>
-          )}
-
-          {storePoints.map((store) => (
-            <Marker
-              key={store.code || store.id}
-              coordinate={{
-                latitude: store.latitude,
-                longitude: store.longitude,
-              }}
-              title={store.name || 'Toko'}
-              description={store.branch || store.address || ''}
-              pinColor="#16A34A"
-            />
-          ))}
-        </MapView>
+          center={mapCenter || region}
+          markers={mapMarkers}
+          circles={accuracyCircles}
+          zoom={15}
+        />
 
         <View style={styles.overlay}>
           <Surface style={styles.statusCard}>
