@@ -1040,8 +1040,18 @@ class CoreApiTest extends TestCase
         $photo = VisitPhoto::first();
         $this->assertNotNull($photo);
 
+        $previewUrl = $response->json('data.photos.0.url');
+        $this->assertIsString($previewUrl);
+        $this->assertStringContainsString("/api/v1/visit/photos/{$photo->id}/preview", $previewUrl);
+        $this->assertStringContainsString('signature=', $previewUrl);
+
         $filePath = Storage::disk('visit_photos')->path($photo->path);
         Storage::disk('visit_photos')->assertExists($photo->path);
+
+        $previewResponse = $this->get($previewUrl);
+        $previewResponse->assertOk();
+        $previewResponse->assertHeader('Content-Type', 'image/jpeg');
+        $this->assertStringStartsWith("\xFF\xD8", $previewResponse->streamedContent());
 
         $exif = exif_read_data($filePath, null, true);
         $this->assertIsArray($exif);

@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useColorScheme,
   Image,
   View,
 } from 'react-native';
@@ -33,6 +34,8 @@ const EMPTY_FORM = {
 };
 
 const INVOICE_PREVIEW_LIMIT = 3;
+const ANDROID_PICKER_ITEM_COLOR = '#FFFFFF';
+const DEFAULT_PICKER_ITEM_COLOR = '#1E293B';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 const formatCurrency = (value) => {
@@ -84,6 +87,7 @@ const getInvoiceType = (invoice) => invoice?.document_type || 'Invoice';
 function VisitFormScreen({ route, navigation }) {
   const { user } = useAuth();
   const { visitLogId: routeVisitLogId, mode } = route.params || {};
+  const colorScheme = useColorScheme();
 
   const [visitLogId, setVisitLogId] = useState(routeVisitLogId || null);
   const [visit, setVisit] = useState(null);
@@ -147,6 +151,9 @@ function VisitFormScreen({ route, navigation }) {
   ));
   const photoPreviews = Array.isArray(visit?.photos_preview) ? visit.photos_preview : [];
   const photoCount = Number(visit?.photos_count || 0);
+  const pickerItemColor = Platform.OS === 'android' && colorScheme === 'dark'
+    ? ANDROID_PICKER_ITEM_COLOR
+    : DEFAULT_PICKER_ITEM_COLOR;
   const checkinTime = formatTimeOnly(visit?.checkin_at);
   const checkoutTime = formatTimeOnly(visit?.checkout_at);
   const visitTimelineText = canEditVisit
@@ -272,6 +279,18 @@ function VisitFormScreen({ route, navigation }) {
 
   const closePhotoPreview = () => {
     setPhotoPreviewVisible(false);
+  };
+
+  const logPhotoLoadError = (photo, error) => {
+    if (!__DEV__) {
+      return;
+    }
+
+    console.warn('[VisitFormScreen] Failed to load visit photo preview', {
+      photoId: photo?.id,
+      url: photo?.url,
+      error: error?.nativeEvent?.error,
+    });
   };
 
   const backToHome = useCallback(() => {
@@ -728,7 +747,7 @@ function VisitFormScreen({ route, navigation }) {
               enabled={canEditVisit}
               mode={Platform.OS === 'android' ? 'dropdown' : undefined}
               style={styles.picker}
-              itemStyle={styles.pickerItem}
+              itemStyle={[styles.pickerItem, { color: pickerItemColor }]}
               dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
             >
               {ACTIVITY_TYPES.map((item) => (
@@ -736,7 +755,7 @@ function VisitFormScreen({ route, navigation }) {
                   key={item.value}
                   label={item.label}
                   value={item.value}
-                  color="#1E293B"
+                  color={pickerItemColor}
                 />
               ))}
             </Picker>
@@ -750,7 +769,7 @@ function VisitFormScreen({ route, navigation }) {
               enabled={canEditVisit}
               mode={Platform.OS === 'android' ? 'dropdown' : undefined}
               style={styles.picker}
-              itemStyle={styles.pickerItem}
+              itemStyle={[styles.pickerItem, { color: pickerItemColor }]}
               dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
             >
               {VISIT_RESULTS.map((item) => (
@@ -758,7 +777,7 @@ function VisitFormScreen({ route, navigation }) {
                   key={item.value}
                   label={item.label}
                   value={item.value}
-                  color="#1E293B"
+                  color={pickerItemColor}
                 />
               ))}
             </Picker>
@@ -813,6 +832,7 @@ function VisitFormScreen({ route, navigation }) {
                   <Image
                     source={{ uri: photo.url }}
                     style={styles.photoThumb}
+                    onError={(error) => logPhotoLoadError(photo, error)}
                   />
                 </TouchableOpacity>
               ))}
@@ -1277,7 +1297,6 @@ const styles = StyleSheet.create({
     backgroundColor: Platform.OS === 'android' ? '#004181' : '#7a96b1',
   },
   pickerItem: {
-    color: '#1E293B',
     fontSize: 15,
   },
   input: {

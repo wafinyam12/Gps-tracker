@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\DailyTarget;
 use App\Models\User;
 use App\Models\VisitLog;
+use App\Models\VisitPhoto;
 use App\Services\Visits\VisitAnalyticsService;
+use App\Services\Visits\VisitPhotoUrlService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 class DailyTargetController extends Controller
 {
@@ -17,6 +18,7 @@ class DailyTargetController extends Controller
 
     public function __construct(
         private readonly VisitAnalyticsService $analytics,
+        private readonly VisitPhotoUrlService $photoUrls,
     ) {
     }
 
@@ -193,15 +195,15 @@ class DailyTargetController extends Controller
             ->values()
             ->map(fn ($photo) => [
                 'id'        => $photo->id,
-                'url'       => $this->photoUrl($photo->path),
+                'url'       => $this->photoUrl($photo),
                 'type'      => $photo->type,
                 'taken_at'  => $photo->taken_at?->toISOString(),
             ])
             ->all() ?? [];
     }
 
-    private function photoUrl(string $path): string
+    private function photoUrl(VisitPhoto $photo): string
     {
-        return Storage::disk('visit_photos')->url($path);
+        return $this->photoUrls->temporaryPreviewUrl($photo);
     }
 }

@@ -18,6 +18,10 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/login', [AuthController::class, 'login']);
     });
 
+    Route::get('visit/photos/{photo}/preview', [VisitPhotoController::class, 'preview'])
+        ->name('api.visit-photos.preview')
+        ->middleware(['signed:relative', 'throttle:photo-preview']);
+
     Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
         Route::prefix('auth')->group(function () {
             Route::get('me', [AuthController::class, 'me']);
