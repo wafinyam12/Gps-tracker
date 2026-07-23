@@ -12,6 +12,7 @@ class UserResource extends JsonResource
         return [
             'id'          => $this->id,
             'name'        => $this->name,
+            'full_name'   => $this->name,
             'username'    => $this->username,
             'email'       => $this->email,
             'phone'       => $this->phone,
@@ -37,6 +38,8 @@ class UserResource extends JsonResource
             'code'          => $this->team->code,
             'area'          => $this->team->area,
             'db_sap'        => $this->team->db_sap,
+            'udportal_username' => $this->team->udportal_username,
+            'has_udportal_password' => filled($this->team->udportal_password),
             'latitude'      => $this->team->location?->latitude,
             'longitude'     => $this->team->location?->longitude,
             'location'      => $this->team->location ? [

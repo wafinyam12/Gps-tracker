@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CashPaymentController;
 use App\Http\Controllers\Api\DailyTargetController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\LocationController;
@@ -45,6 +46,9 @@ Route::prefix('v1')->group(function () {
                 ->middleware('throttle:checkin');
 
             Route::post('visit/photos', [VisitPhotoController::class, 'upload'])
+                ->middleware('throttle:photo-upload');
+
+            Route::post('cash-payments', [CashPaymentController::class, 'store'])
                 ->middleware('throttle:photo-upload');
 
             Route::get('target/today', [DailyTargetController::class, 'today']);

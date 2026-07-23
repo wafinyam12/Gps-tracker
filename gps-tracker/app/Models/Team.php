@@ -10,11 +10,21 @@ class Team extends Model
 {
     use HasSpatial;
 
-    protected $fillable = ['name', 'code', 'area', 'db_sap', 'location', 'is_active'];
+    protected $fillable = [
+        'name',
+        'code',
+        'area',
+        'db_sap',
+        'udportal_username',
+        'udportal_password',
+        'location',
+        'is_active',
+    ];
 
     protected $casts = [
-        'location'  => Point::class,
-        'is_active' => 'boolean',
+        'location'          => Point::class,
+        'is_active'         => 'boolean',
+        'udportal_password' => 'encrypted',
     ];
 
     public function members()
