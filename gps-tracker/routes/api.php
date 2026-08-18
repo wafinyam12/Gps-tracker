@@ -66,6 +66,7 @@ Route::prefix('v1')->group(function () {
 
         Route::middleware('role:spv|manager|admin|superadmin')->group(function () {
             Route::get('location/live', [LocationController::class, 'liveSales']);
+            Route::get('location/customer-markers', [LocationController::class, 'customerMarkers']);
             Route::get('location/history/{user}', [LocationController::class, 'history']);
             Route::get('location/{user}', [LocationController::class, 'salesLocation']);
 
