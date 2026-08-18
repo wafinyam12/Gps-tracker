@@ -4,7 +4,8 @@ import { getJakartaDateString } from '../../utils/date';
 const todayParams = () => ({ date: getJakartaDateString() });
 
 export const locationService = {
-  getLiveLocations: async () => apiClient.get('/location/live'),
+  getLiveLocations: async (params) => apiClient.get('/location/live', { params }),
+  getCustomerMarkers: async (params) => apiClient.get('/location/customer-markers', { params }),
   getSalesLocation: async (userId) => apiClient.get(`/location/${userId}`),
   getLocationHistory: async (userId, params) => apiClient.get(`/location/history/${userId}`, { params: params || todayParams() }),
 };
