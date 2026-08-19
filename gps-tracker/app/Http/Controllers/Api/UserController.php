@@ -9,6 +9,7 @@ use App\Http\Resources\TeamResource;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
@@ -76,19 +77,23 @@ class UserController extends Controller
 
         $username = strtolower(trim((string) $request->username));
 
-        $user = User::create([
-            'name'        => $request->name,
-            'username'    => $username,
-            'email'       => $request->email,
-            'password'    => Hash::make($request->password),
-            'phone'       => $request->phone,
-            'employee_id' => $request->employee_id,
-            'slpCode'     => $request->role === 'sales' ? $request->slpCode : null,
-            'team_id'     => $teamId,
-            'is_active'   => $request->boolean('is_active', true),
-        ]);
+        $user = DB::transaction(function () use ($request, $username, $teamId) {
+            $user = User::create([
+                'name'        => $request->name,
+                'username'    => $username,
+                'email'       => $request->email,
+                'password'    => Hash::make($request->password),
+                'phone'       => $request->phone,
+                'employee_id' => $request->employee_id,
+                'slpCode'     => $request->role === 'sales' ? $request->slpCode : null,
+                'team_id'     => $teamId,
+                'is_active'   => $request->boolean('is_active', true),
+            ]);
 
-        $user->assignRole($request->role);
+            $user->assignRole($request->role);
+
+            return $user;
+        });
 
         return response()->success([
             'user'    => new UserResource($user->load(['roles', 'team'])),
@@ -132,12 +137,15 @@ class UserController extends Controller
             $data['password'] = Hash::make($request->password);
         }
 
-        $user->update($data);
+        DB::transaction(function () use ($user, $data, $request) {
+            $user->update($data);
 
-        // Update role kalau berubah
-        if ($user->getRoleNames()->first() !== $request->role) {
-            $user->syncRoles([$request->role]);
-        }
+            // Update role kalau berubah. Transaction prevents a user record from
+            // being updated when the role assignment itself cannot be completed.
+            if ($user->getRoleNames()->first() !== $request->role) {
+                $user->syncRoles([$request->role]);
+            }
+        });
 
         return response()->success([
             'user'    => new UserResource($user->fresh()->load(['roles', 'team'])),

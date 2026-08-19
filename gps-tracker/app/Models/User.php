@@ -15,6 +15,12 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasRoles, HasSpatial, Notifiable, SoftDeletes, HasFactory;
 
+    /**
+     * Roles and permissions are seeded for the web guard. Sanctum authenticates
+     * API requests, but must not change the guard used by Spatie to resolve roles.
+     */
+    protected $guard_name = 'web';
+
     protected $fillable = [
         'name', 'username', 'email', 'password', 'phone', 'photo',
         'employee_id', 'team_id', 'is_active', 'last_seen_at', 'last_location','slpCode','db_sap'
