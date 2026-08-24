@@ -513,7 +513,9 @@ class OutstandingReceivableService
 
     private function normalizeCardCode(mixed $value): ?string
     {
-        $text = strtoupper(trim((string) $value));
+        // CardCode belongs to SAP. Keep the source value intact; database
+        // comparisons use the configured collation and the customer scope.
+        $text = trim((string) $value);
 
         return $text !== '' ? $text : null;
     }

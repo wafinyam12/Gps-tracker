@@ -8,11 +8,13 @@ use App\Models\LocationPing;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Models\User;
+use App\Services\MasterData\StoreCatalogSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Storage;
@@ -319,6 +321,163 @@ class CoreApiTest extends TestCase
             ->assertJsonPath('data.items.0.external_bp_code', 'A00000002');
 
         Http::assertSentCount(1);
+    }
+
+    public function test_sap_customers_are_scoped_by_team_and_sales_code(): void
+    {
+        $surabaya = Team::create([
+            'code' => 'SBY-01',
+            'name' => 'Cabang Surabaya',
+            'area' => 'Surabaya',
+            'db_sap' => 'SAP_SURABAYA',
+            'is_active' => true,
+        ]);
+        $bandung = Team::create([
+            'code' => 'BDG-01',
+            'name' => 'Cabang Bandung',
+            'area' => 'Bandung',
+            'db_sap' => 'SAP_BANDUNG',
+            'is_active' => true,
+        ]);
+
+        $surabayaSales = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $surabaya->id,
+            'slpCode' => '47',
+        ]);
+        $surabayaSales->assignRole('sales');
+
+        $bandungSales = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $bandung->id,
+            'slpCode' => '48',
+        ]);
+        $bandungSales->assignRole('sales');
+
+        Http::fake([
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/47' => Http::response(
+                $this->sapOutstandingResponse([
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'C0001',
+                        'Customer Name' => 'Customer Surabaya',
+                    ]),
+                ]),
+                200,
+            ),
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_BANDUNG/48' => Http::response(
+                $this->sapOutstandingResponse([
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'C0001',
+                        'Customer Name' => 'Customer Bandung',
+                    ]),
+                ]),
+                200,
+            ),
+        ]);
+
+        $surabayaResponse = $this->actingAs($surabayaSales, 'sanctum')
+            ->getJson('/api/v1/stores/available');
+        $surabayaResponse->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Customer Surabaya');
+
+        $bandungResponse = $this->actingAs($bandungSales, 'sanctum')
+            ->getJson('/api/v1/stores/available');
+        $bandungResponse->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Customer Bandung');
+
+        $this->assertDatabaseHas('stores', [
+            'team_id' => $surabaya->id,
+            'external_bp_code' => 'C0001',
+            'sap_slp_code' => '47',
+        ]);
+        $this->assertDatabaseHas('stores', [
+            'team_id' => $bandung->id,
+            'external_bp_code' => 'C0001',
+            'sap_slp_code' => '48',
+        ]);
+        $this->assertSame(2, Store::where('external_bp_code', 'C0001')->count());
+    }
+
+    public function test_sap_sales_reassignment_preserves_the_store_and_local_location(): void
+    {
+        $team = Team::create([
+            'code' => 'SBY-01',
+            'name' => 'Cabang Surabaya',
+            'area' => 'Surabaya',
+            'db_sap' => 'SAP_SURABAYA',
+            'is_active' => true,
+        ]);
+        $sales47 = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $team->id,
+            'slpCode' => '47',
+        ]);
+        $sales48 = User::factory()->create([
+            'is_active' => true,
+            'team_id' => $team->id,
+            'slpCode' => '48',
+        ]);
+
+        $catalog = app(StoreCatalogSyncService::class);
+        Http::fake([
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/47' => Http::response(
+                $this->sapOutstandingResponse([
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'C0001',
+                        'Customer Name' => 'Customer Pindah Sales',
+                    ]),
+                ]),
+                200,
+            ),
+        ]);
+        $catalog->sync(false, $sales47, true);
+
+        $store = Store::query()
+            ->where('team_id', $team->id)
+            ->where('external_bp_code', 'C0001')
+            ->firstOrFail();
+        $store->update([
+            'location' => new Point(latitude: -7.257472, longitude: 112.752090),
+        ]);
+        $storeId = $store->id;
+
+        Cache::flush();
+        Http::fake([
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/47' => Http::response(
+                $this->sapOutstandingResponse([]),
+                200,
+            ),
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/48' => Http::response(
+                $this->sapOutstandingResponse([
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'C0001',
+                        'Customer Name' => 'Customer Pindah Sales',
+                    ]),
+                ]),
+                200,
+            ),
+        ]);
+
+        $catalog->sync(false, $sales47, true);
+        $this->assertDatabaseHas('stores', [
+            'id' => $storeId,
+            'team_id' => $team->id,
+            'status' => 'inactive',
+            'sap_slp_code' => null,
+        ]);
+
+        $catalog->sync(false, $sales48, true);
+
+        $reassignedStore = Store::findOrFail($storeId);
+        $this->assertSame('48', $reassignedStore->sap_slp_code);
+        $this->assertSame('active', $reassignedStore->status);
+        $this->assertSame(-7.257472, $reassignedStore->location?->latitude);
+        $this->assertSame(112.752090, $reassignedStore->location?->longitude);
+        $this->assertSame(1, Store::where('team_id', $team->id)
+            ->where('external_bp_code', 'C0001')
+            ->count());
     }
 
     public function test_sales_can_see_today_target_progress(): void
@@ -917,7 +1076,7 @@ class CoreApiTest extends TestCase
                 latitude: -6.20010,
                 longitude: 106.81660,
             ),
-            'geofence_radius' => 100,
+            'geofence_radius' => 50,
             'status' => 'active',
             'master_source' => 'sap_dummy',
             'master_payload' => ['source' => 'test'],
@@ -1002,7 +1161,7 @@ class CoreApiTest extends TestCase
                 latitude: -6.20010,
                 longitude: 106.81660,
             ),
-            'geofence_radius' => 100,
+            'geofence_radius' => 50,
             'status' => 'active',
             'master_source' => 'sap_dummy',
             'master_payload' => ['source' => 'test'],
@@ -1104,7 +1263,7 @@ class CoreApiTest extends TestCase
                 latitude: -6.914744,
                 longitude: 107.609810,
             ),
-            'geofence_radius' => 100,
+            'geofence_radius' => 50,
             'status' => 'active',
             'master_source' => 'sap_dummy',
             'master_payload' => ['source' => 'test'],

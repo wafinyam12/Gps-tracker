@@ -4,6 +4,14 @@
     "appVersionSource": "local"
   },
   "build": {
+    "staging": {
+      "distribution": "internal",
+      "environment": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "staging"
+    },
     "preview": {
       "distribution": "internal",
       "android": {
@@ -12,7 +20,8 @@
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://crm-sales.utomo-dev.xyz/api/v1",
         "EXPO_PUBLIC_OSM_TILE_URL": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "android": {
@@ -21,7 +30,8 @@
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://crm-sales.utomo-dev.xyz/api/v1",
         "EXPO_PUBLIC_OSM_TILE_URL": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-      }
+      },
+      "channel": "production"
     }
   }
 }

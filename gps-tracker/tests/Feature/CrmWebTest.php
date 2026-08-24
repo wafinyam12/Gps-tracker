@@ -73,7 +73,7 @@ class CrmWebTest extends TestCase
             'branch' => 'Cabang A',
             'city' => 'Jakarta',
             'location' => new Point(latitude: -6.21, longitude: 106.81),
-            'geofence_radius' => 100,
+            'geofence_radius' => 50,
             'status' => 'active',
             'master_source' => 'sap_dummy',
         ]);
@@ -87,7 +87,7 @@ class CrmWebTest extends TestCase
             'branch' => 'Cabang B',
             'city' => 'Surabaya',
             'location' => new Point(latitude: -7.25, longitude: 112.75),
-            'geofence_radius' => 100,
+            'geofence_radius' => 50,
             'status' => 'active',
             'master_source' => 'sap_dummy',
         ]);

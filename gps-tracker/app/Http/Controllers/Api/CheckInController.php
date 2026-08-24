@@ -15,6 +15,7 @@ use MatanYadaev\EloquentSpatial\Objects\Point;
 class CheckInController extends Controller
 {
     private const LOCAL_TIMEZONE = 'Asia/Jakarta';
+    private const MAX_VISIT_GEOFENCE_RADIUS_METERS = 50;
 
     public function __construct(
         private readonly StoreCatalogSyncService $catalog,
@@ -161,6 +162,7 @@ class CheckInController extends Controller
             ->whereDate('visit_date', $visitDate)
             ->exists();
 
+        $geofenceRadius = $this->effectiveGeofenceRadius($store);
         $distanceMeters = null;
         $isValidLocation = ! $isMock;
 
@@ -172,7 +174,7 @@ class CheckInController extends Controller
                 $store->location->longitude,
             );
 
-            $isValidLocation = $distanceMeters <= $store->geofence_radius && ! $isMock;
+            $isValidLocation = $distanceMeters <= $geofenceRadius && ! $isMock;
         }
 
         $visitLog = null;
@@ -240,7 +242,7 @@ class CheckInController extends Controller
             'visit_log_id'      => $visitLog->id,
             'is_valid_location'  => $isValidLocation,
             'distance_meters'    => $distanceMeters !== null ? round($distanceMeters, 2) : null,
-            'geofence_radius'    => $store->geofence_radius,
+            'geofence_radius'    => $geofenceRadius,
             'is_duplicate'       => $isDuplicate,
             'counted_as_target'  => $isValidLocation && ! $isDuplicate,
             'store'              => $this->formatStore($store),
@@ -252,9 +254,10 @@ class CheckInController extends Controller
     private function resolveStore(Request $request): ?Store
     {
         if ($request->filled('store_id')) {
-            $store = Store::find($request->store_id);
-
-            return $store?->status === 'active' ? $store : null;
+            return $this->catalog->findById(
+                $request->integer('store_id'),
+                $request->user(),
+            );
         }
 
         $externalCode = $this->catalog->normalizeExternalCode($request->input('external_bp_code'));
@@ -291,7 +294,7 @@ class CheckInController extends Controller
             'pic_phone'       => $store?->pic_phone,
             'latitude'        => $store?->location?->latitude,
             'longitude'       => $store?->location?->longitude,
-            'geofence_radius' => $store?->geofence_radius,
+            'geofence_radius' => $this->effectiveGeofenceRadius($store),
             'status'          => $store?->status,
         ];
     }
@@ -343,6 +346,17 @@ class CheckInController extends Controller
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 
         return $earthRadius * $c;
+    }
+
+    private function effectiveGeofenceRadius(?Store $store): int
+    {
+        $radius = (int) ($store?->geofence_radius ?: self::MAX_VISIT_GEOFENCE_RADIUS_METERS);
+
+        if ($radius <= 0) {
+            return self::MAX_VISIT_GEOFENCE_RADIUS_METERS;
+        }
+
+        return min($radius, self::MAX_VISIT_GEOFENCE_RADIUS_METERS);
     }
 
     private function withSubmissionMeta(Request $request, array $formData): array

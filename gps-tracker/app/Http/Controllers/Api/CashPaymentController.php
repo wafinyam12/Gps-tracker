@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\User;
 use App\Models\VisitLog;
+use App\Services\MasterData\StoreCatalogSyncService;
 use App\Services\UdPortal\UdPortalCashPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,7 @@ class CashPaymentController extends Controller
 {
     public function __construct(
         private readonly UdPortalCashPaymentService $cashPaymentService,
+        private readonly StoreCatalogSyncService $catalog,
     ) {
     }
 
@@ -56,7 +58,7 @@ class CashPaymentController extends Controller
             return response()->error('Data kunjungan tidak ditemukan.', 404);
         }
 
-        $store = $visitLog?->store ?: $this->resolveStore($request);
+        $store = $visitLog?->store ?: $this->resolveStore($request, $user);
         $amount = $this->normalizeAmount($request->input('amount'));
         $phone = $this->normalizePhoneDigits(
             $this->firstFilled($request, ['telpon', 'telp', 'phone']) ?: $store?->pic_phone
@@ -155,13 +157,13 @@ class CashPaymentController extends Controller
             ->first();
     }
 
-    private function resolveStore(Request $request): ?Store
+    private function resolveStore(Request $request, User $user): ?Store
     {
         if (! $request->filled('store_id')) {
             return null;
         }
 
-        return Store::find($request->integer('store_id'));
+        return $this->catalog->findById($request->integer('store_id'), $user);
     }
 
     private function firstFilled(Request $request, array $keys): ?string

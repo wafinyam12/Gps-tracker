@@ -7,6 +7,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class StoreResource extends JsonResource
 {
+    private const MAX_GEOFENCE_RADIUS_METERS = 50;
+
     public function toArray(Request $request): array
     {
         return [
@@ -20,7 +22,10 @@ class StoreResource extends JsonResource
             'city'            => $this->city,
             'latitude'        => $this->location?->latitude,
             'longitude'       => $this->location?->longitude,
-            'geofence_radius' => $this->geofence_radius,
+            'geofence_radius' => min(
+                (int) ($this->geofence_radius ?: self::MAX_GEOFENCE_RADIUS_METERS),
+                self::MAX_GEOFENCE_RADIUS_METERS
+            ),
             'pic_name'        => $this->pic_name,
             'pic_phone'       => $this->pic_phone,
             'status'          => $this->status,

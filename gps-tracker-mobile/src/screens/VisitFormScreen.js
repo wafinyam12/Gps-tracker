@@ -49,6 +49,7 @@ const EMPTY_CASH_PAYMENT_FORM = {
 
 const CASH_PAYMENT_TYPES = ['Tunai', 'Transfer', 'BG / Giro'];
 const INVOICE_PREVIEW_LIMIT = 3;
+const SHOW_MOBILE_RECEIVABLES = false; // Temporary v0.5 testing: focus mobile on visit flow.
 const ANDROID_PICKER_ITEM_COLOR = '#FFFFFF';
 const DEFAULT_PICKER_ITEM_COLOR = '#1E293B';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -694,7 +695,7 @@ function VisitFormScreen({ route, navigation }) {
           )}
         </View>
 
-        {!!sapOutstanding && (
+        {SHOW_MOBILE_RECEIVABLES && !!sapOutstanding && (
           <View style={styles.sapCard}>
             <View style={styles.sapHeader}>
               <View style={styles.sapHeaderCopy}>
@@ -877,7 +878,7 @@ function VisitFormScreen({ route, navigation }) {
           </View>
         )}
 
-        {canEditVisit && (
+        {SHOW_MOBILE_RECEIVABLES && canEditVisit && (
           <View style={styles.cashPaymentCard}>
             <View style={styles.cashPaymentHeader}>
               <View>

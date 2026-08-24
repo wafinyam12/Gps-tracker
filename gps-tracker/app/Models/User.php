@@ -113,7 +113,9 @@ class User extends Authenticatable
 
     public function sapDatabase(): ?string
     {
-        return $this->team?->db_sap ?: ($this->db_sap ?: null);
+        // SAP database is owned by the branch/team, never by an individual
+        // account. This keeps all customer lookups inside the user's branch.
+        return $this->team?->db_sap ?: null;
     }
 
     public function sapSalesCode(): ?string

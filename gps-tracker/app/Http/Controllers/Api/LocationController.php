@@ -251,6 +251,7 @@ class LocationController extends Controller
         $candidateLimit = self::CUSTOMER_CANDIDATE_LIMIT + 1;
         $candidates = Store::query()
             ->select(['id', 'code', 'external_bp_code', 'name', 'address', 'branch', 'location'])
+            ->where('team_id', $selectedTeam->id)
             ->where('status', 'active')
             ->whereNotNull('location')
             ->whereRaw('ST_Y(location) BETWEEN ? AND ?', [$south, $north])
@@ -264,9 +265,7 @@ class LocationController extends Controller
             $candidates = $candidates->take(self::CUSTOMER_CANDIDATE_LIMIT)->values();
         }
 
-        $stores = $candidates
-            ->filter(fn (Store $store) => $this->resolveStoreTeamId($store, $branches) === (int) $selectedTeam->id)
-            ->values();
+        $stores = $candidates->values();
         $markerLimit = min((int) $request->input('limit', self::CUSTOMER_MARKER_LIMIT), self::CUSTOMER_MARKER_LIMIT);
         $zoom = (int) $request->zoom;
         $showIndividualMarkers = $zoom >= 15 && $stores->count() <= $markerLimit && ! $candidateLimitReached;

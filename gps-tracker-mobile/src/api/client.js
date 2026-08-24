@@ -1,15 +1,10 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import authEvents from '../utils/authEvents';
 
-const DEFAULT_BASE_URL = Platform.select({
-  android: 'http://10.0.2.2:8000/api/v1',
-  ios: 'http://localhost:8000/api/v1',
-  web: 'http://localhost:8000/api/v1',
-  default: 'http://localhost:8000/api/v1',
-});
+// Standalone builds must never silently fall back to a developer machine.
+// Local development can still override this explicitly through EXPO_PUBLIC_API_BASE_URL.
+const STAGING_BASE_URL = 'https://crm-sales.utomo-dev.xyz/api/v1';
 
 const normalizeApiBaseUrl = (value) => {
   const normalized = value.trim().replace(/\/$/, '');
@@ -25,39 +20,10 @@ const normalizeApiBaseUrl = (value) => {
   return `${normalized}/api/v1`;
 };
 
-const getExpoDevHost = () => {
-  const hostUri =
-    Constants.expoConfig?.hostUri ||
-    Constants.manifest?.hostUri;
-
-  if (!hostUri) {
-    return null;
-  }
-
-  const withoutScheme = hostUri.replace(/^[a-zA-Z]+:\/\//, '');
-  const hostPort = withoutScheme.split('/')[0];
-  const host = hostPort.split(':')[0];
-
-  if (!host || host === 'localhost' || host === '127.0.0.1') {
-    return null;
-  }
-
-  return host;
-};
-
 const resolveBaseUrl = () => {
   const configured = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 
-  if (!configured) {
-    const devHost = getExpoDevHost();
-    if (devHost) {
-      return `http://${devHost}:8000/api/v1`;
-    }
-
-    return DEFAULT_BASE_URL;
-  }
-
-  return normalizeApiBaseUrl(configured);
+  return normalizeApiBaseUrl(configured || STAGING_BASE_URL);
 };
 
 const BASE_URL = resolveBaseUrl();
