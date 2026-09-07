@@ -69,6 +69,8 @@ class TeamController extends Controller
             'code'      => $request->code,
             'area'      => $request->area,
             'db_sap'    => strtoupper(trim((string) $request->db_sap)),
+            'udportal_username' => $this->normalizeNullableString($request->udportal_username),
+            'udportal_password' => $this->normalizeNullableString($request->udportal_password),
             'location'  => new Point(
                 latitude: (float) $request->latitude,
                 longitude: (float) $request->longitude,
@@ -89,17 +91,26 @@ class TeamController extends Controller
             return response()->error('Unauthorized action.', 403);
         }
 
-        $team->update([
+        $payload = [
             'name'      => $request->name,
             'code'      => $request->code,
             'area'      => $request->area,
             'db_sap'    => strtoupper(trim((string) $request->db_sap)),
+            'udportal_username' => $this->normalizeNullableString($request->udportal_username),
             'location'  => new Point(
                 latitude: (float) $request->latitude,
                 longitude: (float) $request->longitude,
             ),
             'is_active' => $request->boolean('is_active', $team->is_active),
-        ]);
+        ];
+
+        if ($payload['udportal_username'] === null) {
+            $payload['udportal_password'] = null;
+        } elseif ($request->filled('udportal_password')) {
+            $payload['udportal_password'] = $this->normalizeNullableString($request->udportal_password);
+        }
+
+        $team->update($payload);
 
         return response()->success(new TeamResource($team->loadCount('members')), 'Cabang berhasil diupdate.');
     }
@@ -169,5 +180,12 @@ class TeamController extends Controller
         }
 
         return false;
+    }
+
+    private function normalizeNullableString(mixed $value): ?string
+    {
+        $text = trim((string) $value);
+
+        return $text !== '' ? $text : null;
     }
 }

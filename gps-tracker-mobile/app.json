@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sales Daily",
     "slug": "sales-daily",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "xyz.utomodev.salesdaily.staging",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -19,6 +19,13 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION",
@@ -48,12 +55,19 @@
         {
           "cameraPermission": "Izinkan aplikasi mengambil foto kunjungan."
         }
-      ]
+      ],
+      "expo-background-task"
     ],
     "extra": {
       "eas": {
         "projectId": "8eb7f7a3-ae85-4b5a-bfc1-cc8e55eb9055"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/8eb7f7a3-ae85-4b5a-bfc1-cc8e55eb9055"
     }
   }
 }

@@ -15,6 +15,12 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasRoles, HasSpatial, Notifiable, SoftDeletes, HasFactory;
 
+    /**
+     * Roles and permissions are seeded for the web guard. Sanctum authenticates
+     * API requests, but must not change the guard used by Spatie to resolve roles.
+     */
+    protected $guard_name = 'web';
+
     protected $fillable = [
         'name', 'username', 'email', 'password', 'phone', 'photo',
         'employee_id', 'team_id', 'is_active', 'last_seen_at', 'last_location','slpCode','db_sap'
@@ -107,7 +113,9 @@ class User extends Authenticatable
 
     public function sapDatabase(): ?string
     {
-        return $this->team?->db_sap ?: ($this->db_sap ?: null);
+        // SAP database is owned by the branch/team, never by an individual
+        // account. This keeps all customer lookups inside the user's branch.
+        return $this->team?->db_sap ?: null;
     }
 
     public function sapSalesCode(): ?string

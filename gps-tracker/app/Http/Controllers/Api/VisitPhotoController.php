@@ -8,14 +8,18 @@ use App\Models\User;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Services\Visits\VisitPhotoExifService;
+use App\Services\Visits\VisitPhotoUrlService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Intervention\Image\Drivers\Gd\Driver as GdDriver;
 use Intervention\Image\Encoders\JpegEncoder;
 use Intervention\Image\ImageManager;
+use League\Flysystem\UnableToReadFile;
 use MatanYadaev\EloquentSpatial\Objects\Point;
+use Throwable;
 
 class VisitPhotoController extends Controller
 {
@@ -23,6 +27,7 @@ class VisitPhotoController extends Controller
 
     public function __construct(
         private readonly VisitPhotoExifService $exifService,
+        private readonly VisitPhotoUrlService $photoUrls,
     ) {
     }
 
@@ -64,7 +69,7 @@ class VisitPhotoController extends Controller
 
             $uploaded[] = [
                 'id'       => $visitPhoto->id,
-                'url'      => $this->photoUrl($path),
+                'url'      => $this->photoUrl($visitPhoto),
                 'type'     => $visitPhoto->type,
                 'taken_at' => $visitPhoto->taken_at->toISOString(),
                 'uploaded_by' => [
@@ -97,7 +102,7 @@ class VisitPhotoController extends Controller
             ->get()
             ->map(fn($photo) => [
                 'id'       => $photo->id,
-                'url'      => $this->photoUrl($photo->path),
+                'url'      => $this->photoUrl($photo),
                 'type'     => $photo->type,
                 'location' => $photo->location ? [
                     'latitude'  => $photo->location->latitude,
@@ -110,6 +115,59 @@ class VisitPhotoController extends Controller
             'visit_log_id' => $visitLog->id,
             'total'        => $photos->count(),
             'photos'       => $photos,
+        ]);
+    }
+
+    public function preview(VisitPhoto $photo)
+    {
+        $disk = Storage::disk('visit_photos');
+
+        try {
+            $stream = $disk->readStream($photo->path);
+        } catch (UnableToReadFile $exception) {
+            Log::warning('Visit photo preview file is not readable.', [
+                'photo_id' => $photo->id,
+                'visit_log_id' => $photo->visit_log_id,
+                'path' => $photo->path,
+                'driver' => config('filesystems.disks.visit_photos.driver'),
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response('Foto tidak ditemukan.', 404);
+        } catch (Throwable $exception) {
+            Log::error('Visit photo preview read failed.', [
+                'photo_id' => $photo->id,
+                'visit_log_id' => $photo->visit_log_id,
+                'path' => $photo->path,
+                'driver' => config('filesystems.disks.visit_photos.driver'),
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response('Foto tidak dapat dibuka.', 500);
+        }
+
+        if (! is_resource($stream)) {
+            Log::error('Visit photo preview stream is invalid.', [
+                'photo_id' => $photo->id,
+                'visit_log_id' => $photo->visit_log_id,
+                'path' => $photo->path,
+                'driver' => config('filesystems.disks.visit_photos.driver'),
+            ]);
+
+            return response('Foto tidak dapat dibuka.', 500);
+        }
+
+        return response()->stream(function () use ($stream): void {
+            fpassthru($stream);
+
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }, 200, [
+            'Content-Type' => 'image/jpeg',
+            'Content-Disposition' => 'inline; filename="'.$this->previewFilename($photo).'"',
+            'Cache-Control' => 'private, max-age=300',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -177,9 +235,14 @@ class VisitPhotoController extends Controller
         return hash_hmac('sha256', $entropy, (string) config('app.key')).'.jpg';
     }
 
-    private function photoUrl(string $path): string
+    private function photoUrl(VisitPhoto $photo): string
     {
-        return Storage::disk('visit_photos')->url($path);
+        return $this->photoUrls->temporaryPreviewUrl($photo);
+    }
+
+    private function previewFilename(VisitPhoto $photo): string
+    {
+        return Str::afterLast($photo->path, '/') ?: 'visit-photo.jpg';
     }
 
     private function canAccessVisitLog(User $viewer, VisitLog $visitLog): bool

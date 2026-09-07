@@ -2,17 +2,22 @@
 
 namespace App\Services\MasterData;
 
+use App\Jobs\SyncSapCustomerCatalog;
 use App\Models\Store;
 use App\Models\User;
 use App\Services\Sap\OutstandingReceivableService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class StoreCatalogSyncService
 {
     private const CACHE_PREFIX = 'store-catalog:v3';
+    private const DEFAULT_GEOFENCE_RADIUS_METERS = 50;
+    private const MAX_GEOFENCE_RADIUS_METERS = 50;
 
     public function __construct(
         private readonly LocalSapBusinessPartnerProvider $fallbackProvider,
@@ -24,7 +29,7 @@ class StoreCatalogSyncService
     {
         $this->ensureCatalog($onlyActive, $user, $force);
 
-        return $this->queryStores($this->resolveSourceKey($user), $onlyActive);
+        return $this->queryStores($user, $onlyActive);
     }
 
     public function activeStores(?User $user = null): Collection
@@ -44,14 +49,42 @@ class StoreCatalogSyncService
             return null;
         }
 
-        $source = $this->resolveSourceKey($user);
         $this->ensureCatalog(false, $user);
 
-        return Store::query()
+        return $this->scopeQuery(Store::query(), $user)
             ->select($this->storeColumns())
-            ->where('master_source', $source)
             ->where('external_bp_code', $normalizedCode)
             ->first();
+    }
+
+    public function findById(int $storeId, ?User $user = null, bool $onlyActive = true): ?Store
+    {
+        $this->ensureCatalog($onlyActive, $user);
+
+        return $this->scopeQuery(Store::query(), $user, $onlyActive)
+            ->select($this->storeColumns())
+            ->whereKey($storeId)
+            ->first();
+    }
+
+    /**
+     * Apply the authenticated user's customer boundary to a stores query.
+     * SAP customers are scoped branch first, then to their current SAP sales.
+     */
+    public function scopeQuery(Builder $query, ?User $user = null, bool $onlyActive = false): Builder
+    {
+        $query->where('master_source', $this->resolveSourceKey($user));
+
+        if ($this->hasSapCredentials($user)) {
+            $query->where('team_id', (int) $user->team_id)
+                ->where('sap_slp_code', $this->sapSalesCode($user));
+        }
+
+        if ($onlyActive) {
+            $query->where('status', 'active');
+        }
+
+        return $query;
     }
 
     public function warm(?User $user = null, bool $onlyActive = false): void
@@ -66,13 +99,12 @@ class StoreCatalogSyncService
     public function ensureCatalog(bool $onlyActive = false, ?User $user = null, bool $force = false): void
     {
         $identity = $this->resolveCatalogIdentity($user);
-        $source = $this->resolveSourceKey($user);
 
-        if (! $force && $this->hasFreshCatalog($identity) && $this->hasCatalogRows($source)) {
+        if (! $force && $this->hasFreshCatalog($identity) && $this->hasCatalogRows($user)) {
             return;
         }
 
-        if (! $force && $this->hasCatalogRows($source)) {
+        if (! $force && $this->hasCatalogRows($user)) {
             $this->scheduleWarmup($user, $onlyActive);
 
             return;
@@ -95,20 +127,22 @@ class StoreCatalogSyncService
         $pendingSeconds = max(10, (int) config('sap.store_catalog_warmup_seconds', 30));
         Cache::put($this->warmupPendingKey($identity), true, now()->addSeconds($pendingSeconds));
 
-        app()->terminating(function () use ($user, $onlyActive, $identity) {
-            try {
-                $this->sync($onlyActive, $user, true);
-            } catch (Throwable $throwable) {
-                Log::warning('Failed to warm SAP store catalog', [
-                    'user_id' => $user?->id,
-                    'db_sap' => $user?->sapDatabase(),
-                    'slp_code' => $user?->sapSalesCode(),
-                    'error' => $throwable->getMessage(),
-                ]);
-            } finally {
-                $this->clearWarmupPending($identity);
-            }
-        });
+        try {
+            SyncSapCustomerCatalog::dispatch(
+                (int) $user->id,
+                (int) $user->team_id,
+                (string) $this->sapSalesCode($user),
+            )->onQueue('sap-sync');
+        } catch (Throwable $throwable) {
+            $this->clearWarmupPending($identity);
+
+            Log::warning('Failed to queue SAP store catalog warmup', [
+                'user_id' => $user?->id,
+                'db_sap' => $user?->sapDatabase(),
+                'slp_code' => $user?->sapSalesCode(),
+                'error' => $throwable->getMessage(),
+            ]);
+        }
     }
 
     public function normalizeExternalCode(?string $value): ?string
@@ -119,7 +153,7 @@ class StoreCatalogSyncService
 
         $value = trim($value);
 
-        return $value !== '' ? strtoupper($value) : null;
+        return $value !== '' ? $value : null;
     }
 
     private function resolveSourceData(?User $user): array
@@ -170,31 +204,34 @@ class StoreCatalogSyncService
         $shouldReconcile = $resolved['should_reconcile'];
 
         if ($shouldReconcile) {
-            $syncedCodes = [];
+            $teamId = $this->hasSapCredentials($user) ? (int) $user->team_id : null;
+            $salesCode = $this->hasSapCredentials($user) ? $this->sapSalesCode($user) : null;
 
-            $partners->each(function (array $partner) use (&$syncedCodes, $now, $source) {
-                $store = $this->upsertPartner($partner, $now, $source);
+            DB::transaction(function () use ($partners, $now, $source, $teamId, $salesCode) {
+                $syncedCodes = [];
 
-                if ($store) {
-                    $syncedCodes[] = $store->external_bp_code;
-                }
+                $partners->each(function (array $partner) use (&$syncedCodes, $now, $source, $teamId, $salesCode) {
+                    $store = $this->upsertPartner($partner, $now, $source, $teamId, $salesCode);
+
+                    if ($store) {
+                        $syncedCodes[] = $store->external_bp_code;
+                    }
+                });
+
+                $this->deactivateMissingStores($source, $syncedCodes, $now, $teamId, $salesCode);
             });
-
-            $this->deactivateMissingStores($source, $syncedCodes, $now);
         }
 
         $this->markCatalogFresh($identity);
         $this->clearWarmupPending($identity);
 
-        return $this->queryStores($source, $onlyActive);
+        return $this->queryStores($user, $onlyActive);
     }
 
-    private function queryStores(string $source, bool $onlyActive): Collection
+    private function queryStores(?User $user, bool $onlyActive): Collection
     {
-        return Store::query()
+        return $this->scopeQuery(Store::query(), $user, $onlyActive)
             ->select($this->storeColumns())
-            ->where('master_source', $source)
-            ->when($onlyActive, fn ($q) => $q->where('status', 'active'))
             ->orderBy('name')
             ->get();
     }
@@ -209,7 +246,11 @@ class StoreCatalogSyncService
     private function resolveCatalogIdentity(?User $user): string
     {
         if ($this->hasSapCredentials($user)) {
-            return 'sap_outstanding_receivable:'.sha1(trim((string) $user?->sapDatabase()).'|'.trim((string) $user?->sapSalesCode()));
+            return 'sap_outstanding_receivable:'.sha1(
+                (string) $user?->team_id.'|'
+                .trim((string) $user?->sapDatabase()).'|'
+                .trim((string) $user?->sapSalesCode())
+            );
         }
 
         return 'sap_dummy';
@@ -217,14 +258,19 @@ class StoreCatalogSyncService
 
     private function hasSapCredentials(?User $user): bool
     {
-        return filled($user?->sapDatabase()) && filled($user?->sapSalesCode());
+        return $user?->team_id !== null
+            && filled($user?->sapDatabase())
+            && filled($this->sapSalesCode($user));
     }
 
-    private function hasCatalogRows(string $source): bool
+    private function hasCatalogRows(?User $user): bool
     {
-        return Store::query()
-            ->where('master_source', $source)
-            ->exists();
+        return $this->scopeQuery(Store::query(), $user)->exists();
+    }
+
+    private function sapSalesCode(?User $user): ?string
+    {
+        return $user?->sapSalesCode();
     }
 
     private function hasFreshCatalog(string $identity): bool
@@ -260,7 +306,7 @@ class StoreCatalogSyncService
             'branch' => null,
             'city' => null,
             'status' => 'active',
-            'geofence_radius' => 100,
+            'geofence_radius' => self::DEFAULT_GEOFENCE_RADIUS_METERS,
             'pic_name' => $picName !== '' ? $picName : null,
             'pic_phone' => $picPhone !== '' ? $picPhone : null,
             'is_priority' => false,
@@ -270,26 +316,53 @@ class StoreCatalogSyncService
         ];
     }
 
-    private function upsertPartner(array $partner, $now, string $source): ?Store
+    private function upsertPartner(
+        array $partner,
+        $now,
+        string $source,
+        ?int $teamId = null,
+        ?string $salesCode = null,
+    ): ?Store
     {
         $externalCode = $this->normalizeExternalCode($partner['external_bp_code'] ?? $partner['code'] ?? null);
         if (! $externalCode) {
             return null;
         }
 
-        $existing = Store::withTrashed()
+        $existingQuery = Store::withTrashed()
             ->where('external_bp_code', $externalCode)
-            ->first();
+            ->where('master_source', $source);
+
+        if ($teamId !== null) {
+            $existingQuery->where('team_id', $teamId);
+        } else {
+            $existingQuery->whereNull('team_id');
+        }
+
+        $existing = $existingQuery->first();
+
+        // Pre-scope records were global. When SAP confirms that a legacy
+        // CardCode belongs to this branch, adopt that one row so existing
+        // visit history and locally captured coordinates are retained.
+        if (! $existing && $teamId !== null && $source === 'sap_outstanding_receivable') {
+            $existing = Store::withTrashed()
+                ->whereNull('team_id')
+                ->where('master_source', $source)
+                ->where('external_bp_code', $externalCode)
+                ->first();
+        }
 
         $payload = [
+            'team_id'          => $teamId,
             'code'             => $partner['code'] ?? $externalCode,
             'external_bp_code' => $externalCode,
+            'sap_slp_code'     => $salesCode,
             'name'             => $partner['name'] ?? $externalCode,
             'address'          => $partner['address'] ?? null,
             'area'             => $partner['area'] ?? null,
             'branch'           => $partner['branch'] ?? $partner['area'] ?? $partner['city'] ?? null,
             'city'             => $partner['city'] ?? null,
-            'geofence_radius'  => (int) ($partner['geofence_radius'] ?? 100),
+            'geofence_radius'  => $this->normalizeGeofenceRadius($partner['geofence_radius'] ?? null),
             'pic_name'         => $partner['pic_name'] ?? null,
             'pic_phone'        => $partner['pic_phone'] ?? null,
             'status'           => $partner['status'] ?? 'active',
@@ -301,6 +374,7 @@ class StoreCatalogSyncService
             'master_source'    => $source,
             'master_payload'   => $partner['master_payload'] ?? $partner,
             'last_synced_at'   => $now,
+            'assignment_synced_at' => $teamId !== null ? $now : null,
         ];
 
         if ($existing?->location) {
@@ -313,6 +387,11 @@ class StoreCatalogSyncService
             }
 
             if ($this->sameCatalogPayload($existing, $payload)) {
+                $existing->forceFill([
+                    'last_synced_at' => $now,
+                    'assignment_synced_at' => $teamId !== null ? $now : $existing->assignment_synced_at,
+                ])->save();
+
                 return $existing->fresh();
             }
 
@@ -324,10 +403,23 @@ class StoreCatalogSyncService
         return Store::create($payload);
     }
 
-    private function deactivateMissingStores(string $source, array $syncedCodes, $now): void
+    private function deactivateMissingStores(
+        string $source,
+        array $syncedCodes,
+        $now,
+        ?int $teamId = null,
+        ?string $salesCode = null,
+    ): void
     {
         $query = Store::query()
             ->where('master_source', $source);
+
+        if ($teamId !== null) {
+            $query->where('team_id', $teamId)
+                ->where('sap_slp_code', $salesCode);
+        } else {
+            $query->whereNull('team_id');
+        }
 
         if (! empty($syncedCodes)) {
             $query->whereNotIn('external_bp_code', $syncedCodes);
@@ -336,6 +428,8 @@ class StoreCatalogSyncService
         $query->update([
             'status' => 'inactive',
             'last_synced_at' => $now,
+            'sap_slp_code' => $teamId !== null ? null : DB::raw('sap_slp_code'),
+            'assignment_synced_at' => $teamId !== null ? $now : DB::raw('assignment_synced_at'),
         ]);
     }
 
@@ -354,12 +448,25 @@ class StoreCatalogSyncService
         ];
     }
 
+    private function normalizeGeofenceRadius(mixed $radius): int
+    {
+        $radius = (int) ($radius ?: self::DEFAULT_GEOFENCE_RADIUS_METERS);
+
+        if ($radius <= 0) {
+            return self::DEFAULT_GEOFENCE_RADIUS_METERS;
+        }
+
+        return min($radius, self::MAX_GEOFENCE_RADIUS_METERS);
+    }
+
     private function sameCatalogPayload(Store $existing, array $payload): bool
     {
         $existingPayload = $existing->master_payload ?? [];
 
         return $existing->code === $payload['code']
+            && (int) $existing->team_id === (int) ($payload['team_id'] ?? null)
             && $existing->external_bp_code === $payload['external_bp_code']
+            && $existing->sap_slp_code === ($payload['sap_slp_code'] ?? null)
             && $existing->name === $payload['name']
             && $existing->address === $payload['address']
             && $existing->area === $payload['area']
@@ -385,8 +492,10 @@ class StoreCatalogSyncService
     {
         return [
             'id',
+            'team_id',
             'code',
             'external_bp_code',
+            'sap_slp_code',
             'name',
             'address',
             'area',
@@ -401,6 +510,7 @@ class StoreCatalogSyncService
             'tags',
             'master_source',
             'last_synced_at',
+            'assignment_synced_at',
             'created_at',
             'updated_at',
             'deleted_at',

@@ -532,11 +532,14 @@ const styles = StyleSheet.create({
   },
   actionGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginBottom: 18,
   },
   actionTile: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '47%',
+    minWidth: 132,
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
     paddingVertical: 14,

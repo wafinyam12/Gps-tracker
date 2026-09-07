@@ -7,6 +7,7 @@ use App\Models\Store;
 use App\Models\VisitLog;
 use App\Services\LocationIntegrityService;
 use App\Services\MasterData\StoreCatalogSyncService;
+use App\Services\Sap\CustomerCoordinateSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,10 +16,12 @@ use MatanYadaev\EloquentSpatial\Objects\Point;
 class CheckInController extends Controller
 {
     private const LOCAL_TIMEZONE = 'Asia/Jakarta';
+    private const MAX_VISIT_GEOFENCE_RADIUS_METERS = 50;
 
     public function __construct(
         private readonly StoreCatalogSyncService $catalog,
         private readonly LocationIntegrityService $locationIntegrity,
+        private readonly CustomerCoordinateSyncService $coordinateSync,
     ) {
     }
 
@@ -51,9 +54,16 @@ class CheckInController extends Controller
             'submitted_at'      => 'nullable|date',
             'submitted_by_user_id'  => 'nullable|integer',
             'submitted_by_username' => 'nullable|string|max:255',
+            'client_uuid' => 'nullable|uuid',
+            'offline_sync' => 'nullable|boolean',
         ]);
 
-        if ($integrityError = $this->locationIntegrity->visitLocationIntegrityError($request)) {
+        $offlineSync = $request->boolean('offline_sync', false);
+        if ($offlineError = $this->offlineTimestampError($request, $offlineSync)) {
+            return response()->error($offlineError, 422, ['offline_sync' => [$offlineError]]);
+        }
+
+        if ($integrityError = $this->locationIntegrity->visitLocationIntegrityError($request, $offlineSync)) {
             return response()->error($integrityError['message'], 422, $integrityError['errors']);
         }
 
@@ -64,11 +74,17 @@ class CheckInController extends Controller
             return response()->error('Data kunjungan tidak ditemukan.', 404);
         }
 
+        if ($visitLog->checkout_at !== null
+            && filled($request->client_uuid)
+            && hash_equals((string) $visitLog->checkout_client_uuid, (string) $request->client_uuid)) {
+            return $this->checkoutResponse($visitLog->load(['store', 'user']), true);
+        }
+
         if ($visitLog->checkout_at !== null) {
             return response()->error('Kunjungan ini sudah selesai.', 422);
         }
 
-        $checkoutAt = now(self::LOCAL_TIMEZONE);
+        $checkoutAt = $this->recordedAt($request);
         $durationMinutes = null;
 
         if ($visitLog->checkin_at) {
@@ -77,13 +93,30 @@ class CheckInController extends Controller
                 self::LOCAL_TIMEZONE
             );
 
-            $durationMinutes = (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60);
+            $durationMinutes = max(0, (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60));
         }
 
         $rawFormData = $request->input('form_data');
         $formData = $this->withSubmissionMeta($request, is_array($rawFormData) ? $rawFormData : []);
+        $checkinLocation = $visitLog->checkin_location;
+        $shouldRecordCoordinateObservation = ! $visitLog->is_mock_location
+            && $visitLog->checkin_valid
+            && $checkinLocation instanceof Point;
+        $shouldSaveStoreLocation = $shouldRecordCoordinateObservation
+            && $visitLog->checkin_accuracy !== null
+            && (float) $visitLog->checkin_accuracy <= (float) config('sap.coordinate_max_observation_accuracy_meters', 25);
 
-        DB::transaction(function () use ($request, $visitLog, $checkoutAt, $durationMinutes, $formData) {
+        DB::transaction(function () use (
+            $request,
+            $visitLog,
+            $checkoutAt,
+            $durationMinutes,
+            $formData,
+            $checkinLocation,
+            $shouldRecordCoordinateObservation,
+            $shouldSaveStoreLocation,
+            $offlineSync,
+        ) {
             $visitLog->update([
                 'checkout_at'       => $checkoutAt,
                 'checkout_location' => new Point(
@@ -94,23 +127,55 @@ class CheckInController extends Controller
                 'notes'             => $request->notes,
                 'visit_result'      => $request->visit_result,
                 'form_data'         => $formData,
+                'checkout_client_uuid' => $request->client_uuid,
+                'is_offline_sync' => $offlineSync || $visitLog->is_offline_sync,
+                'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : $visitLog->offline_received_at,
             ]);
+
+            // A visit/start only opens a draft visit form. Persist a previously
+            // unknown store location only after the visit is actually submitted.
+            // Use the check-in point, not the checkout point, because it records
+            // the sales' location when they first arrived at the customer.
+            if ($shouldRecordCoordinateObservation) {
+                $store = Store::query()
+                    ->lockForUpdate()
+                    ->find($visitLog->store_id);
+
+                if ($shouldSaveStoreLocation && $store && ! $store->hasLocation()) {
+                    $store->forceFill([
+                        'location' => $checkinLocation,
+                    ])->save();
+                }
+
+                if ($store) {
+                    $store->loadMissing('team');
+                    $this->coordinateSync->recordCompletedVisit($visitLog, $store, $checkinLocation);
+                }
+            }
         });
 
-        $visitLog->loadMissing(['store', 'user']);
+        $visitLog->load(['store', 'user']);
+
+        return $this->checkoutResponse($visitLog);
+    }
+
+    private function checkoutResponse(VisitLog $visitLog, bool $replayed = false)
+    {
+        $meta = is_array($visitLog->form_data) ? ($visitLog->form_data['_meta'] ?? []) : [];
 
         return response()->success([
             'visit_log_id'      => $visitLog->id,
-            'duration_minutes'  => $durationMinutes,
-            'visit_result'      => $request->visit_result,
-            'submitted_at'      => $formData['_meta']['timestamp'],
+            'duration_minutes'  => $visitLog->duration_minutes,
+            'visit_result'      => $visitLog->visit_result,
+            'submitted_at'      => $meta['timestamp'] ?? $visitLog->checkout_at?->toISOString(),
             'submitted_by'      => [
-                'user_id'  => $formData['_meta']['user_id'],
-                'username' => $formData['_meta']['username'],
+                'user_id'  => $meta['user_id'] ?? $visitLog->user_id,
+                'username' => $meta['username'] ?? $visitLog->user?->name,
             ],
             'store'             => $this->formatStore($visitLog->store),
             'visit'             => $this->formatVisit($visitLog),
-        ], 'Check-out berhasil.');
+            'replayed' => $replayed,
+        ], $replayed ? 'Check-out sudah tersimpan sebelumnya.' : 'Check-out berhasil.');
     }
 
     private function createVisit(Request $request)
@@ -126,15 +191,35 @@ class CheckInController extends Controller
             'accuracy'          => 'nullable|numeric|min:0',
             'is_mock_location'  => 'nullable|boolean',
             'location_recorded_at' => 'nullable|date',
+            'client_uuid' => 'nullable|uuid',
+            'offline_sync' => 'nullable|boolean',
         ]);
 
-        if ($integrityError = $this->locationIntegrity->visitLocationIntegrityError($request)) {
+        $user = $request->user();
+        if ($request->filled('client_uuid')) {
+            $existing = VisitLog::query()
+                ->where('user_id', $user->id)
+                ->where('client_uuid', $request->client_uuid)
+                ->with(['store', 'user', 'photos'])
+                ->first();
+
+            if ($existing) {
+                return $this->startResponse($existing, true);
+            }
+        }
+
+        $offlineSync = $request->boolean('offline_sync', false);
+        if ($offlineError = $this->offlineTimestampError($request, $offlineSync)) {
+            return response()->error($offlineError, 422, ['offline_sync' => [$offlineError]]);
+        }
+
+        if ($integrityError = $this->locationIntegrity->visitLocationIntegrityError($request, $offlineSync)) {
             return response()->error($integrityError['message'], 422, $integrityError['errors']);
         }
 
-        $user = $request->user();
         $isMock = $request->boolean('is_mock_location', false);
-        $visitDate = now(self::LOCAL_TIMEZONE)->toDateString();
+        $checkinAt = $this->recordedAt($request);
+        $visitDate = $checkinAt->toDateString();
         $salesLocation = new Point(
             latitude: $request->latitude,
             longitude: $request->longitude,
@@ -161,6 +246,7 @@ class CheckInController extends Controller
             ->whereDate('visit_date', $visitDate)
             ->exists();
 
+        $geofenceRadius = $this->effectiveGeofenceRadius($store);
         $distanceMeters = null;
         $isValidLocation = ! $isMock;
 
@@ -172,7 +258,7 @@ class CheckInController extends Controller
                 $store->location->longitude,
             );
 
-            $isValidLocation = $distanceMeters <= $store->geofence_radius && ! $isMock;
+            $isValidLocation = $distanceMeters <= $geofenceRadius && ! $isMock;
         }
 
         $visitLog = null;
@@ -187,18 +273,23 @@ class CheckInController extends Controller
             $isValidLocation,
             $isMock,
             $isDuplicate,
+            $checkinAt,
+            $offlineSync,
             &$visitLog
         ) {
             $visitLog = VisitLog::create([
                 'user_id'           => $user->id,
                 'store_id'          => $store->id,
+                'client_uuid'       => $request->client_uuid,
                 'visit_date'        => $visitDate,
-                'checkin_at'        => now(self::LOCAL_TIMEZONE),
+                'checkin_at'        => $checkinAt,
                 'checkin_location'  => $salesLocation,
                 'checkin_accuracy'  => $request->accuracy,
                 'checkin_valid'     => $isValidLocation,
                 'checkin_distance'  => $distanceMeters !== null ? round($distanceMeters, 2) : null,
                 'is_mock_location'  => $isMock,
+                'is_offline_sync'   => $offlineSync,
+                'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : null,
                 'is_duplicate'      => $isDuplicate,
                 'counted_as_target' => $isValidLocation && ! $isDuplicate,
                 'duplicate_reason'  => $isDuplicate ? 'store_already_visited_today' : null,
@@ -208,27 +299,27 @@ class CheckInController extends Controller
                 ]),
             ]);
 
-            if (! $isMock && ! ($store->location instanceof Point)) {
-                $store->forceFill([
-                    'location'       => $salesLocation,
-                    'last_synced_at'  => now(self::LOCAL_TIMEZONE),
-                ])->save();
-            }
         });
 
         $store = $store->fresh();
         $visitLog->loadMissing(['store', 'user']);
 
+        return $this->startResponse($visitLog);
+    }
+
+    private function startResponse(VisitLog $visitLog, bool $replayed = false)
+    {
+        $store = $visitLog->store;
         $warnings = [];
-        if ($isMock) {
+        if ($visitLog->is_mock_location) {
             $warnings[] = 'Terdeteksi menggunakan fake GPS.';
         }
 
-        if ($isDuplicate) {
+        if ($visitLog->is_duplicate) {
             $warnings[] = 'Kunjungan ini tercatat sebagai duplicate dan tidak dihitung ke target.';
         }
 
-        if (! $isValidLocation) {
+        if (! $visitLog->checkin_valid) {
             $warnings[] = 'Lokasi di luar radius toko dan tidak dihitung ke target.';
         }
 
@@ -238,23 +329,25 @@ class CheckInController extends Controller
 
         return response()->success([
             'visit_log_id'      => $visitLog->id,
-            'is_valid_location'  => $isValidLocation,
-            'distance_meters'    => $distanceMeters !== null ? round($distanceMeters, 2) : null,
-            'geofence_radius'    => $store->geofence_radius,
-            'is_duplicate'       => $isDuplicate,
-            'counted_as_target'  => $isValidLocation && ! $isDuplicate,
+            'is_valid_location'  => $visitLog->checkin_valid,
+            'distance_meters'    => $visitLog->checkin_distance,
+            'geofence_radius'    => $this->effectiveGeofenceRadius($store),
+            'is_duplicate'       => $visitLog->is_duplicate,
+            'counted_as_target'  => $visitLog->counted_as_target,
             'store'              => $this->formatStore($store),
             'visit'              => $this->formatVisit($visitLog),
+            'replayed'           => $replayed,
             'warning'            => $warnings ? implode(' ', $warnings) : null,
-        ], $message, 201);
+        ], $message, $replayed ? 200 : 201);
     }
 
     private function resolveStore(Request $request): ?Store
     {
         if ($request->filled('store_id')) {
-            $store = Store::find($request->store_id);
-
-            return $store?->status === 'active' ? $store : null;
+            return $this->catalog->findById(
+                $request->integer('store_id'),
+                $request->user(),
+            );
         }
 
         $externalCode = $this->catalog->normalizeExternalCode($request->input('external_bp_code'));
@@ -291,7 +384,7 @@ class CheckInController extends Controller
             'pic_phone'       => $store?->pic_phone,
             'latitude'        => $store?->location?->latitude,
             'longitude'       => $store?->location?->longitude,
-            'geofence_radius' => $store?->geofence_radius,
+            'geofence_radius' => $this->effectiveGeofenceRadius($store),
             'status'          => $store?->status,
         ];
     }
@@ -345,6 +438,17 @@ class CheckInController extends Controller
         return $earthRadius * $c;
     }
 
+    private function effectiveGeofenceRadius(?Store $store): int
+    {
+        $radius = (int) ($store?->geofence_radius ?: self::MAX_VISIT_GEOFENCE_RADIUS_METERS);
+
+        if ($radius <= 0) {
+            return self::MAX_VISIT_GEOFENCE_RADIUS_METERS;
+        }
+
+        return min($radius, self::MAX_VISIT_GEOFENCE_RADIUS_METERS);
+    }
+
     private function withSubmissionMeta(Request $request, array $formData): array
     {
         $user = $request->user();
@@ -359,8 +463,37 @@ class CheckInController extends Controller
             'location_recorded_at' => $request->input('location_recorded_at'),
             'location_accuracy' => $request->input('accuracy'),
             'is_mock_location'  => $request->boolean('is_mock_location', false),
+            'offline_sync'      => $request->boolean('offline_sync', false),
+            'client_uuid'       => $request->input('client_uuid'),
         ];
 
         return $formData;
+    }
+
+    private function recordedAt(Request $request): Carbon
+    {
+        if ($request->filled('location_recorded_at')) {
+            return Carbon::parse($request->input('location_recorded_at'))->setTimezone(self::LOCAL_TIMEZONE);
+        }
+
+        return now(self::LOCAL_TIMEZONE);
+    }
+
+    private function offlineTimestampError(Request $request, bool $offlineSync): ?string
+    {
+        if (! $offlineSync) {
+            return null;
+        }
+
+        if (! $request->filled('location_recorded_at')) {
+            return 'Waktu GPS wajib dikirim untuk data offline.';
+        }
+
+        $recordedAt = $this->recordedAt($request);
+        if ($recordedAt->lt(now(self::LOCAL_TIMEZONE)->subDays(3))) {
+            return 'Data kunjungan offline lebih dari 3 hari harus diverifikasi admin.';
+        }
+
+        return null;
     }
 }

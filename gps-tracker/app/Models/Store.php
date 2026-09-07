@@ -12,8 +12,10 @@ class Store extends Model
     use HasSpatial, SoftDeletes;
 
     protected $fillable = [
+        'team_id',
         'code',
         'external_bp_code',
+        'sap_slp_code',
         'name',
         'address',
         'area',
@@ -29,6 +31,7 @@ class Store extends Model
         'master_source',
         'master_payload',
         'last_synced_at',
+        'assignment_synced_at',
     ];
 
     protected $casts = [
@@ -37,7 +40,13 @@ class Store extends Model
         'master_payload' => 'array',
         'is_priority'    => 'boolean',
         'last_synced_at' => 'datetime',
+        'assignment_synced_at' => 'datetime',
     ];
+
+    public function team()
+    {
+        return $this->belongsTo(Team::class);
+    }
 
     public function visitLogs()
     {

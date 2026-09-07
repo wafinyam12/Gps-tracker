@@ -7,10 +7,14 @@ use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Team;
+use App\Models\Store;
+use App\Models\VisitLog;
 use App\Models\LocationPing;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Role;
 use MatanYadaev\EloquentSpatial\Objects\Point;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 
 class ApiTest extends TestCase
 {
@@ -206,6 +210,119 @@ class ApiTest extends TestCase
             'name' => 'Test Team Updated',
             'db_sap' => 'TEST_DB_UPDATED',
         ]);
+    }
+
+    /** @test */
+    public function it_can_save_udportal_credentials_on_a_team_without_exposing_the_password()
+    {
+        Sanctum::actingAs($this->superAdminUser);
+
+        $response = $this->postJson('/api/v1/teams', [
+            'code' => 'SOLO01',
+            'name' => 'Cabang Solo',
+            'area' => 'Solo',
+            'db_sap' => 'NEW_SOLO',
+            'udportal_username' => 'jurtapsolo',
+            'udportal_password' => 'password',
+            'latitude' => -7.569,
+            'longitude' => 110.828,
+            'is_active' => true,
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.udportal_username', 'jurtapsolo')
+            ->assertJsonPath('data.has_udportal_password', true)
+            ->assertJsonMissingPath('data.udportal_password');
+
+        $this->assertDatabaseHas('teams', [
+            'code' => 'SOLO01',
+            'udportal_username' => 'jurtapsolo',
+        ]);
+    }
+
+    /** @test */
+    public function it_forwards_cash_payment_to_udportal_using_the_sales_branch_account()
+    {
+        config([
+            'udportal.api_base_url' => 'https://udportal.example.test/api/v1',
+            'udportal.api_token' => null,
+            'udportal.api_username' => null,
+            'udportal.api_password' => null,
+        ]);
+
+        $this->team->forceFill([
+            'udportal_username' => 'jurtapsolo',
+            'udportal_password' => 'password',
+        ])->save();
+
+        $store = Store::create([
+            'code' => 'STORE-001',
+            'name' => 'Toko Solo',
+            'address' => 'Jl. Solo',
+            'pic_name' => 'Budi',
+            'pic_phone' => '081234567890',
+            'status' => 'active',
+        ]);
+
+        $visitLog = VisitLog::create([
+            'user_id' => $this->salesUser->id,
+            'store_id' => $store->id,
+            'visit_date' => now()->toDateString(),
+            'checkin_at' => now(),
+            'form_data' => [],
+        ]);
+
+        Http::fake([
+            'https://udportal.example.test/api/v1/auth/login' => Http::response([
+                'success' => true,
+                'data' => ['access_token' => 'branch-token'],
+            ]),
+            'https://udportal.example.test/api/v1/cash-payments' => Http::response([
+                'success' => true,
+                'message' => 'Cash payment berhasil disimpan.',
+                'data' => [
+                    'id' => 10,
+                    'sales_name' => 'Sales User',
+                    'store_name' => 'Toko Solo',
+                ],
+            ], 201),
+        ]);
+
+        Sanctum::actingAs($this->salesUser);
+
+        $response = $this->post('/api/v1/cash-payments', [
+            'visit_log_id' => $visitLog->id,
+            'amount' => '150000',
+            'payment_type' => 'Tunai',
+            'owner_name' => 'Budi',
+            'telpon' => '081234567890',
+            'invoice' => 'INV-001',
+            'latitude' => -7.569,
+            'longitude' => 110.828,
+            'accuracy' => 12,
+            'photo' => UploadedFile::fake()->image('receipt.jpg'),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.sales_name', 'Sales User')
+            ->assertJsonPath('data.store_name', 'Toko Solo');
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://udportal.example.test/api/v1/auth/login'
+                && $request->data()['username'] === 'jurtapsolo'
+                && $request->data()['password'] === 'password';
+        });
+
+        Http::assertSent(function ($request) {
+            $parts = collect($request->data())->keyBy('name');
+
+            return $request->url() === 'https://udportal.example.test/api/v1/cash-payments'
+                && $request->hasHeader('Authorization', 'Bearer branch-token')
+                && $parts->get('sales_name')['contents'] === 'Sales User'
+                && $parts->get('store_name')['contents'] === 'Toko Solo'
+                && $parts->get('amount')['contents'] === '150000'
+                && $request->hasFile('photo', filename: 'receipt.jpg');
+        });
     }
 
     /** @test */

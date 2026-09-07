@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncSapCustomerCatalog;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\UpdateProfilePhotoRequest;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
-use App\Services\MasterData\StoreCatalogSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -166,24 +166,24 @@ class AuthController extends Controller
             return;
         }
 
-        if (! filled($user->sapDatabase()) || ! filled($user->sapSalesCode())) {
+        if (! $user->team_id || ! filled($user->sapDatabase()) || ! filled($user->sapSalesCode())) {
             return;
         }
 
-        $catalog = app(StoreCatalogSyncService::class);
-
-        app()->terminating(function () use ($catalog, $user) {
-            try {
-                $catalog->warm($user);
-            } catch (\Throwable $throwable) {
-                Log::warning('Failed to warm SAP store catalog after login', [
-                    'user_id' => $user->id,
-                    'db_sap' => $user->sapDatabase(),
-                    'slp_code' => $user->sapSalesCode(),
-                    'error' => $throwable->getMessage(),
-                ]);
-            }
-        });
+        try {
+            SyncSapCustomerCatalog::dispatch(
+                $user->id,
+                (int) $user->team_id,
+                (string) $user->sapSalesCode(),
+            )->onQueue('sap-sync');
+        } catch (\Throwable $throwable) {
+            Log::warning('Failed to queue SAP store catalog after login', [
+                'user_id' => $user->id,
+                'db_sap' => $user->sapDatabase(),
+                'slp_code' => $user->sapSalesCode(),
+                'error' => $throwable->getMessage(),
+            ]);
+        }
     }
 
     private function normalizeLoginIdentifier(string $identifier): string

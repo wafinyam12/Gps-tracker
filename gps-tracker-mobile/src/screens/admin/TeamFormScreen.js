@@ -27,6 +27,9 @@ const TeamFormScreen = () => {
     code: '',
     area: '',
     db_sap: '',
+    udportal_username: '',
+    udportal_password: '',
+    has_udportal_password: false,
     latitude: '',
     longitude: '',
     is_active: true,
@@ -47,6 +50,9 @@ const TeamFormScreen = () => {
         code: team.code,
         area: team.area || '',
         db_sap: team.db_sap || '',
+        udportal_username: team.udportal_username || '',
+        udportal_password: '',
+        has_udportal_password: Boolean(team.has_udportal_password),
         latitude: team.latitude?.toString() || team.location?.latitude?.toString() || '',
         longitude: team.longitude?.toString() || team.location?.longitude?.toString() || '',
         is_active: team.is_active,
@@ -87,11 +93,26 @@ const TeamFormScreen = () => {
       return;
     }
 
+    const udportalUsername = form.udportal_username.trim();
+    const udportalPassword = form.udportal_password.trim();
+
+    if (udportalPassword && !udportalUsername) {
+      Alert.alert('Error', 'Username UD Portal wajib diisi jika password diisi');
+      return;
+    }
+
+    if (udportalUsername && !udportalPassword && !form.has_udportal_password) {
+      Alert.alert('Error', 'Password UD Portal wajib diisi untuk akun cabang baru');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
         ...form,
         db_sap: form.db_sap.trim().toUpperCase(),
+        udportal_username: udportalUsername,
+        udportal_password: udportalPassword,
         latitude: parseFloat(form.latitude),
         longitude: parseFloat(form.longitude),
       };
@@ -148,7 +169,7 @@ const TeamFormScreen = () => {
     <AppScreen>
       <PageHeader
         title={isEdit ? 'Edit Cabang' : 'Cabang Baru'}
-        subtitle="Atur identitas cabang, DB SAP, dan titik koordinat operasional."
+        subtitle="Atur identitas cabang, DB SAP, akun UD Portal, dan titik koordinat operasional."
         onBack={() => navigation.goBack()}
         right={(
           <TouchableOpacity style={styles.savePill} onPress={handleSave} disabled={loading} activeOpacity={0.85}>
@@ -200,6 +221,29 @@ const TeamFormScreen = () => {
               onChangeText={(val) => setForm({ ...form, db_sap: val })}
               placeholder="Contoh: NEW_KALSEL"
               autoCapitalize="characters"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Username UD Portal</Text>
+            <TextInput
+              style={styles.input}
+              value={form.udportal_username}
+              onChangeText={(val) => setForm({ ...form, udportal_username: val })}
+              placeholder="Contoh: jurtapsolo"
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Password UD Portal</Text>
+            <TextInput
+              style={styles.input}
+              value={form.udportal_password}
+              onChangeText={(val) => setForm({ ...form, udportal_password: val })}
+              placeholder={form.has_udportal_password ? 'Password sudah tersimpan' : 'Password akun cabang'}
+              secureTextEntry
+              autoCapitalize="none"
             />
           </View>
 

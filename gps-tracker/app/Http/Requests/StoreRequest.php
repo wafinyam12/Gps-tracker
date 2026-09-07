@@ -23,7 +23,7 @@ class StoreRequest extends FormRequest
             'city'             => 'nullable|string|max:100',
             'latitude'         => 'required|numeric|between:-90,90',
             'longitude'        => 'required|numeric|between:-180,180',
-            'geofence_radius'  => 'nullable|integer|min:50|max:1000',
+            'geofence_radius'  => 'nullable|integer|min:1|max:50',
             'pic_name'         => 'nullable|string|max:255',
             'pic_phone'        => 'nullable|string|max:20',
             'status'           => 'nullable|in:active,inactive',

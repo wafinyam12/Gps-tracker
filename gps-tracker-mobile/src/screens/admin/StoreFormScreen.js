@@ -5,6 +5,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { ChevronLeft, Save, Trash2, MapPin } from 'lucide-react-native';
 import * as Location from 'expo-location';
 
+const MAX_GEOFENCE_RADIUS_METERS = 50;
+
+const normalizeGeofenceRadius = (value) => {
+  const radius = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return String(MAX_GEOFENCE_RADIUS_METERS);
+  }
+
+  return String(Math.min(radius, MAX_GEOFENCE_RADIUS_METERS));
+};
+
 const StoreFormScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -21,7 +33,7 @@ const StoreFormScreen = () => {
     city: '',
     latitude: '',
     longitude: '',
-    geofence_radius: '100',
+    geofence_radius: String(MAX_GEOFENCE_RADIUS_METERS),
     pic_name: '',
     pic_phone: '',
     status: 'active',
@@ -46,7 +58,7 @@ const StoreFormScreen = () => {
         city: store.city || '',
         latitude: store.latitude?.toString() || '',
         longitude: store.longitude?.toString() || '',
-        geofence_radius: store.geofence_radius?.toString() || '100',
+        geofence_radius: normalizeGeofenceRadius(store.geofence_radius),
         pic_name: store.pic_name || '',
         pic_phone: store.pic_phone || '',
         status: store.status,
@@ -94,7 +106,7 @@ const StoreFormScreen = () => {
         ...form,
         latitude: parseFloat(form.latitude),
         longitude: parseFloat(form.longitude),
-        geofence_radius: parseInt(form.geofence_radius),
+        geofence_radius: parseInt(normalizeGeofenceRadius(form.geofence_radius), 10),
       };
 
       if (isEdit) {
@@ -260,7 +272,7 @@ const StoreFormScreen = () => {
             style={styles.input}
             value={form.geofence_radius}
             onChangeText={(val) => setForm({ ...form, geofence_radius: val })}
-            placeholder="Default: 100"
+            placeholder="Max: 50"
             keyboardType="numeric"
           />
         </View>

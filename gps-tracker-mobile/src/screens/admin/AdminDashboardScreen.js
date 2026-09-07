@@ -32,6 +32,7 @@ const AdminDashboardScreen = () => {
       subtitle: 'Mulai visit, ringkasan, dan lokasi pribadi',
       icon: <MapPin size={24} color={colors.primary} />,
       screen: 'Home',
+    }
     }] : []),
     ...(canManageUsersAndBranches ? [
       {

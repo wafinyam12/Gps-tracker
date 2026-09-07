@@ -15,6 +15,8 @@ class TeamResource extends JsonResource
             'code'          => $this->code,
             'area'          => $this->area,
             'db_sap'        => $this->db_sap,
+            'udportal_username' => $this->udportal_username,
+            'has_udportal_password' => filled($this->udportal_password),
             'latitude'      => $this->location?->latitude,
             'longitude'     => $this->location?->longitude,
             'location'      => $this->location ? [

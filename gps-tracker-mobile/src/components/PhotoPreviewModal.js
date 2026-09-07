@@ -12,6 +12,18 @@ import {
 } from 'react-native';
 import { X } from 'lucide-react-native';
 
+const logPhotoLoadError = (photo, error) => {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.warn('[PhotoPreviewModal] Failed to load visit photo preview', {
+    photoId: photo?.id,
+    url: photo?.url,
+    error: error?.nativeEvent?.error,
+  });
+};
+
 const PhotoPreviewModal = ({
   visible,
   photos = [],
@@ -95,7 +107,12 @@ const PhotoPreviewModal = ({
           }}
           renderItem={({ item }) => (
             <View style={[styles.page, { width }]}>
-              <Image source={{ uri: item.url }} style={styles.image} resizeMode="contain" />
+              <Image
+                source={{ uri: item.url }}
+                style={styles.image}
+                resizeMode="contain"
+                onError={(error) => logPhotoLoadError(item, error)}
+              />
             </View>
           )}
         />

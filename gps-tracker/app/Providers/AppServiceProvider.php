@@ -56,6 +56,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by($request->user()?->id ?? $request->ip());
         });
 
+        RateLimiter::for('photo-preview', function (Request $request) {
+            return Limit::perMinute(300)->by($request->user()?->id ?? $request->ip());
+        });
+
         // Export — berat, limit ketat
         RateLimiter::for('export', function (Request $request) {
             return Limit::perMinute(5)->by($request->user()?->id ?? $request->ip());

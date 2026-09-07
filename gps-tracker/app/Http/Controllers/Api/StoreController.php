@@ -15,7 +15,7 @@ class StoreController extends Controller
         $catalog->sync(false, $request->user());
         $perPage = max(1, min((int) ($request->per_page ?? 20), 100));
 
-        $query = Store::query()
+        $query = $catalog->scopeQuery(Store::query(), $request->user())
             ->when($request->search, function ($q) use ($request) {
                 $search = $request->search;
                 $q->where(function ($nested) use ($search) {
@@ -55,20 +55,18 @@ class StoreController extends Controller
     {
         $catalog->ensureCatalog(true, $request->user());
 
-        $source = filled($request->user()?->sapDatabase()) && filled($request->user()?->sapSalesCode())
-            ? 'sap_outstanding_receivable'
-            : 'sap_dummy';
-
         $search = trim((string) $request->search);
         $page = max(1, (int) ($request->page ?? 1));
         $perPage = max(1, min((int) ($request->per_page ?? 25), 100));
         $shouldPaginate = $request->filled('paginate') || $request->filled('per_page') || $request->filled('page');
 
-        $query = Store::query()
+        $query = $catalog->scopeQuery(Store::query(), $request->user(), true)
             ->select([
                 'id',
+                'team_id',
                 'code',
                 'external_bp_code',
+                'sap_slp_code',
                 'name',
                 'address',
                 'area',
@@ -83,10 +81,9 @@ class StoreController extends Controller
                 'tags',
                 'master_source',
                 'last_synced_at',
+                'assignment_synced_at',
                 'created_at',
-            ])
-            ->where('master_source', $source)
-            ->where('status', 'active');
+            ]);
 
         if ($search !== '') {
             $query->where(function ($nested) use ($search) {
@@ -135,6 +132,9 @@ class StoreController extends Controller
     {
         $catalog->sync(false, request()->user());
 
+        $store = $catalog->findById($store->id, request()->user(), false);
+        abort_unless($store, 404);
+
         return response()->success((new StoreResource($store))->toArray(request()));
     }
 
@@ -162,10 +162,12 @@ class StoreController extends Controller
     {
         $catalog->sync(false, request()->user());
 
+        $stores = $catalog->scopeQuery(Store::query(), request()->user());
+
         return response()->success([
-            'branches' => Store::distinct()->pluck('branch')->filter()->values(),
-            'areas'    => Store::distinct()->pluck('area')->filter()->values(),
-            'cities'   => Store::distinct()->pluck('city')->filter()->values(),
+            'branches' => (clone $stores)->distinct()->pluck('branch')->filter()->values(),
+            'areas'    => (clone $stores)->distinct()->pluck('area')->filter()->values(),
+            'cities'   => (clone $stores)->distinct()->pluck('city')->filter()->values(),
         ]);
     }
 }

@@ -94,6 +94,8 @@ return [
 
     ],
 
+    'visit_photo_preview_url_ttl' => env('VISIT_PHOTOS_PREVIEW_URL_TTL', 120),
+
     /*
     |--------------------------------------------------------------------------
     | Symbolic Links

@@ -25,6 +25,26 @@
         + ($audit['invalid_checkins'] ?? 0)
         + ($audit['mock_location_pings'] ?? 0)
         + ($audit['open_visits'] ?? 0);
+
+    $fmtDateTime = function ($value) {
+        return $value ? \Carbon\Carbon::parse($value)->timezone('Asia/Jakarta')->format('d/m/Y H:i') : '-';
+    };
+
+    $fmtBool = fn ($value) => $value ? 'Ya' : 'Tidak';
+    $fmtCoord = fn ($location) => $location
+        ? number_format((float) $location['latitude'], 6, '.', '').', '.number_format((float) $location['longitude'], 6, '.', '')
+        : '-';
+    $mapUrl = fn ($location) => $location
+        ? 'https://www.google.com/maps/search/?api=1&query='.$location['latitude'].','.$location['longitude']
+        : null;
+
+    $resultLabels = [
+        'order_taken' => 'Dapat Order',
+        'no_order' => 'Tidak Ada Order',
+        'closed' => 'Toko Tutup',
+        'not_found' => 'Toko Tidak Ditemukan',
+        'postponed' => 'Ditunda',
+    ];
 @endphp
 
 @push('styles')
@@ -414,6 +434,164 @@
         line-height: 1.5;
     }
 
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .summary-card {
+        min-height: 86px;
+        padding: 13px;
+    }
+
+    .summary-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+    }
+
+    .summary-card strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 20px;
+        line-height: 1.1;
+    }
+
+    .detail-stack {
+        display: grid;
+        gap: 12px;
+    }
+
+    .visit-detail {
+        overflow: hidden;
+    }
+
+    .visit-detail summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .visit-detail summary::-webkit-details-marker { display: none; }
+
+    .visit-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: start;
+    }
+
+    .visit-summary strong {
+        display: block;
+        font-size: 14px;
+        line-height: 1.35;
+    }
+
+    .visit-meta {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .detail-block {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(14, 19, 22, 0.72);
+        padding: 13px;
+        min-width: 0;
+    }
+
+    .detail-block-wide {
+        grid-column: span 2;
+    }
+
+    .detail-block h4 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        color: var(--text);
+    }
+
+    .kv-list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .kv-row {
+        display: grid;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .kv-row strong {
+        color: var(--text-soft);
+        font-weight: 650;
+        word-break: break-word;
+    }
+
+    .coord-link {
+        color: var(--primary);
+        word-break: break-word;
+    }
+
+    .json-dump {
+        max-height: 240px;
+        overflow: auto;
+        margin: 0;
+        padding: 12px;
+        border-radius: 8px;
+        background: #080b0d;
+        border: 1px solid var(--line);
+        color: var(--text-soft);
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .photo-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .photo-item {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .photo-item img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--surface-3);
+    }
+
+    .photo-caption {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
     @media (max-width: 1180px) {
         .crm-workspace { grid-template-columns: 1fr; }
         .menu-panel { position: static; }
@@ -421,6 +599,9 @@
         .side-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .split { grid-template-columns: 1fr; }
+        .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .detail-grid { grid-template-columns: 1fr; }
+        .detail-block-wide { grid-column: auto; }
     }
 
     @media (max-width: 820px) {
@@ -436,9 +617,14 @@
         .side-actions { grid-template-columns: 1fr; }
         .metric-grid,
         .risk-strip,
-        .report-grid {
+        .report-grid,
+        .summary-grid,
+        .photo-grid {
             grid-template-columns: 1fr;
         }
+
+        .visit-summary { grid-template-columns: 1fr; }
+        .kv-row { grid-template-columns: 1fr; gap: 3px; }
     }
 </style>
 @endpush
@@ -516,6 +702,10 @@
                 <button class="menu-item" type="button" data-crm-tab="stores">
                     <span class="menu-dot"></span>
                     <span><strong>Toko</strong><small>Analisis customer yang dikunjungi</small></span>
+                </button>
+                <button class="menu-item" type="button" data-crm-tab="details">
+                    <span class="menu-dot"></span>
+                    <span><strong>Data Lengkap</strong><small>Foto, lokasi, form, dan raw visit</small></span>
                 </button>
                 <button class="menu-item" type="button" data-crm-tab="reports">
                     <span class="menu-dot"></span>
@@ -820,6 +1010,278 @@
                                     </tr>
                                 @empty
                                     <tr><td colspan="7" class="empty">Belum ada data toko untuk filter ini.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section class="crm-section" data-crm-section="details">
+                <div class="section-head">
+                    <div>
+                        <h2>Data Kunjungan Lengkap</h2>
+                        <p>Semua data visit yang tersimpan pada periode aktif: foto, koordinat, detail form, status audit, dan ping lokasi.</p>
+                    </div>
+                    <span class="badge badge-info">{{ count($dashboard['visit_details']) }} visit</span>
+                </div>
+
+                <div class="summary-grid">
+                    @foreach ($dashboard['data_summary'] as $label => $value)
+                        <div class="panel summary-card">
+                            <span>{{ $label }}</span>
+                            <strong>{{ $fmt($value) }}</strong>
+                        </div>
+                    @endforeach
+                </div>
+
+                <div class="split">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h3>Distribusi Hasil Visit</h3>
+                            <span class="badge">{{ $fmt($overview['total_visits']) }} visit</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Hasil</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($dashboard['result_summary'] as $result)
+                                        <tr>
+                                            <td>{{ $result['label'] }}</td>
+                                            <td><strong>{{ $fmt($result['count']) }}</strong></td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h3>Coverage Foto & Lokasi</h3>
+                            <span class="badge">{{ $fmt($dashboard['photo_summary']['total_photos']) }} foto</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Foto dengan geotag</td><td><strong>{{ $fmt($dashboard['photo_summary']['with_location']) }}</strong></td></tr>
+                                    <tr><td>Foto tanpa geotag</td><td><strong>{{ $fmt($dashboard['photo_summary']['without_location']) }}</strong></td></tr>
+                                    <tr><td>Check-in dengan lat long</td><td><strong>{{ $fmt($dashboard['location_summary']['checkin_with_location']) }}</strong></td></tr>
+                                    <tr><td>Checkout dengan lat long</td><td><strong>{{ $fmt($dashboard['location_summary']['checkout_with_location']) }}</strong></td></tr>
+                                    <tr><td>Lokasi toko tersedia</td><td><strong>{{ $fmt($dashboard['location_summary']['store_with_location']) }}</strong></td></tr>
+                                    <tr><td>Rata-rata akurasi ping</td><td><strong>{{ $fmt($dashboard['location_summary']['avg_accuracy']) }} m</strong></td></tr>
+                                    @foreach ($dashboard['photo_summary']['types'] as $photoType)
+                                        <tr><td>Foto tipe {{ $photoType['type'] }}</td><td><strong>{{ $fmt($photoType['count']) }}</strong></td></tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top: 12px;">
+                    <div class="panel-head">
+                        <h3>Detail Visit dari Database</h3>
+                        <span class="badge">{{ count($dashboard['visit_details']) }} record</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="detail-stack">
+                            @forelse ($dashboard['visit_details'] as $visit)
+                                @php
+                                    $checkinMap = $mapUrl($visit['checkin_location']);
+                                    $checkoutMap = $mapUrl($visit['checkout_location']);
+                                    $storeMap = $mapUrl($visit['store']['location']);
+                                    $formJson = json_encode($visit['form_data'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                                    $visitJson = json_encode($visit, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                                    $resultText = $resultLabels[$visit['visit_result']] ?? ($visit['visit_result'] ?: 'Belum diisi');
+                                @endphp
+                                <details class="panel visit-detail">
+                                    <summary>
+                                        <div class="visit-summary">
+                                            <div>
+                                                <strong>#{{ $visit['id'] }} - {{ $visit['store']['name'] ?: 'Toko tidak terhubung' }}</strong>
+                                                <div class="visit-meta">
+                                                    {{ $visit['visit_date'] ?: '-' }} · {{ $visit['sales']['name'] ?: '-' }} · {{ $visit['sales']['team'] ?: '-' }}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span class="badge">{{ $resultText }}</span>
+                                                <span class="badge @if($visit['photos']) badge-good @else badge-medium @endif">{{ count($visit['photos']) }} foto</span>
+                                            </div>
+                                        </div>
+                                    </summary>
+
+                                    <div class="detail-grid">
+                                        <div class="detail-block">
+                                            <h4>Sales & Toko</h4>
+                                            <div class="kv-list">
+                                                <div class="kv-row"><span>Sales</span><strong>{{ $visit['sales']['name'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Employee ID</span><strong>{{ $visit['sales']['employee_id'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Cabang Sales</span><strong>{{ $visit['sales']['team'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Toko</span><strong>{{ $visit['store']['name'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Kode / BP</span><strong>{{ $visit['store']['code'] ?: '-' }} / {{ $visit['store']['external_bp_code'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Alamat</span><strong>{{ $visit['store']['address'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Area</span><strong>{{ $visit['store']['branch'] ?: $visit['store']['area'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>PIC Toko</span><strong>{{ $visit['store']['pic_name'] ?: '-' }} · {{ $visit['store']['pic_phone'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Status Toko</span><strong>{{ $visit['store']['status'] ?: '-' }}{{ $visit['store']['is_priority'] ? ' · Priority' : '' }}</strong></div>
+                                                <div class="kv-row"><span>Master Source</span><strong>{{ $visit['store']['master_source'] ?: '-' }}{{ $visit['store']['last_synced_at'] ? ' · '.$fmtDateTime($visit['store']['last_synced_at']) : '' }}</strong></div>
+                                                <div class="kv-row">
+                                                    <span>Lat Long Toko</span>
+                                                    <strong>
+                                                        @if ($storeMap)
+                                                            <a class="coord-link" href="{{ $storeMap }}" target="_blank" rel="noopener">{{ $fmtCoord($visit['store']['location']) }}</a>
+                                                        @else
+                                                            -
+                                                        @endif
+                                                    </strong>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="detail-block">
+                                            <h4>Detail Kunjungan</h4>
+                                            <div class="kv-list">
+                                                <div class="kv-row"><span>Tanggal</span><strong>{{ $visit['visit_date'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Record Dibuat</span><strong>{{ $fmtDateTime($visit['created_at']) }}</strong></div>
+                                                <div class="kv-row"><span>Record Update</span><strong>{{ $fmtDateTime($visit['updated_at']) }}</strong></div>
+                                                <div class="kv-row"><span>Check-in</span><strong>{{ $fmtDateTime($visit['checkin_at']) }}</strong></div>
+                                                <div class="kv-row"><span>Checkout</span><strong>{{ $fmtDateTime($visit['checkout_at']) }}</strong></div>
+                                                <div class="kv-row"><span>Durasi</span><strong>{{ $visit['duration_minutes'] !== null ? $fmt($visit['duration_minutes']).' menit' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Hasil</span><strong>{{ $resultText }}</strong></div>
+                                                <div class="kv-row"><span>Catatan</span><strong>{{ $visit['notes'] ?: '-' }}</strong></div>
+                                                <div class="kv-row"><span>Dihitung Target</span><strong>{{ $fmtBool($visit['counted_as_target']) }}</strong></div>
+                                                <div class="kv-row"><span>Duplicate</span><strong>{{ $fmtBool($visit['is_duplicate']) }}{{ $visit['duplicate_reason'] ? ' · '.$visit['duplicate_reason'] : '' }}</strong></div>
+                                            </div>
+                                        </div>
+
+                                        <div class="detail-block">
+                                            <h4>Lokasi Visit</h4>
+                                            <div class="kv-list">
+                                                <div class="kv-row">
+                                                    <span>Lat Long Check-in</span>
+                                                    <strong>
+                                                        @if ($checkinMap)
+                                                            <a class="coord-link" href="{{ $checkinMap }}" target="_blank" rel="noopener">{{ $fmtCoord($visit['checkin_location']) }}</a>
+                                                        @else
+                                                            -
+                                                        @endif
+                                                    </strong>
+                                                </div>
+                                                <div class="kv-row">
+                                                    <span>Lat Long Checkout</span>
+                                                    <strong>
+                                                        @if ($checkoutMap)
+                                                            <a class="coord-link" href="{{ $checkoutMap }}" target="_blank" rel="noopener">{{ $fmtCoord($visit['checkout_location']) }}</a>
+                                                        @else
+                                                            -
+                                                        @endif
+                                                    </strong>
+                                                </div>
+                                                <div class="kv-row"><span>Akurasi</span><strong>{{ $visit['checkin_accuracy'] !== null ? $fmt($visit['checkin_accuracy']).' m' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Jarak Check-in</span><strong>{{ $visit['checkin_distance'] !== null ? $fmt($visit['checkin_distance']).' m' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Check-in Valid</span><strong>{{ $fmtBool($visit['checkin_valid']) }}</strong></div>
+                                                <div class="kv-row"><span>Fake GPS Visit</span><strong>{{ $fmtBool($visit['is_mock_location']) }}</strong></div>
+                                            </div>
+                                        </div>
+
+                                        <div class="detail-block">
+                                            <h4>Form Data Tersimpan</h4>
+                                            <pre class="json-dump">{{ $formJson ?: '{}' }}</pre>
+                                        </div>
+
+                                        <div class="detail-block detail-block-wide">
+                                            <h4>Foto Visit</h4>
+                                            @if (count($visit['photos']) > 0)
+                                                <div class="photo-grid">
+                                                    @foreach ($visit['photos'] as $photo)
+                                                        @php
+                                                            $photoMap = $mapUrl($photo['location']);
+                                                        @endphp
+                                                        <a class="photo-item" href="{{ $photo['url'] }}" target="_blank" rel="noopener">
+                                                            <img src="{{ $photo['url'] }}" alt="Foto visit {{ $visit['id'] }} #{{ $photo['id'] }}" loading="lazy">
+                                                            <div class="photo-caption">
+                                                                <strong>{{ $photo['type'] ?: 'foto' }}</strong><br>
+                                                                {{ $fmtDateTime($photo['taken_at']) }}<br>
+                                                                @if ($photoMap)
+                                                                    {{ $fmtCoord($photo['location']) }}<br>
+                                                                @else
+                                                                    Lat long foto: -
+                                                                @endif
+                                                                Path: {{ $photo['path'] }}
+                                                            </div>
+                                                        </a>
+                                                    @endforeach
+                                                </div>
+                                            @else
+                                                <div class="empty">Tidak ada foto untuk visit ini.</div>
+                                            @endif
+                                        </div>
+
+                                        <div class="detail-block detail-block-wide">
+                                            <h4>Payload Lengkap Visit</h4>
+                                            <pre class="json-dump">{{ $visitJson ?: '{}' }}</pre>
+                                        </div>
+                                    </div>
+                                </details>
+                            @empty
+                                <div class="empty">Belum ada data kunjungan untuk filter ini.</div>
+                            @endforelse
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top: 12px;">
+                    <div class="panel-head">
+                        <h3>Ping Lokasi Terbaru</h3>
+                        <span class="badge">{{ count($dashboard['location_pings']) }} data ditampilkan</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Waktu</th>
+                                    <th>Sales</th>
+                                    <th>Lat Long</th>
+                                    <th>Akurasi</th>
+                                    <th>Gerak</th>
+                                    <th>Battery</th>
+                                    <th>Fake GPS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($dashboard['location_pings'] as $ping)
+                                    @php $pingMap = $mapUrl($ping['location']); @endphp
+                                    <tr>
+                                        <td>{{ $fmtDateTime($ping['recorded_at']) }}</td>
+                                        <td>
+                                            <strong>{{ $ping['sales_name'] ?: '-' }}</strong>
+                                            <div class="muted">{{ $ping['team'] ?: '-' }}</div>
+                                        </td>
+                                        <td>
+                                            @if ($pingMap)
+                                                <a class="coord-link" href="{{ $pingMap }}" target="_blank" rel="noopener">{{ $fmtCoord($ping['location']) }}</a>
+                                            @else
+                                                -
+                                            @endif
+                                        </td>
+                                        <td>{{ $ping['accuracy'] !== null ? $fmt($ping['accuracy']).' m' : '-' }}</td>
+                                        <td>{{ $fmtBool($ping['is_moving']) }}</td>
+                                        <td>{{ $ping['battery'] !== null ? $fmt($ping['battery']).'%' : '-' }}</td>
+                                        <td><span class="badge @if($ping['is_mock_location']) badge-high @else badge-good @endif">{{ $fmtBool($ping['is_mock_location']) }}</span></td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="7" class="empty">Belum ada ping lokasi untuk filter ini.</td></tr>
                                 @endforelse
                             </tbody>
                         </table>

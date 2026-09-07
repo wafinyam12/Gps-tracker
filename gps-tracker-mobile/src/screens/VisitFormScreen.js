@@ -9,20 +9,25 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useColorScheme,
   Image,
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Picker } from '@react-native-picker/picker';
 import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, ChevronDown, ChevronUp, MapPin, Navigation, Save } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { visitService } from '../api/services/visitService';
+import { cashPaymentService } from '../api/services/cashPaymentService';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
 import { ACTIVITY_TYPES, VISIT_RESULTS } from '../utils/visitOptions';
+import { offlineQueue } from '../utils/offlineQueue';
 
 const EMPTY_FORM = {
   visitResult: 'order_taken',
@@ -32,7 +37,22 @@ const EMPTY_FORM = {
   notes: '',
 };
 
+const EMPTY_CASH_PAYMENT_FORM = {
+  amount: '',
+  paymentType: 'Tunai',
+  ownerName: '',
+  phone: '',
+  invoice: '',
+  salesOrderNumber: '',
+  remarks: '',
+  senderName: '',
+};
+
+const CASH_PAYMENT_TYPES = ['Tunai', 'Transfer', 'BG / Giro'];
 const INVOICE_PREVIEW_LIMIT = 3;
+const SHOW_MOBILE_RECEIVABLES = false; // Temporary v0.5 testing: focus mobile on visit flow.
+const ANDROID_PICKER_ITEM_COLOR = '#FFFFFF';
+const DEFAULT_PICKER_ITEM_COLOR = '#1E293B';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 const formatCurrency = (value) => {
@@ -81,21 +101,41 @@ const formatTimeOnly = (value) => {
 const getInvoiceReference = (invoice) => invoice?.invoice_no || invoice?.doc_num || invoice?.doc_entry || '-';
 const getInvoiceType = (invoice) => invoice?.document_type || 'Invoice';
 
+const buildOfflineVisit = (draft) => ({
+  id: `offline-${draft.localVisitId}`,
+  visit_date: String(draft.checkinAt || new Date().toISOString()).slice(0, 10),
+  checkin_at: draft.checkinAt,
+  checkout_at: null,
+  checkin_valid: true,
+  checkin_distance: null,
+  is_mock_location: false,
+  is_duplicate: false,
+  counted_as_target: false,
+  store: draft.store || {},
+  form_data: {},
+});
+
 function VisitFormScreen({ route, navigation }) {
   const { user } = useAuth();
-  const { visitLogId: routeVisitLogId, mode } = route.params || {};
+  const { visitLogId: routeVisitLogId, mode, offlineVisit } = route.params || {};
+  const isOfflineVisit = Boolean(offlineVisit?.localVisitId);
+  const colorScheme = useColorScheme();
 
   const [visitLogId, setVisitLogId] = useState(routeVisitLogId || null);
-  const [visit, setVisit] = useState(null);
+  const [visit, setVisit] = useState(() => (isOfflineVisit ? buildOfflineVisit(offlineVisit) : null));
   const [form, setForm] = useState(EMPTY_FORM);
   const [currentLocation, setCurrentLocation] = useState(null);
-  const [loading, setLoading] = useState(Boolean(routeVisitLogId));
+  const [loading, setLoading] = useState(Boolean(routeVisitLogId) && !isOfflineVisit);
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [photoPreviewIndex, setPhotoPreviewIndex] = useState(0);
   const [showAllInvoices, setShowAllInvoices] = useState(false);
+  const [cashPaymentForm, setCashPaymentForm] = useState(EMPTY_CASH_PAYMENT_FORM);
+  const [cashPaymentPhoto, setCashPaymentPhoto] = useState(null);
+  const [cashPaymentSubmitting, setCashPaymentSubmitting] = useState(false);
   const isMountedRef = useRef(true);
+  const currentUserFullName = user?.full_name || user?.name || '';
 
   const resolvedVisitLogId = visitLogId || routeVisitLogId || null;
   const isCheckedOut = Boolean(visit?.checkout_at);
@@ -147,6 +187,9 @@ function VisitFormScreen({ route, navigation }) {
   ));
   const photoPreviews = Array.isArray(visit?.photos_preview) ? visit.photos_preview : [];
   const photoCount = Number(visit?.photos_count || 0);
+  const pickerItemColor = Platform.OS === 'android' && colorScheme === 'dark'
+    ? ANDROID_PICKER_ITEM_COLOR
+    : DEFAULT_PICKER_ITEM_COLOR;
   const checkinTime = formatTimeOnly(visit?.checkin_at);
   const checkoutTime = formatTimeOnly(visit?.checkout_at);
   const visitTimelineText = canEditVisit
@@ -162,6 +205,14 @@ function VisitFormScreen({ route, navigation }) {
 
   const hydrateForm = useCallback((visitData) => {
     const visitFormData = visitData?.form_data || {};
+    const visitStore = visitData?.store || {};
+    const visitSapOutstanding = visitStore?.sap_outstanding_receivable || {};
+    const visitSapInvoices = Array.isArray(visitSapOutstanding?.invoices)
+      ? visitSapOutstanding.invoices
+      : [];
+    const firstInvoiceReference = visitSapInvoices.length > 0
+      ? getInvoiceReference(visitSapInvoices[0])
+      : '';
 
     setForm({
       visitResult: visitData?.visit_result || EMPTY_FORM.visitResult,
@@ -170,9 +221,27 @@ function VisitFormScreen({ route, navigation }) {
       customerResponse: visitFormData.customer_response || '',
       notes: visitData?.notes || visitFormData.notes || '',
     });
-  }, []);
+
+    setCashPaymentForm((previous) => ({
+      ...previous,
+      ownerName: previous.ownerName || visitFormData.pic_name || visitStore?.pic_name || visitSapOutstanding?.pic_name || '',
+      phone: previous.phone || normalizePhoneNumber(visitFormData.pic_phone || visitStore?.pic_phone || visitSapOutstanding?.pic_phone) || '',
+      invoice: previous.invoice || (firstInvoiceReference !== '-' ? firstInvoiceReference : ''),
+      senderName: previous.senderName || currentUserFullName || '',
+    }));
+  }, [currentUserFullName]);
 
   const loadVisit = useCallback(async () => {
+    if (isOfflineVisit) {
+      const offlineData = buildOfflineVisit(offlineVisit);
+      if (isMountedRef.current) {
+        setVisit(offlineData);
+        hydrateForm(offlineData);
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!resolvedVisitLogId) {
       if (isMountedRef.current) {
         setLoading(false);
@@ -204,7 +273,7 @@ function VisitFormScreen({ route, navigation }) {
         setLoading(false);
       }
     }
-  }, [hydrateForm, resolvedVisitLogId]);
+  }, [hydrateForm, isOfflineVisit, offlineVisit, resolvedVisitLogId]);
 
   const requestLocation = useCallback(async () => {
     try {
@@ -245,6 +314,8 @@ function VisitFormScreen({ route, navigation }) {
 
   useEffect(() => {
     setShowAllInvoices(false);
+    setCashPaymentForm(EMPTY_CASH_PAYMENT_FORM);
+    setCashPaymentPhoto(null);
   }, [resolvedVisitLogId]);
 
   useEffect(() => () => {
@@ -261,6 +332,10 @@ function VisitFormScreen({ route, navigation }) {
     setForm((previous) => ({ ...previous, [field]: value }));
   };
 
+  const setCashPaymentField = (field, value) => {
+    setCashPaymentForm((previous) => ({ ...previous, [field]: value }));
+  };
+
   const openPhotoPreview = (index = 0) => {
     if (photoPreviews.length === 0) {
       return;
@@ -272,6 +347,18 @@ function VisitFormScreen({ route, navigation }) {
 
   const closePhotoPreview = () => {
     setPhotoPreviewVisible(false);
+  };
+
+  const logPhotoLoadError = (photo, error) => {
+    if (!__DEV__) {
+      return;
+    }
+
+    console.warn('[VisitFormScreen] Failed to load visit photo preview', {
+      photoId: photo?.id,
+      url: photo?.url,
+      error: error?.nativeEvent?.error,
+    });
   };
 
   const backToHome = useCallback(() => {
@@ -304,7 +391,7 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    if (!resolvedVisitLogId) {
+    if (!resolvedVisitLogId && !isOfflineVisit) {
       Alert.alert('Belum Bisa', 'ID kunjungan belum tersedia.');
       return;
     }
@@ -324,6 +411,7 @@ function VisitFormScreen({ route, navigation }) {
 
     navigation.navigate('PhotoUpload', {
       visitLogId: resolvedVisitLogId,
+      offlineVisitId: isOfflineVisit ? offlineVisit.localVisitId : null,
       type: 'other',
       latitude: locationPayload.latitude,
       longitude: locationPayload.longitude,
@@ -331,6 +419,138 @@ function VisitFormScreen({ route, navigation }) {
       userId: user?.id,
       username: user?.name,
     });
+  };
+
+  const handleTakeCashPaymentPhoto = async () => {
+    if (!canEditVisit || cashPaymentSubmitting) {
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert('Izin Ditolak', 'Izin kamera diperlukan untuk mengambil bukti pembayaran.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+        allowsEditing: false,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Gagal', 'Foto bukti pembayaran tidak ditemukan.');
+        return;
+      }
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      setCashPaymentPhoto({
+        uri: manipulated.uri,
+        name: `cash_payment_${Date.now()}.jpg`,
+        type: 'image/jpeg',
+      });
+    } catch (error) {
+      console.log('Cash payment photo error:', error);
+      Alert.alert('Gagal', 'Gagal mengambil foto bukti pembayaran.');
+    }
+  };
+
+  const handleSubmitCashPayment = async () => {
+    if (!canEditVisit || cashPaymentSubmitting) {
+      return;
+    }
+
+    if (isOfflineVisit) {
+      Alert.alert('Menunggu Sinkronisasi', 'Cash payment dapat dikirim setelah visit offline berhasil tersinkron ke server.');
+      return;
+    }
+
+    const amount = String(cashPaymentForm.amount || '').replace(/[^\d]/g, '');
+    const ownerName = (cashPaymentForm.ownerName || storePicName || '').trim();
+    const phone = (cashPaymentForm.phone || storePicPhone || '').trim();
+    const senderName = (cashPaymentForm.senderName || currentUserFullName || '').trim();
+
+    if (!amount || Number(amount) <= 0) {
+      Alert.alert('Nominal Belum Diisi', 'Masukkan nominal cash payment.');
+      return;
+    }
+
+    if (!ownerName) {
+      Alert.alert('Customer Belum Diisi', 'Masukkan nama customer/PIC.');
+      return;
+    }
+
+    if (!phone) {
+      Alert.alert('No WhatsApp Belum Diisi', 'Masukkan no WhatsApp customer.');
+      return;
+    }
+
+    if (!cashPaymentPhoto?.uri) {
+      Alert.alert('Bukti Belum Ada', 'Ambil foto bukti pembayaran terlebih dahulu.');
+      return;
+    }
+
+    const location = await requestLocation();
+    if (!location?.coords) {
+      return;
+    }
+
+    const integrity = evaluateVisitLocation(location);
+    if (!integrity.isValid) {
+      Alert.alert(integrity.title, integrity.message);
+      return;
+    }
+
+    setCashPaymentSubmitting(true);
+    try {
+      const locationPayload = integrity.payload;
+      const response = await cashPaymentService.create({
+        visit_log_id: resolvedVisitLogId,
+        store_id: store?.id,
+        sales_name: currentUserFullName,
+        store_name: storeName,
+        owner_name: ownerName,
+        telpon: phone,
+        invoice: cashPaymentForm.invoice.trim(),
+        sales_order_number: cashPaymentForm.salesOrderNumber.trim(),
+        payment_type: cashPaymentForm.paymentType,
+        amount,
+        remarks: cashPaymentForm.remarks.trim(),
+        sender_name: senderName,
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        accuracy: locationPayload.accuracy,
+        photo: cashPaymentPhoto,
+      });
+
+      setCashPaymentForm((previous) => ({
+        ...previous,
+        amount: '',
+        remarks: '',
+      }));
+      setCashPaymentPhoto(null);
+
+      Alert.alert('Berhasil', response?.message || 'Cash payment berhasil dikirim.');
+    } catch (error) {
+      console.log('Cash payment submit error:', error.response?.data || error);
+      Alert.alert('Gagal', error.response?.data?.message || 'Gagal mengirim cash payment.');
+    } finally {
+      if (isMountedRef.current) {
+        setCashPaymentSubmitting(false);
+      }
+    }
   };
 
   const handleOpenRoute = async () => {
@@ -346,6 +566,25 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const handleCancelVisit = () => {
+    if (isOfflineVisit) {
+      Alert.alert(
+        'Batalkan Visit Offline?',
+        'Seluruh data visit offline ini akan dihapus dari perangkat.',
+        [
+          { text: 'Tetap di Visit', style: 'cancel' },
+          {
+            text: 'Ya, batalkan',
+            style: 'destructive',
+            onPress: async () => {
+              await offlineQueue.removeVisit(offlineVisit.localVisitId);
+              returnToStoreList();
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     if (isCheckedOut || !resolvedVisitLogId) {
       returnToStoreList();
       return;
@@ -388,7 +627,7 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    if (!resolvedVisitLogId) {
+    if (!resolvedVisitLogId && !isOfflineVisit) {
       Alert.alert('Error', 'ID kunjungan tidak ditemukan.');
       return;
     }
@@ -402,26 +641,50 @@ function VisitFormScreen({ route, navigation }) {
     setSaving(true);
     try {
       const locationPayload = integrity.payload;
+      const checkoutPayload = {
+        visit_result: form.visitResult,
+        notes: form.notes.trim(),
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        accuracy: locationPayload.accuracy,
+        is_mock_location: locationPayload.is_mock_location,
+        location_recorded_at: locationPayload.location_recorded_at,
+        form_data: {
+          activity_type: form.activityType || null,
+          customer_response: form.customerResponse.trim() || null,
+          notes: form.notes.trim() || null,
+          pic_name: form.picName.trim() || null,
+          pic_phone: storePicPhone || null,
+        },
+        submitted_at: new Date().toISOString(),
+        submitted_by_user_id: user?.id,
+        submitted_by_username: user?.name,
+        client_uuid: offlineQueue.createUuid(),
+      };
+
+      if (isOfflineVisit) {
+        await offlineQueue.enqueueVisitCheckout(offlineVisit.localVisitId, checkoutPayload);
+        Alert.alert('Visit Disimpan Offline', 'Check-out tersimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
+          { text: 'OK', onPress: () => navigation.popToTop() },
+        ]);
+        return;
+      }
+
       const response = await visitService.checkOut(
         resolvedVisitLogId,
         form.visitResult,
         form.notes.trim(),
         {
-          latitude: locationPayload.latitude,
-          longitude: locationPayload.longitude,
-          accuracy: locationPayload.accuracy,
-          isMockLocation: locationPayload.is_mock_location,
-          locationRecordedAt: locationPayload.location_recorded_at,
-          formData: {
-            activity_type: form.activityType || null,
-            customer_response: form.customerResponse.trim() || null,
-            notes: form.notes.trim() || null,
-            pic_name: form.picName.trim() || null,
-            pic_phone: storePicPhone || null,
-          },
-          submittedAt: new Date().toISOString(),
-          userId: user?.id,
-          username: user?.name,
+          latitude: checkoutPayload.latitude,
+          longitude: checkoutPayload.longitude,
+          accuracy: checkoutPayload.accuracy,
+          isMockLocation: checkoutPayload.is_mock_location,
+          locationRecordedAt: checkoutPayload.location_recorded_at,
+          formData: checkoutPayload.form_data,
+          submittedAt: checkoutPayload.submitted_at,
+          userId: checkoutPayload.submitted_by_user_id,
+          username: checkoutPayload.submitted_by_username,
+          clientUuid: checkoutPayload.client_uuid,
         }
       );
 
@@ -441,7 +704,18 @@ function VisitFormScreen({ route, navigation }) {
       }
 
       console.log('Save visit error:', error.response?.data || error);
-      Alert.alert('Gagal', error.response?.data?.message || 'Gagal menyimpan data kunjungan.');
+      if (!error.response || !await offlineQueue.isReachable()) {
+        await offlineQueue.addItem('/visit/checkout', 'post', {
+          ...checkoutPayload,
+          visit_log_id: resolvedVisitLogId,
+          offline_sync: true,
+        }, {}, { kind: 'visit_checkout' });
+        Alert.alert('Disimpan Offline', 'Check-out disimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
+          { text: 'OK', onPress: () => navigation.popToTop() },
+        ]);
+      } else {
+        Alert.alert('Gagal', error.response?.data?.message || 'Gagal menyimpan data kunjungan.');
+      }
     } finally {
       if (isMountedRef.current) {
         setSaving(false);
@@ -507,7 +781,7 @@ function VisitFormScreen({ route, navigation }) {
           )}
         </View>
 
-        {!!sapOutstanding && (
+        {SHOW_MOBILE_RECEIVABLES && !!sapOutstanding && (
           <View style={styles.sapCard}>
             <View style={styles.sapHeader}>
               <View style={styles.sapHeaderCopy}>
@@ -690,6 +964,124 @@ function VisitFormScreen({ route, navigation }) {
           </View>
         )}
 
+        {SHOW_MOBILE_RECEIVABLES && canEditVisit && (
+          <View style={styles.cashPaymentCard}>
+            <View style={styles.cashPaymentHeader}>
+              <View>
+                <Text style={styles.cashPaymentLabel}>Cash Payment</Text>
+                <Text style={styles.cashPaymentTitle}>{storeName}</Text>
+              </View>
+              <Text style={styles.cashPaymentStatus}>Draft</Text>
+            </View>
+
+            <Text style={styles.fieldLabel}>Nominal</Text>
+            <TextInput
+              style={styles.input}
+              value={cashPaymentForm.amount}
+              onChangeText={(value) => setCashPaymentField('amount', value.replace(/[^\d]/g, ''))}
+              placeholder="Nominal pembayaran"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              editable={!cashPaymentSubmitting}
+            />
+
+            <Text style={styles.fieldLabel}>Tipe Pembayaran</Text>
+            <View style={styles.pickerWrap}>
+              <Picker
+                selectedValue={cashPaymentForm.paymentType}
+                onValueChange={(value) => setCashPaymentField('paymentType', value)}
+                enabled={!cashPaymentSubmitting}
+                mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+                style={styles.picker}
+                itemStyle={[styles.pickerItem, { color: pickerItemColor }]}
+                dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
+              >
+                {CASH_PAYMENT_TYPES.map((item) => (
+                  <Picker.Item key={item} label={item} value={item} color={pickerItemColor} />
+                ))}
+              </Picker>
+            </View>
+
+            <Text style={styles.fieldLabel}>Nama Customer / PIC</Text>
+            <TextInput
+              style={styles.input}
+              value={cashPaymentForm.ownerName}
+              onChangeText={(value) => setCashPaymentField('ownerName', value)}
+              placeholder={storePicName || 'Nama customer/PIC'}
+              placeholderTextColor="#94A3B8"
+              editable={!cashPaymentSubmitting}
+            />
+
+            <Text style={styles.fieldLabel}>No WhatsApp Customer</Text>
+            <TextInput
+              style={styles.input}
+              value={cashPaymentForm.phone}
+              onChangeText={(value) => setCashPaymentField('phone', value)}
+              placeholder={storePicPhone || '08xxxxxxxxxx'}
+              placeholderTextColor="#94A3B8"
+              keyboardType="phone-pad"
+              editable={!cashPaymentSubmitting}
+            />
+
+            <Text style={styles.fieldLabel}>No Invoice</Text>
+            <TextInput
+              style={styles.input}
+              value={cashPaymentForm.invoice}
+              onChangeText={(value) => setCashPaymentField('invoice', value)}
+              placeholder="Opsional"
+              placeholderTextColor="#94A3B8"
+              editable={!cashPaymentSubmitting}
+            />
+
+            <Text style={styles.fieldLabel}>No Sales Order</Text>
+            <TextInput
+              style={styles.input}
+              value={cashPaymentForm.salesOrderNumber}
+              onChangeText={(value) => setCashPaymentField('salesOrderNumber', value)}
+              placeholder="Opsional"
+              placeholderTextColor="#94A3B8"
+              editable={!cashPaymentSubmitting}
+            />
+
+            <Text style={styles.fieldLabel}>Catatan</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={cashPaymentForm.remarks}
+              onChangeText={(value) => setCashPaymentField('remarks', value)}
+              placeholder="Catatan pembayaran"
+              placeholderTextColor="#94A3B8"
+              multiline
+              editable={!cashPaymentSubmitting}
+            />
+
+            <View style={styles.cashPaymentPhotoRow}>
+              <TouchableOpacity
+                style={styles.cashPaymentPhotoButton}
+                onPress={handleTakeCashPaymentPhoto}
+                disabled={cashPaymentSubmitting}
+              >
+                <Camera size={18} color="#0F766E" />
+                <Text style={styles.cashPaymentPhotoText}>
+                  {cashPaymentPhoto ? 'Ganti Bukti Pembayaran' : 'Ambil Bukti Pembayaran'}
+                </Text>
+              </TouchableOpacity>
+
+              {cashPaymentPhoto?.uri && (
+                <Image source={{ uri: cashPaymentPhoto.uri }} style={styles.cashPaymentPhotoPreview} />
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.cashPaymentSubmitBtn, cashPaymentSubmitting && styles.disabledBtn]}
+              onPress={handleSubmitCashPayment}
+              disabled={cashPaymentSubmitting}
+            >
+              {cashPaymentSubmitting ? <ActivityIndicator color="#fff" /> : <Save size={18} color="#fff" />}
+              <Text style={styles.cashPaymentSubmitText}>Kirim Cash Payment</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {canEditVisit && (
           <View style={styles.actionRow}>
             <TouchableOpacity style={[styles.actionBtn, styles.photoBtn]} onPress={handleTakePhoto}>
@@ -728,7 +1120,7 @@ function VisitFormScreen({ route, navigation }) {
               enabled={canEditVisit}
               mode={Platform.OS === 'android' ? 'dropdown' : undefined}
               style={styles.picker}
-              itemStyle={styles.pickerItem}
+              itemStyle={[styles.pickerItem, { color: pickerItemColor }]}
               dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
             >
               {ACTIVITY_TYPES.map((item) => (
@@ -736,7 +1128,7 @@ function VisitFormScreen({ route, navigation }) {
                   key={item.value}
                   label={item.label}
                   value={item.value}
-                  color="#1E293B"
+                  color={pickerItemColor}
                 />
               ))}
             </Picker>
@@ -750,7 +1142,7 @@ function VisitFormScreen({ route, navigation }) {
               enabled={canEditVisit}
               mode={Platform.OS === 'android' ? 'dropdown' : undefined}
               style={styles.picker}
-              itemStyle={styles.pickerItem}
+              itemStyle={[styles.pickerItem, { color: pickerItemColor }]}
               dropdownIconColor={Platform.OS === 'android' ? '#FFFFFF' : '#475569'}
             >
               {VISIT_RESULTS.map((item) => (
@@ -758,7 +1150,7 @@ function VisitFormScreen({ route, navigation }) {
                   key={item.value}
                   label={item.label}
                   value={item.value}
-                  color="#1E293B"
+                  color={pickerItemColor}
                 />
               ))}
             </Picker>
@@ -813,6 +1205,7 @@ function VisitFormScreen({ route, navigation }) {
                   <Image
                     source={{ uri: photo.url }}
                     style={styles.photoThumb}
+                    onError={(error) => logPhotoLoadError(photo, error)}
                   />
                 </TouchableOpacity>
               ))}
@@ -1174,6 +1567,88 @@ const styles = StyleSheet.create({
     color: '#FDE68A',
     lineHeight: 18,
   },
+  cashPaymentCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#BFE3DD',
+  },
+  cashPaymentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 4,
+  },
+  cashPaymentLabel: {
+    fontSize: 11,
+    color: '#0F766E',
+    textTransform: 'uppercase',
+    letterSpacing: 0,
+    fontWeight: '800',
+  },
+  cashPaymentTitle: {
+    marginTop: 4,
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  cashPaymentStatus: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#ECFDF5',
+    color: '#047857',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  cashPaymentPhotoRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cashPaymentPhotoButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#99D6CD',
+    backgroundColor: '#E7F1EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  cashPaymentPhotoText: {
+    color: '#0F766E',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  cashPaymentPhotoPreview: {
+    width: 62,
+    height: 62,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+  },
+  cashPaymentSubmitBtn: {
+    marginTop: 14,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: '#0F766E',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  cashPaymentSubmitText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1277,7 +1752,6 @@ const styles = StyleSheet.create({
     backgroundColor: Platform.OS === 'android' ? '#004181' : '#7a96b1',
   },
   pickerItem: {
-    color: '#1E293B',
     fontSize: 15,
   },
   input: {
