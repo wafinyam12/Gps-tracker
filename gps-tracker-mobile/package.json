@@ -1,6 +1,6 @@
 {
   "name": "sales-daily-mobile",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.js",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -10,7 +10,8 @@
     "@react-navigation/native": "^7.0.0",
     "@react-navigation/stack": "^7.0.0",
     "axios": "^1.7.0",
-    "expo": "~54.0.0",
+    "expo": "~54.0.37",
+    "expo-background-task": "~1.0.10",
     "expo-camera": "~17.0.10",
     "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",

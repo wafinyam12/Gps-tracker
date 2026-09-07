@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import NetInfo from '@react-native-community/netinfo';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { canAccessMonitoring } from './src/utils/roles';
 import './src/utils/backgroundTracker';
+import './src/utils/offlineSyncTask';
+import { offlineQueue } from './src/utils/offlineQueue';
+import { registerOfflineSyncTask } from './src/utils/offlineSyncTask';
 import { colors } from './src/styles/theme';
 
 // Screens
@@ -222,6 +227,32 @@ const AdminStack = () => (
 
 const RootNavigator = () => {
   const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    const syncWhenReachable = (state) => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        offlineQueue.processQueue({ silent: true });
+      }
+    };
+
+    registerOfflineSyncTask();
+    NetInfo.fetch().then(syncWhenReachable).catch(() => {});
+    const networkSubscription = NetInfo.addEventListener(syncWhenReachable);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        offlineQueue.processQueue({ silent: true });
+      }
+    });
+
+    return () => {
+      networkSubscription();
+      appStateSubscription.remove();
+    };
+  }, [user?.id]);
 
   if (loading) {
     return <LoadingScreen />;

@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\SyncSapCustomerCatalog;
+use App\Console\Commands\SyncSapCustomerCoordinatesCommand;
 use App\Models\User;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -32,3 +33,9 @@ Schedule::call(function () {
             }
         });
 })->hourly()->name('sync-active-sap-customer-catalogs')->withoutOverlapping();
+
+Schedule::command(SyncSapCustomerCoordinatesCommand::class)
+    ->dailyAt('16:00')
+    ->timezone('Asia/Jakarta')
+    ->name('sync-sap-customer-coordinates')
+    ->withoutOverlapping();

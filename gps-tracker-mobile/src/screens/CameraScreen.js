@@ -12,7 +12,7 @@ import { useAuth } from '../context/AuthContext';
 const PhotoUploadScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { visitLogId, type, latitude, longitude, takenAt, userId, username } = route.params || {};
+  const { visitLogId, offlineVisitId, type, latitude, longitude, takenAt, userId, username } = route.params || {};
   const { user } = useAuth();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -74,6 +74,27 @@ const PhotoUploadScreen = () => {
 
     setIsProcessing(true);
     try {
+      const photoPayload = {
+        type: resolvedType,
+        photos: photos.map((photo, index) => ({
+          uri: photo.uri,
+          name: `photo_${index}.jpg`,
+          type: 'image/jpeg',
+        })),
+        latitude,
+        longitude,
+        taken_at: takenAt || new Date().toISOString(),
+        submitted_by_user_id: userId || user?.id,
+        submitted_by_username: username || user?.name,
+      };
+
+      if (offlineVisitId) {
+        await offlineQueue.enqueueVisitPhotos(offlineVisitId, photoPayload);
+        Alert.alert('Foto Disimpan Offline', 'Foto akan otomatis diunggah setelah visit tersinkron ke server.');
+        navigation.goBack();
+        return;
+      }
+
       await visitService.uploadPhotos(visitLogId, photos, latitude, longitude, resolvedType, {
         takenAt: takenAt || new Date().toISOString(),
         userId: userId || user?.id,

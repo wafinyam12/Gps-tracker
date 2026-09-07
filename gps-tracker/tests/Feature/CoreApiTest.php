@@ -659,7 +659,7 @@ class CoreApiTest extends TestCase
         ]);
     }
 
-    public function test_sales_first_valid_visit_saves_store_location_and_counts_target(): void
+    public function test_sales_completed_first_valid_visit_saves_store_location_and_counts_target(): void
     {
         $user = User::factory()->create(['is_active' => true]);
         $user->assignRole('sales');
@@ -684,6 +684,8 @@ class CoreApiTest extends TestCase
             ->assertJsonPath('data.is_duplicate', false)
             ->assertJsonPath('data.counted_as_target', true);
 
+        $visitLogId = $response->json('data.visit_log_id');
+
         $visitDate = Carbon::now('Asia/Jakarta')->toDateString();
 
         $this->assertDatabaseHas('visit_logs', [
@@ -695,7 +697,53 @@ class CoreApiTest extends TestCase
 
         $store = Store::where('external_bp_code', 'SAP-DMY-0001')->first();
         $this->assertNotNull($store);
+        $this->assertFalse($store->hasLocation());
+
+        $checkoutResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/visit/checkout', [
+                'visit_log_id' => $visitLogId,
+                'latitude' => -6.21462,
+                'longitude' => 106.82172,
+                'accuracy' => 10,
+                'is_mock_location' => false,
+                'visit_result' => 'order_taken',
+            ]);
+
+        $checkoutResponse->assertStatus(200);
+
+        $store->refresh();
         $this->assertTrue($store->hasLocation());
+    }
+
+    public function test_cancelling_open_visit_does_not_save_store_location(): void
+    {
+        $user = User::factory()->create(['is_active' => true]);
+        $user->assignRole('sales');
+        $token = $user->createToken('test')->plainTextToken;
+
+        $startResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/visit/start', [
+                'external_bp_code' => 'SAP-DMY-0002',
+                'store_name' => 'Toko Dummy Thamrin',
+                'store_address' => 'Jl. M.H. Thamrin No. 15, Jakarta Pusat',
+                'branch' => 'Jakarta Pusat',
+                'latitude' => -6.19445,
+                'longitude' => 106.82292,
+                'accuracy' => 10,
+                'is_mock_location' => false,
+            ]);
+
+        $startResponse->assertStatus(201);
+        $visitLogId = $startResponse->json('data.visit_log_id');
+
+        $store = Store::where('external_bp_code', 'SAP-DMY-0002')->firstOrFail();
+        $this->assertFalse($store->hasLocation());
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->deleteJson("/api/v1/visits/{$visitLogId}")
+            ->assertStatus(200);
+
+        $this->assertFalse($store->fresh()->hasLocation());
     }
 
     public function test_sales_cannot_start_visit_with_mock_location(): void
@@ -827,7 +875,7 @@ class CoreApiTest extends TestCase
         $this->assertSame('Budi Santoso', $store->pic_name);
         $this->assertSame('+6281234567890', $store->pic_phone);
         $this->assertSame('sap_outstanding_receivable', $store->master_source);
-        $this->assertTrue($store->hasLocation());
+        $this->assertFalse($store->hasLocation());
 
         Http::assertSentCount(1);
     }

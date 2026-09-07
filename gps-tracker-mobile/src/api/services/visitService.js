@@ -65,6 +65,8 @@ export const visitService = {
       submitted_at: options.submittedAt,
       submitted_by_user_id: options.userId,
       submitted_by_username: options.username,
+      client_uuid: options.clientUuid,
+      offline_sync: options.offlineSync || false,
     }));
     return response.data;
   },

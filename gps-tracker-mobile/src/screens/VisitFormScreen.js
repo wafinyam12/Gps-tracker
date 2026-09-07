@@ -27,6 +27,7 @@ import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
 import { ACTIVITY_TYPES, VISIT_RESULTS } from '../utils/visitOptions';
+import { offlineQueue } from '../utils/offlineQueue';
 
 const EMPTY_FORM = {
   visitResult: 'order_taken',
@@ -100,16 +101,31 @@ const formatTimeOnly = (value) => {
 const getInvoiceReference = (invoice) => invoice?.invoice_no || invoice?.doc_num || invoice?.doc_entry || '-';
 const getInvoiceType = (invoice) => invoice?.document_type || 'Invoice';
 
+const buildOfflineVisit = (draft) => ({
+  id: `offline-${draft.localVisitId}`,
+  visit_date: String(draft.checkinAt || new Date().toISOString()).slice(0, 10),
+  checkin_at: draft.checkinAt,
+  checkout_at: null,
+  checkin_valid: true,
+  checkin_distance: null,
+  is_mock_location: false,
+  is_duplicate: false,
+  counted_as_target: false,
+  store: draft.store || {},
+  form_data: {},
+});
+
 function VisitFormScreen({ route, navigation }) {
   const { user } = useAuth();
-  const { visitLogId: routeVisitLogId, mode } = route.params || {};
+  const { visitLogId: routeVisitLogId, mode, offlineVisit } = route.params || {};
+  const isOfflineVisit = Boolean(offlineVisit?.localVisitId);
   const colorScheme = useColorScheme();
 
   const [visitLogId, setVisitLogId] = useState(routeVisitLogId || null);
-  const [visit, setVisit] = useState(null);
+  const [visit, setVisit] = useState(() => (isOfflineVisit ? buildOfflineVisit(offlineVisit) : null));
   const [form, setForm] = useState(EMPTY_FORM);
   const [currentLocation, setCurrentLocation] = useState(null);
-  const [loading, setLoading] = useState(Boolean(routeVisitLogId));
+  const [loading, setLoading] = useState(Boolean(routeVisitLogId) && !isOfflineVisit);
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
@@ -216,6 +232,16 @@ function VisitFormScreen({ route, navigation }) {
   }, [currentUserFullName]);
 
   const loadVisit = useCallback(async () => {
+    if (isOfflineVisit) {
+      const offlineData = buildOfflineVisit(offlineVisit);
+      if (isMountedRef.current) {
+        setVisit(offlineData);
+        hydrateForm(offlineData);
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!resolvedVisitLogId) {
       if (isMountedRef.current) {
         setLoading(false);
@@ -247,7 +273,7 @@ function VisitFormScreen({ route, navigation }) {
         setLoading(false);
       }
     }
-  }, [hydrateForm, resolvedVisitLogId]);
+  }, [hydrateForm, isOfflineVisit, offlineVisit, resolvedVisitLogId]);
 
   const requestLocation = useCallback(async () => {
     try {
@@ -365,7 +391,7 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    if (!resolvedVisitLogId) {
+    if (!resolvedVisitLogId && !isOfflineVisit) {
       Alert.alert('Belum Bisa', 'ID kunjungan belum tersedia.');
       return;
     }
@@ -385,6 +411,7 @@ function VisitFormScreen({ route, navigation }) {
 
     navigation.navigate('PhotoUpload', {
       visitLogId: resolvedVisitLogId,
+      offlineVisitId: isOfflineVisit ? offlineVisit.localVisitId : null,
       type: 'other',
       latitude: locationPayload.latitude,
       longitude: locationPayload.longitude,
@@ -442,6 +469,11 @@ function VisitFormScreen({ route, navigation }) {
 
   const handleSubmitCashPayment = async () => {
     if (!canEditVisit || cashPaymentSubmitting) {
+      return;
+    }
+
+    if (isOfflineVisit) {
+      Alert.alert('Menunggu Sinkronisasi', 'Cash payment dapat dikirim setelah visit offline berhasil tersinkron ke server.');
       return;
     }
 
@@ -534,6 +566,25 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const handleCancelVisit = () => {
+    if (isOfflineVisit) {
+      Alert.alert(
+        'Batalkan Visit Offline?',
+        'Seluruh data visit offline ini akan dihapus dari perangkat.',
+        [
+          { text: 'Tetap di Visit', style: 'cancel' },
+          {
+            text: 'Ya, batalkan',
+            style: 'destructive',
+            onPress: async () => {
+              await offlineQueue.removeVisit(offlineVisit.localVisitId);
+              returnToStoreList();
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     if (isCheckedOut || !resolvedVisitLogId) {
       returnToStoreList();
       return;
@@ -576,7 +627,7 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    if (!resolvedVisitLogId) {
+    if (!resolvedVisitLogId && !isOfflineVisit) {
       Alert.alert('Error', 'ID kunjungan tidak ditemukan.');
       return;
     }
@@ -590,26 +641,50 @@ function VisitFormScreen({ route, navigation }) {
     setSaving(true);
     try {
       const locationPayload = integrity.payload;
+      const checkoutPayload = {
+        visit_result: form.visitResult,
+        notes: form.notes.trim(),
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        accuracy: locationPayload.accuracy,
+        is_mock_location: locationPayload.is_mock_location,
+        location_recorded_at: locationPayload.location_recorded_at,
+        form_data: {
+          activity_type: form.activityType || null,
+          customer_response: form.customerResponse.trim() || null,
+          notes: form.notes.trim() || null,
+          pic_name: form.picName.trim() || null,
+          pic_phone: storePicPhone || null,
+        },
+        submitted_at: new Date().toISOString(),
+        submitted_by_user_id: user?.id,
+        submitted_by_username: user?.name,
+        client_uuid: offlineQueue.createUuid(),
+      };
+
+      if (isOfflineVisit) {
+        await offlineQueue.enqueueVisitCheckout(offlineVisit.localVisitId, checkoutPayload);
+        Alert.alert('Visit Disimpan Offline', 'Check-out tersimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
+          { text: 'OK', onPress: () => navigation.popToTop() },
+        ]);
+        return;
+      }
+
       const response = await visitService.checkOut(
         resolvedVisitLogId,
         form.visitResult,
         form.notes.trim(),
         {
-          latitude: locationPayload.latitude,
-          longitude: locationPayload.longitude,
-          accuracy: locationPayload.accuracy,
-          isMockLocation: locationPayload.is_mock_location,
-          locationRecordedAt: locationPayload.location_recorded_at,
-          formData: {
-            activity_type: form.activityType || null,
-            customer_response: form.customerResponse.trim() || null,
-            notes: form.notes.trim() || null,
-            pic_name: form.picName.trim() || null,
-            pic_phone: storePicPhone || null,
-          },
-          submittedAt: new Date().toISOString(),
-          userId: user?.id,
-          username: user?.name,
+          latitude: checkoutPayload.latitude,
+          longitude: checkoutPayload.longitude,
+          accuracy: checkoutPayload.accuracy,
+          isMockLocation: checkoutPayload.is_mock_location,
+          locationRecordedAt: checkoutPayload.location_recorded_at,
+          formData: checkoutPayload.form_data,
+          submittedAt: checkoutPayload.submitted_at,
+          userId: checkoutPayload.submitted_by_user_id,
+          username: checkoutPayload.submitted_by_username,
+          clientUuid: checkoutPayload.client_uuid,
         }
       );
 
@@ -629,7 +704,18 @@ function VisitFormScreen({ route, navigation }) {
       }
 
       console.log('Save visit error:', error.response?.data || error);
-      Alert.alert('Gagal', error.response?.data?.message || 'Gagal menyimpan data kunjungan.');
+      if (!error.response || !await offlineQueue.isReachable()) {
+        await offlineQueue.addItem('/visit/checkout', 'post', {
+          ...checkoutPayload,
+          visit_log_id: resolvedVisitLogId,
+          offline_sync: true,
+        }, {}, { kind: 'visit_checkout' });
+        Alert.alert('Disimpan Offline', 'Check-out disimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
+          { text: 'OK', onPress: () => navigation.popToTop() },
+        ]);
+      } else {
+        Alert.alert('Gagal', error.response?.data?.message || 'Gagal menyimpan data kunjungan.');
+      }
     } finally {
       if (isMountedRef.current) {
         setSaving(false);

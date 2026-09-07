@@ -18,6 +18,7 @@ import { storeService } from '../api/services/storeService';
 import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
+import { offlineQueue } from '../utils/offlineQueue';
 import OpenStreetMapView from '../components/maps/OpenStreetMapView';
 
 const DEFAULT_REGION = {
@@ -138,6 +139,7 @@ const StartVisitScreen = ({ navigation }) => {
 
       const { items, meta } = extractAvailableStoresPayload(response);
       const normalized = items.map(normalizeStore);
+      await offlineQueue.cacheStores(normalized);
 
       setStores((current) => {
         if (append && nextPage > 1) {
@@ -186,10 +188,14 @@ const StartVisitScreen = ({ navigation }) => {
 
       console.log('Load stores error:', error.response?.data || error);
       if (!append) {
-        setStores([]);
-        setSelectedStore(null);
+        const cached = await offlineQueue.cachedStores();
+        const cachedStores = Array.isArray(cached.stores) ? cached.stores : [];
+        setStores(cachedStores);
+        setSelectedStore(cachedStores[0] || null);
         setHasMore(false);
-        setNotice(error.response?.data?.message || 'Gagal memuat daftar toko aktif.');
+        setNotice(cachedStores.length > 0
+          ? 'Mode offline: memakai daftar customer tersimpan. Data akan disinkronkan saat koneksi kembali.'
+          : (error.response?.data?.message || 'Daftar customer belum pernah tersimpan di perangkat ini.'));
       } else {
         Alert.alert('Gagal', error.response?.data?.message || 'Gagal memuat data toko berikutnya.');
       }
@@ -267,21 +273,24 @@ const StartVisitScreen = ({ navigation }) => {
       return;
     }
 
+    const clientUuid = offlineQueue.createUuid();
+    const startPayload = {
+      store_id: store.id,
+      external_bp_code: store.external_bp_code || store.code,
+      store_name: store.name,
+      store_address: store.address,
+      branch: store.branch,
+      latitude: integrity.payload.latitude,
+      longitude: integrity.payload.longitude,
+      accuracy: integrity.payload.accuracy,
+      is_mock_location: integrity.payload.is_mock_location,
+      location_recorded_at: integrity.payload.location_recorded_at,
+      client_uuid: clientUuid,
+    };
+
     setStarting(true);
     try {
-      const locationPayload = integrity.payload;
-      const response = await visitService.startVisit({
-        store_id: store.id,
-        external_bp_code: store.external_bp_code || store.code,
-        store_name: store.name,
-        store_address: store.address,
-        branch: store.branch,
-        latitude: locationPayload.latitude,
-        longitude: locationPayload.longitude,
-        accuracy: locationPayload.accuracy,
-        is_mock_location: locationPayload.is_mock_location,
-        location_recorded_at: locationPayload.location_recorded_at,
-      });
+      const response = await visitService.startVisit(startPayload);
 
       const payload = response.data || {};
       const warning = payload.warning || response.message || '';
@@ -313,6 +322,31 @@ const StartVisitScreen = ({ navigation }) => {
           ]
         );
         return;
+      }
+
+      const reachable = await offlineQueue.isReachable();
+      if (!reachable || !error.response) {
+        try {
+          const queued = await offlineQueue.enqueueVisitStart(startPayload, clientUuid);
+          navigation.push('VisitForm', {
+            offlineVisit: {
+              ...queued,
+              store,
+              checkinAt: startPayload.location_recorded_at || new Date().toISOString(),
+              checkinLocation: {
+                latitude: startPayload.latitude,
+                longitude: startPayload.longitude,
+              },
+              checkinAccuracy: startPayload.accuracy,
+            },
+          });
+          Alert.alert('Disimpan Offline', 'Check-in tersimpan di perangkat. Selesaikan form visit, data akan dikirim otomatis saat koneksi kembali.');
+          return;
+        } catch (queueError) {
+          console.log('Offline start queue error:', queueError);
+          Alert.alert('Gagal', 'Tidak dapat menyimpan kunjungan offline di perangkat.');
+          return;
+        }
       }
 
       Alert.alert('Gagal', responseData?.message || 'Gagal memulai visit.');

@@ -17,7 +17,7 @@ class LocationIntegrityService
     private const MAX_TRAVEL_SPEED_METERS_PER_SECOND = 45; // 162 km/h, deliberately generous.
     private const TELEPORT_DISTANCE_BUFFER_METERS = 500;
 
-    public function visitLocationIntegrityError(Request $request): ?array
+    public function visitLocationIntegrityError(Request $request, bool $allowStaleLocation = false): ?array
     {
         if ($request->boolean('is_mock_location', false)) {
             return $this->error(
@@ -47,7 +47,7 @@ class LocationIntegrityService
                 );
             }
 
-            if ($recordedAt->lt($now->copy()->subMinutes(self::MAX_LOCATION_AGE_MINUTES))) {
+            if (! $allowStaleLocation && $recordedAt->lt($now->copy()->subMinutes(self::MAX_LOCATION_AGE_MINUTES))) {
                 return $this->error(
                     'stale_location',
                     'Lokasi terlalu lama. Ambil ulang lokasi sebelum melanjutkan visit.'

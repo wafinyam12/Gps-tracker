@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sales Daily",
     "slug": "sales-daily",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "xyz.utomodev.salesdaily.staging",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -55,7 +55,8 @@
         {
           "cameraPermission": "Izinkan aplikasi mengambil foto kunjungan."
         }
-      ]
+      ],
+      "expo-background-task"
     ],
     "extra": {
       "eas": {

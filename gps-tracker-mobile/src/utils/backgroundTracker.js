@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 import { canVisitStores } from './roles';
+import { offlineQueue } from './offlineQueue';
 
 const LOCATION_TRACKING_TASK = 'background-location-tracking';
 
@@ -51,6 +52,10 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
             recorded_at: new Date(location.timestamp).toISOString(),
             is_mock_location: location.mocked || false,
           });
+
+          // A running foreground location service gives pending offline visits
+          // another opportunity to leave the device without user interaction.
+          await offlineQueue.processQueue({ silent: true });
         } catch (e) {
           console.log('Background ping failed', e.message);
         }
