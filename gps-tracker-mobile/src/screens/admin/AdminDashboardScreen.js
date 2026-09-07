@@ -33,7 +33,7 @@ const AdminDashboardScreen = () => {
       icon: <MapPin size={24} color={colors.primary} />,
       screen: 'Home',
     }
-    }] : []),
+    ] : []),
     ...(canManageUsersAndBranches ? [
       {
         title: 'Manajemen User',
