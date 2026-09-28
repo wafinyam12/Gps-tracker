@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { canVisitStores } from '../utils/roles';
+import { canTrackLocation } from '../utils/roles';
 
 const normalizeBearing = (heading) => (
   typeof heading === 'number' && heading >= 0 && heading <= 360 ? heading : null
@@ -15,7 +15,7 @@ export const useLocationTracker = () => {
   const [isTracking, setIsTracking] = useState(false);
   const subscriptionRef = useRef(null);
 
-  const canTrack = canVisitStores(user);
+  const canTrack = canTrackLocation(user);
 
   const stopTracking = useCallback(() => {
     if (subscriptionRef.current) {

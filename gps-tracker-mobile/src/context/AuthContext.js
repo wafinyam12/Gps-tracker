@@ -2,7 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 import authEvents from '../utils/authEvents';
-import { canVisitStores } from '../utils/roles';
+import { canTrackLocation } from '../utils/roles';
 import { startBackgroundTracking, stopBackgroundTracking } from '../utils/backgroundTracker';
 
 const AuthContext = createContext();
@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const syncTracking = async () => {
       try {
-        if (canVisitStores(user)) {
+        if (canTrackLocation(user)) {
           await startBackgroundTracking();
         } else {
           await stopBackgroundTracking();

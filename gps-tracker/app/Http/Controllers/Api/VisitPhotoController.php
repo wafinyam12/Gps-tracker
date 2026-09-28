@@ -247,6 +247,10 @@ class VisitPhotoController extends Controller
 
     private function canAccessVisitLog(User $viewer, VisitLog $visitLog): bool
     {
+        if ($viewer->hasRole('manager')) {
+            return $visitLog->user_id === $viewer->id;
+        }
+
         if ($viewer->canAccessAllBranches()) {
             return true;
         }

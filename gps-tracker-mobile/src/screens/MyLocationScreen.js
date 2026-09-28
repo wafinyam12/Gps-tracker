@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Location from 'expo-location';
 import { Crosshair, RefreshCw, MapPin } from 'lucide-react-native';
@@ -22,21 +22,37 @@ const toRegion = (location) => ({
   longitudeDelta: 0.01,
 });
 
-const normalizeStore = (store) => ({
-  id: store.id,
-  code: store.code,
-  name: store.name,
-  address: store.address,
-  branch: store.branch,
-  latitude: Number(store.latitude),
-  longitude: Number(store.longitude),
-});
+const normalizeViewport = (viewport) => {
+  const south = Number(viewport?.south);
+  const north = Number(viewport?.north);
+  const west = Number(viewport?.west);
+  const east = Number(viewport?.east);
+  const zoom = Math.round(Number(viewport?.zoom));
+
+  if (![south, north, west, east, zoom].every(Number.isFinite)
+    || south >= north || west >= east) {
+    return null;
+  }
+
+  return { south, north, west, east, zoom };
+};
+
+const VIEWPORT_DEBOUNCE_MS = 450;
 
 const MyLocationScreen = () => {
   const subscriptionRef = useRef(null);
+  const viewportRef = useRef(null);
+  const viewportTimerRef = useRef(null);
+  const markerRequestSequenceRef = useRef(0);
   const [location, setLocation] = useState(null);
   const [mapCenter, setMapCenter] = useState(DEFAULT_REGION);
-  const [storePoints, setStorePoints] = useState([]);
+  const [mapZoom, setMapZoom] = useState(15);
+  const [viewportKey, setViewportKey] = useState(0);
+  const [storeMarkers, setStoreMarkers] = useState([]);
+  const [visibleStoreCount, setVisibleStoreCount] = useState(0);
+  const [storeCandidateLimitReached, setStoreCandidateLimitReached] = useState(false);
+  const [storeMarkersLoading, setStoreMarkersLoading] = useState(false);
+  const [storeMarkersError, setStoreMarkersError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -46,21 +62,99 @@ const MyLocationScreen = () => {
     }
 
     setMapCenter(toRegion(nextLocation));
+    setMapZoom(15);
+    setViewportKey((current) => current + 1);
   };
 
-  const loadStorePoints = async () => {
+  const loadStoreMarkers = useCallback(async (viewport) => {
+    const requestSequence = markerRequestSequenceRef.current + 1;
+    markerRequestSequenceRef.current = requestSequence;
+    setStoreMarkersLoading(true);
+    setStoreMarkersError(false);
+
     try {
-      const response = await storeService.getAvailableStores();
-      const payload = response.data?.data || response.data || [];
-      const stores = Array.isArray(payload)
-        ? payload.map(normalizeStore).filter((store) => Number.isFinite(store.latitude) && Number.isFinite(store.longitude))
+      const response = await storeService.getMapMarkers({ ...viewport, limit: 100 });
+      if (requestSequence !== markerRequestSequenceRef.current) {
+        return;
+      }
+
+      const payload = response.data?.data || {};
+      const markers = Array.isArray(payload.items)
+        ? payload.items
+          .filter((item) => item?.latitude != null && item?.longitude != null)
+          .map((item) => ({
+            ...item,
+            latitude: Number(item.latitude),
+            longitude: Number(item.longitude),
+            color: item.kind === 'customer_cluster' ? undefined : '#16A34A',
+          }))
+          .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
         : [];
-      setStorePoints(stores);
+
+      setStoreMarkers(markers);
+      setVisibleStoreCount(Number(payload.meta?.visible_stores) || 0);
+      setStoreCandidateLimitReached(Boolean(payload.meta?.candidate_limit_reached));
     } catch (error) {
-      console.log('Load store points error:', error.response?.data || error);
-      setStorePoints([]);
+      if (requestSequence === markerRequestSequenceRef.current) {
+        console.log('Load store map markers error:', error.response?.data || error);
+        setStoreMarkersError(true);
+      }
+    } finally {
+      if (requestSequence === markerRequestSequenceRef.current) {
+        setStoreMarkersLoading(false);
+      }
     }
-  };
+  }, []);
+
+  const scheduleStoreMarkers = useCallback((nextViewport) => {
+    const viewport = normalizeViewport(nextViewport);
+    if (!viewport) {
+      return;
+    }
+
+    viewportRef.current = viewport;
+    markerRequestSequenceRef.current += 1;
+    if (viewportTimerRef.current) {
+      clearTimeout(viewportTimerRef.current);
+    }
+
+    setStoreMarkersLoading(true);
+    viewportTimerRef.current = setTimeout(() => {
+      loadStoreMarkers(viewport);
+    }, VIEWPORT_DEBOUNCE_MS);
+  }, [loadStoreMarkers]);
+
+  const handleViewportChange = useCallback((viewport) => {
+    if (!location) {
+      return;
+    }
+
+    const normalized = normalizeViewport(viewport);
+    if (!normalized) {
+      return;
+    }
+
+    setMapZoom(normalized.zoom);
+    scheduleStoreMarkers(normalized);
+  }, [location, scheduleStoreMarkers]);
+
+  const handleMarkerPress = useCallback((marker) => {
+    if (marker?.kind !== 'customer_cluster') {
+      return;
+    }
+
+    const currentZoom = viewportRef.current?.zoom || mapZoom;
+    setMapCenter({ latitude: marker.latitude, longitude: marker.longitude });
+    setMapZoom(Math.min(currentZoom + 2, 19));
+    setViewportKey((current) => current + 1);
+  }, [mapZoom]);
+
+  useEffect(() => () => {
+    if (viewportTimerRef.current) {
+      clearTimeout(viewportTimerRef.current);
+    }
+    markerRequestSequenceRef.current += 1;
+  }, []);
 
   const refreshLocation = async () => {
     try {
@@ -70,7 +164,6 @@ const MyLocationScreen = () => {
       });
       setLocation(current);
       centerToLocation(current);
-      await loadStorePoints();
     } catch (error) {
       setErrorMsg('Gagal mengambil lokasi terbaru.');
     } finally {
@@ -101,7 +194,6 @@ const MyLocationScreen = () => {
         },
         (nextLocation) => {
           setLocation(nextLocation);
-          centerToLocation(nextLocation);
         }
       );
     };
@@ -115,7 +207,6 @@ const MyLocationScreen = () => {
     };
   }, []);
 
-  const region = location ? toRegion(location) : DEFAULT_REGION;
   const mapMarkers = useMemo(() => {
     const points = [];
 
@@ -130,19 +221,10 @@ const MyLocationScreen = () => {
       });
     }
 
-    storePoints.forEach((store) => {
-      points.push({
-        id: `store-${store.id || store.code}`,
-        latitude: store.latitude,
-        longitude: store.longitude,
-        title: store.name || 'Toko',
-        description: store.branch || store.address || '',
-        color: '#16A34A',
-      });
-    });
+    points.push(...storeMarkers);
 
     return points;
-  }, [location, storePoints]);
+  }, [location, storeMarkers]);
   const accuracyCircles = useMemo(() => {
     if (!location?.coords || typeof location.coords.accuracy !== 'number') {
       return [];
@@ -162,10 +244,13 @@ const MyLocationScreen = () => {
       <View style={styles.container}>
         <OpenStreetMapView
           style={styles.map}
-          center={mapCenter || region}
+          center={mapCenter}
           markers={mapMarkers}
           circles={accuracyCircles}
-          zoom={15}
+          zoom={mapZoom}
+          viewportKey={viewportKey}
+          onMarkerPress={handleMarkerPress}
+          onViewportChange={handleViewportChange}
         />
 
         <View style={styles.overlay}>
@@ -175,7 +260,9 @@ const MyLocationScreen = () => {
                 <MapPin size={14} color={colors.primary} />
                 <Text style={styles.badgeText}>Lokasi Saya</Text>
               </View>
-              <Text style={styles.badgeMeta}>{storePoints.length} titik toko</Text>
+              <Text style={styles.badgeMeta}>
+                {visibleStoreCount}{storeCandidateLimitReached ? '+' : ''} toko di peta
+              </Text>
             </View>
 
             {loading ? (
@@ -193,9 +280,19 @@ const MyLocationScreen = () => {
                 <Text style={styles.statusText}>
                   Akurasi {Math.round(location.coords.accuracy || 0)} m
                 </Text>
-                <Text style={styles.statusText}>
-                  {storePoints.length > 0 ? `${storePoints.length} toko punya koordinat lokal` : 'Belum ada koordinat toko yang tersimpan'}
-                </Text>
+                {storeMarkersLoading ? (
+                  <Text style={styles.statusText}>Memuat toko di area peta...</Text>
+                ) : storeMarkersError ? (
+                  <Text style={styles.errorText}>Marker toko gagal dimuat. Periksa koneksi.</Text>
+                ) : (
+                  <Text style={styles.statusText}>
+                    {storeCandidateLimitReached
+                      ? 'Area padat. Perbesar peta untuk memuat marker lebih lengkap.'
+                      : visibleStoreCount > 0
+                        ? `${visibleStoreCount} toko berkoordinat di area peta`
+                        : 'Tidak ada toko berkoordinat di area peta'}
+                  </Text>
+                )}
               </>
             )}
           </Surface>

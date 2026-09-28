@@ -37,6 +37,10 @@ Route::prefix('v1')->group(function () {
         Route::middleware('role:sales|spv')->group(function () {
             Route::post('location/ping', [LocationController::class, 'ping'])
                 ->middleware('throttle:location-ping');
+        });
+
+        Route::middleware('role:sales|spv|manager')->group(function () {
+            Route::get('stores/map-markers', [StoreController::class, 'mapMarkers']);
 
             Route::post('visit/checkin', [CheckInController::class, 'checkIn'])
                 ->middleware('throttle:checkin');
@@ -62,7 +66,9 @@ Route::prefix('v1')->group(function () {
             Route::get('stores', [StoreController::class, 'index']);
             Route::get('stores/filters', [StoreController::class, 'filters']);
             Route::get('stores/{store}', [StoreController::class, 'show']);
+        });
 
+        Route::middleware('role:sales|spv|manager|admin|superadmin')->group(function () {
             Route::get('visits', [VisitLogController::class, 'index']);
             Route::get('visits/{visitLog}', [VisitLogController::class, 'show']);
             Route::patch('visits/{visitLog}', [VisitLogController::class, 'update']);

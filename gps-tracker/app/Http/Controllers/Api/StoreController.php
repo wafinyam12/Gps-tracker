@@ -6,10 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\StoreResource;
 use App\Models\Store;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use App\Services\MasterData\StoreCatalogSyncService;
 
 class StoreController extends Controller
 {
+    private const MAP_MARKER_LIMIT = 100;
+    private const MAP_CANDIDATE_LIMIT = 2000;
+
     public function index(Request $request, StoreCatalogSyncService $catalog)
     {
         $catalog->sync(false, $request->user());
@@ -126,6 +130,122 @@ class StoreController extends Controller
         return response()->success(
             $stores->map(fn (Store $store) => (new StoreResource($store))->toArray($request))->values()->all()
         );
+    }
+
+    public function mapMarkers(Request $request, StoreCatalogSyncService $catalog)
+    {
+        $validated = $request->validate([
+            'south' => 'required|numeric|between:-90,90',
+            'north' => 'required|numeric|between:-90,90',
+            'west' => 'required|numeric|between:-180,180',
+            'east' => 'required|numeric|between:-180,180',
+            'zoom' => 'required|integer|min:1|max:19',
+            'limit' => 'nullable|integer|min:1|max:'.self::MAP_MARKER_LIMIT,
+        ]);
+
+        $south = (float) $validated['south'];
+        $north = (float) $validated['north'];
+        $west = (float) $validated['west'];
+        $east = (float) $validated['east'];
+        if ($south >= $north || $west >= $east) {
+            return response()->error('Batas peta tidak valid.', 422);
+        }
+
+        $user = $request->user();
+        $catalog->ensureCatalog(true, $user);
+
+        $stores = $catalog->scopeQuery(Store::query(), $user, true)
+            ->select(['id', 'code', 'external_bp_code', 'name', 'address', 'branch', 'location'])
+            ->whereNotNull('location')
+            ->whereRaw('ST_Y(location) BETWEEN ? AND ?', [$south, $north])
+            ->whereRaw('ST_X(location) BETWEEN ? AND ?', [$west, $east])
+            ->orderBy('id')
+            ->limit(self::MAP_CANDIDATE_LIMIT + 1)
+            ->get();
+
+        $candidateLimitReached = $stores->count() > self::MAP_CANDIDATE_LIMIT;
+        if ($candidateLimitReached) {
+            $stores = $stores->take(self::MAP_CANDIDATE_LIMIT)->values();
+        }
+
+        $markerLimit = min((int) ($validated['limit'] ?? self::MAP_MARKER_LIMIT), self::MAP_MARKER_LIMIT);
+        $zoom = (int) $validated['zoom'];
+        $showIndividualMarkers = $zoom >= 15
+            && $stores->count() <= $markerLimit
+            && ! $candidateLimitReached;
+
+        if ($showIndividualMarkers) {
+            $items = $stores->map(fn (Store $store) => $this->formatMapMarker($store))->values()->all();
+            $mode = 'markers';
+        } else {
+            $items = $this->clusterMapStores($stores, $zoom, $markerLimit);
+            $mode = 'clusters';
+        }
+
+        return response()->success([
+            'mode' => $mode,
+            'items' => $items,
+            'meta' => [
+                'visible_stores' => $stores->count(),
+                'candidate_limit' => self::MAP_CANDIDATE_LIMIT,
+                'candidate_limit_reached' => $candidateLimitReached,
+                'marker_limit' => $markerLimit,
+            ],
+        ]);
+    }
+
+    private function clusterMapStores(Collection $stores, int $zoom, int $markerLimit): array
+    {
+        $baseCellSize = match (true) {
+            $zoom <= 10 => 0.5,
+            $zoom <= 12 => 0.15,
+            $zoom <= 14 => 0.04,
+            default => 0.01,
+        };
+
+        $clusters = collect();
+        foreach ([1, 2, 4, 8, 16] as $multiplier) {
+            $cellSize = $baseCellSize * $multiplier;
+            $clusters = $stores
+                ->groupBy(function (Store $store) use ($cellSize) {
+                    return floor((float) $store->location->latitude / $cellSize).':'
+                        .floor((float) $store->location->longitude / $cellSize);
+                })
+                ->map(function (Collection $clusterStores, string $key) {
+                    $count = $clusterStores->count();
+
+                    return [
+                        'id' => 'store-cluster-'.$key,
+                        'kind' => 'customer_cluster',
+                        'count' => $count,
+                        'latitude' => round((float) $clusterStores->avg(fn (Store $store) => $store->location->latitude), 6),
+                        'longitude' => round((float) $clusterStores->avg(fn (Store $store) => $store->location->longitude), 6),
+                        'title' => $count.' toko',
+                        'description' => 'Perbesar peta untuk melihat marker toko.',
+                    ];
+                })
+                ->sortByDesc('count')
+                ->values();
+
+            if ($clusters->count() <= $markerLimit) {
+                break;
+            }
+        }
+
+        return $clusters->take($markerLimit)->values()->all();
+    }
+
+    private function formatMapMarker(Store $store): array
+    {
+        return [
+            'id' => 'store-'.$store->id,
+            'kind' => 'store',
+            'store_id' => $store->id,
+            'latitude' => (float) $store->location->latitude,
+            'longitude' => (float) $store->location->longitude,
+            'title' => $store->name ?: 'Toko',
+            'description' => $store->branch ?: $store->address ?: $store->external_bp_code ?: $store->code,
+        ];
     }
 
     public function show(StoreCatalogSyncService $catalog, Store $store)

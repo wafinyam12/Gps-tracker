@@ -2,7 +2,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
-import { canVisitStores } from './roles';
+import { canTrackLocation } from './roles';
 import { offlineQueue } from './offlineQueue';
 
 const LOCATION_TRACKING_TASK = 'background-location-tracking';
@@ -38,7 +38,7 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
       if (location) {
         try {
           const user = await getStoredUser();
-          if (!canVisitStores(user)) {
+          if (!canTrackLocation(user)) {
             return;
           }
 
@@ -86,8 +86,8 @@ export const startBackgroundTracking = async () => {
       timeInterval: 300000, // Tiap 5 menit jika background untuk hemat baterai
       distanceInterval: 50,  // Atau tiap 50 meter
       foregroundService: {
-        notificationTitle: "Sales Daily Aktif",
-        notificationBody: "Melacak posisi sales untuk visit harian",
+        notificationTitle: "GPS Tracker Aktif",
+        notificationBody: "Melacak posisi untuk visit harian",
         notificationColor: "#FF0000",
       },
     });

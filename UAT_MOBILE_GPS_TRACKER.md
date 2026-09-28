@@ -44,7 +44,8 @@ Catatan: radius geofence efektif aplikasi dibatasi maksimum **50 meter**. Lokasi
 
 | Fitur | Sales | SPV | Manager | Admin Cabang | Super Admin |
 |---|:---:|:---:|:---:|:---:|:---:|
-| Kunjungan pribadi, GPS background | ✓ | ✓ | — | — | — |
+| Kunjungan pribadi | ✓ | ✓ | ✓ | — | — |
+| GPS background | ✓ | ✓ | — | — | — |
 | Monitoring peta dan ringkasan | — | ✓ (cabang sendiri) | ✓ | ✓ (cabang sendiri) | ✓ (semua cabang) |
 | Kelola user | — | — | — | ✓ | ✓ |
 | Kelola cabang | — | — | — | ✓* | ✓ |
@@ -67,7 +68,7 @@ Catatan: radius geofence efektif aplikasi dibatasi maksimum **50 meter**. Lokasi
 | TC-AUTH-06 | P1 | Semua | Lakukan percobaan login salah berulang hingga rate limit, lalu perhatikan tombol Login. | Aplikasi menampilkan pesan pembatasan percobaan dan countdown; tombol terkunci sampai waktu tunggu selesai. | ☐ | |
 | TC-AUTH-07 | P0 | Semua | Login, tutup paksa aplikasi, lalu buka kembali ketika internet tersedia. | Session aktif dipulihkan dengan aman dan pengguna masuk ke layar sesuai role tanpa login ulang. | ☐ | |
 | TC-AUTH-08 | P0 | Semua | Dari Profil atau dashboard, pilih Logout lalu buka kembali aplikasi. | Session dan token perangkat dihapus; aplikasi kembali ke Login; halaman terlindungi tidak dapat dibuka. | ☐ | |
-| TC-AUTH-09 | P0 | Semua | Login masing-masing akun D-02. | Menu yang muncul sesuai matriks akses; Sales/SPV dapat visit, Manager tidak mendapat menu visit, dan menu administrasi hanya muncul pada role yang berhak. | ☐ | |
+| TC-AUTH-09 | P0 | Semua | Login masing-masing akun D-02. | Menu yang muncul sesuai matriks akses; Sales/SPV/Manager dapat visit, dan menu administrasi hanya muncul pada role yang berhak. | ☐ | |
 
 ### B. Izin dan validitas GPS
 
@@ -75,7 +76,7 @@ Catatan: radius geofence efektif aplikasi dibatasi maksimum **50 meter**. Lokasi
 |---|:---:|---|---|---|:---:|---|
 | TC-GPS-01 | P0 | Sales | Saat aplikasi meminta izin lokasi foreground dan background, pilih Izinkan; kembali ke Beranda. | Status GPS aktif tampil setelah lokasi didapat; notifikasi foreground service tampil sesuai OS; lokasi dapat dipakai untuk visit. | ☐ | |
 | TC-GPS-02 | P0 | Sales | Tolak izin lokasi, lalu pilih Mulai Visit atau Lokasi Saya. | Aplikasi tidak crash; tampil alasan bahwa izin lokasi diperlukan; visit tidak dapat dimulai sampai izin diberikan. | ☐ | |
-| TC-GPS-03 | P1 | Sales | Buka Lokasi Saya dengan izin GPS aktif, bergerak beberapa meter atau refresh lokasi. | Marker posisi, koordinat, dan akurasi diperbarui; tombol pusatkan peta bekerja; marker toko yang memiliki koordinat terlihat. | ☐ | |
+| TC-GPS-03 | P1 | Sales | Buka Lokasi Saya dengan izin GPS aktif, bergerak beberapa meter atau refresh lokasi; geser/zoom peta ke area toko uji yang memiliki koordinat. | Marker posisi, koordinat, dan akurasi diperbarui; tombol pusatkan peta bekerja; marker toko pada area peta dimuat saat tampilan digeser/zoom. | ☐ | |
 | TC-GPS-04 | P0 | Sales | Pada lokasi dengan akurasi buruk (>300 m) atau titik GPS yang sudah stale, coba mulai/check-out visit. | Proses ditolak dengan pesan GPS belum presisi atau lokasi terlalu lama; visit tidak tercatat sebagai data valid. | ☐ | |
 | TC-GPS-05 | P0 | Sales | Di perangkat uji yang mendeteksi mock location, aktifkan Fake GPS dan coba mulai/check-out visit. | Proses ditolak dengan pesan Fake GPS terdeteksi; tidak ada visit valid yang tersimpan. | ☐ | |
 | TC-GPS-06 | P1 | Sales | Setelah GPS dan background location diizinkan, minimalkan aplikasi selama minimal satu interval tracking atau berpindah ±50 m. Buka monitoring dengan akun SPV. | Ping lokasi terbaru Sales terlihat pada monitoring (waktu, posisi, status online); tidak ada crash atau konsumsi tracking yang menghentikan aplikasi. | ☐ | |

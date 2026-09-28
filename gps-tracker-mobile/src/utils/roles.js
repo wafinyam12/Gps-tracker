@@ -18,7 +18,9 @@ export const getRoleDisplayName = (userOrRole) => {
   return ROLE_DISPLAY_NAMES[role] || role.toUpperCase();
 };
 
-export const canVisitStores = (user) => ['sales', 'spv'].includes(getRoleName(user));
+export const canVisitStores = (user) => ['sales', 'spv', 'manager'].includes(getRoleName(user));
+
+export const canTrackLocation = (user) => ['sales', 'spv'].includes(getRoleName(user));
 
 export const isAdmin = (user) => ['admin', 'superadmin'].includes(getRoleName(user));
 

@@ -44,7 +44,7 @@ class VisitLogController extends Controller
         $user = $request->user();
         $query = VisitLog::with(['store', 'user', 'photos']);
 
-        if ($user->hasRole('sales')) {
+        if ($user->hasAnyRole(['sales', 'manager'])) {
             $query->where('user_id', $user->id);
         } elseif ($user->isBranchAdmin()) {
             $query->whereHas('user', function ($nested) use ($user) {
@@ -58,7 +58,10 @@ class VisitLogController extends Controller
         }
 
         $visits = $query
-            ->when($request->user_id && ! $user->hasRole('sales'), fn ($query) => $query->where('user_id', $request->user_id))
+            ->when(
+                $request->user_id && ! $user->hasAnyRole(['sales', 'manager']),
+                fn ($query) => $query->where('user_id', $request->user_id)
+            )
             ->when($request->store_id, fn ($query) => $query->where('store_id', $request->store_id))
             ->when($request->date_from, function ($query) use ($request) {
                 $query->whereBetween('visit_date', [$request->date_from, $request->date_to ?? $request->date_from]);
@@ -168,6 +171,10 @@ class VisitLogController extends Controller
     private function canAccess(Request $request, VisitLog $visitLog): bool
     {
         $user = $request->user();
+
+        if ($user->hasRole('manager')) {
+            return $visitLog->user_id === $user->id;
+        }
 
         if ($user->canAccessAllBranches()) {
             return true;
