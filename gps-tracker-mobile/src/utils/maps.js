@@ -17,6 +17,10 @@ export const getValidCoordinates = (target) => {
     return null;
   }
 
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    return null;
+  }
+
   return { latitude, longitude };
 };
 

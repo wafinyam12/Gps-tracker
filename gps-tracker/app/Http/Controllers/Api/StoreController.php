@@ -57,6 +57,11 @@ class StoreController extends Controller
 
     public function available(Request $request, StoreCatalogSyncService $catalog)
     {
+        $request->validate([
+            'latitude' => 'nullable|required_with:longitude|numeric|between:-90,90',
+            'longitude' => 'nullable|required_with:latitude|numeric|between:-180,180',
+        ]);
+
         $catalog->ensureCatalog(true, $request->user());
 
         $search = trim((string) $request->search);
@@ -99,11 +104,10 @@ class StoreController extends Controller
             });
         }
 
+        $query = $this->orderAvailableStores($query, $request);
+
         if ($shouldPaginate) {
-            $stores = $query
-                ->orderBy('name')
-                ->orderBy('id')
-                ->paginate($perPage, ['*'], 'page', $page);
+            $stores = $query->paginate($perPage, ['*'], 'page', $page);
 
             return response()->success([
                 'items' => $stores->getCollection()
@@ -122,14 +126,33 @@ class StoreController extends Controller
             ]);
         }
 
-        $stores = $query
-            ->orderBy('name')
-            ->orderBy('id')
-            ->get();
+        $stores = $query->get();
 
         return response()->success(
             $stores->map(fn (Store $store) => (new StoreResource($store))->toArray($request))->values()->all()
         );
+    }
+
+    private function orderAvailableStores($query, Request $request)
+    {
+        $latitude = $request->input('latitude');
+        $longitude = $request->input('longitude');
+
+        if ($latitude !== null && $longitude !== null
+            && in_array($query->getConnection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $point = sprintf(
+                'POINT(%s %s)',
+                number_format((float) $longitude, 8, '.', ''),
+                number_format((float) $latitude, 8, '.', '')
+            );
+
+            return $query
+                ->orderByRaw('location IS NULL ASC')
+                ->orderByRaw('ST_Distance_Sphere(location, ST_GeomFromText(?, 0)) ASC', [$point])
+                ->orderBy('id');
+        }
+
+        return $query->orderBy('name')->orderBy('id');
     }
 
     public function mapMarkers(Request $request, StoreCatalogSyncService $catalog)

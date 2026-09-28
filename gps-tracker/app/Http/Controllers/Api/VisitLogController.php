@@ -228,6 +228,11 @@ class VisitLogController extends Controller
             'visit_result'       => $visitLog->visit_result,
             'checkin_valid'      => $visitLog->checkin_valid,
             'checkin_distance'   => $visitLog->checkin_distance,
+            'location_status'    => $this->locationStatus($visitLog),
+            'checkin_latitude'   => $visitLog->checkin_location?->latitude,
+            'checkin_longitude'  => $visitLog->checkin_location?->longitude,
+            'checkin_accuracy'   => $visitLog->checkin_accuracy,
+            'geofence_radius'    => min((int) ($visitLog->store?->geofence_radius ?: 50), 50),
             'is_mock_location'   => $visitLog->is_mock_location,
             'is_duplicate'       => $visitLog->is_duplicate,
             'counted_as_target'  => $visitLog->counted_as_target,
@@ -251,6 +256,7 @@ class VisitLogController extends Controller
             'latitude' => $store?->location?->latitude,
             'longitude' => $store?->location?->longitude,
             'has_location' => $store?->hasLocation() ?? false,
+            'geofence_radius' => min((int) ($store?->geofence_radius ?: 50), 50),
         ];
 
         if ($includeSap) {
@@ -258,6 +264,19 @@ class VisitLogController extends Controller
         }
 
         return $storeData;
+    }
+
+    private function locationStatus(VisitLog $visitLog): string
+    {
+        if ($visitLog->is_mock_location) {
+            return 'mock';
+        }
+
+        if ($visitLog->checkin_distance === null) {
+            return 'unknown';
+        }
+
+        return $visitLog->checkin_valid ? 'valid' : 'outside_radius';
     }
 
     private function formatPhotoPreviews(VisitLog $visitLog, int $limit = 3): array

@@ -100,7 +100,8 @@ class CheckInController extends Controller
         $formData = $this->withSubmissionMeta($request, is_array($rawFormData) ? $rawFormData : []);
         $checkinLocation = $visitLog->checkin_location;
         $shouldRecordCoordinateObservation = ! $visitLog->is_mock_location
-            && $visitLog->checkin_valid
+            && ! $visitLog->is_duplicate
+            && ($visitLog->checkin_valid || $visitLog->checkin_distance === null)
             && $checkinLocation instanceof Point;
         $shouldSaveStoreLocation = $shouldRecordCoordinateObservation
             && $visitLog->checkin_accuracy !== null
@@ -291,7 +292,7 @@ class CheckInController extends Controller
                 'is_offline_sync'   => $offlineSync,
                 'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : null,
                 'is_duplicate'      => $isDuplicate,
-                'counted_as_target' => $isValidLocation && ! $isDuplicate,
+                'counted_as_target' => $isValidLocation && $distanceMeters !== null && ! $isDuplicate,
                 'duplicate_reason'  => $isDuplicate ? 'store_already_visited_today' : null,
                 'form_data'         => $this->withSubmissionMeta($request, [
                     'started_from' => 'mobile_self_service',
@@ -319,8 +320,18 @@ class CheckInController extends Controller
             $warnings[] = 'Kunjungan ini tercatat sebagai duplicate dan tidak dihitung ke target.';
         }
 
-        if (! $visitLog->checkin_valid) {
-            $warnings[] = 'Lokasi di luar radius toko dan tidak dihitung ke target.';
+        if (! $visitLog->is_mock_location && $visitLog->checkin_distance === null) {
+            $warnings[] = 'Koordinat toko belum tersedia. Jarak dan radius belum dapat divalidasi, sehingga visit belum dihitung ke target. Visit dapat dilanjutkan sebagai observasi lokasi awal.';
+        }
+
+        if (! $visitLog->is_mock_location
+            && $visitLog->checkin_distance !== null
+            && (float) $visitLog->checkin_distance > $this->effectiveGeofenceRadius($store)) {
+            $warnings[] = sprintf(
+                'Lokasi berada %s m dari toko, di luar radius %s m. Visit tercatat tetapi tidak dihitung ke target.',
+                number_format((float) $visitLog->checkin_distance, 0, ',', '.'),
+                number_format($this->effectiveGeofenceRadius($store), 0, ',', '.')
+            );
         }
 
         $message = $warnings
@@ -330,6 +341,7 @@ class CheckInController extends Controller
         return response()->success([
             'visit_log_id'      => $visitLog->id,
             'is_valid_location'  => $visitLog->checkin_valid,
+            'location_status'    => $this->locationStatus($visitLog),
             'distance_meters'    => $visitLog->checkin_distance,
             'geofence_radius'    => $this->effectiveGeofenceRadius($store),
             'is_duplicate'       => $visitLog->is_duplicate,
@@ -413,6 +425,10 @@ class CheckInController extends Controller
             'visit_result'       => $visitLog->visit_result,
             'checkin_valid'      => $visitLog->checkin_valid,
             'checkin_distance'   => $visitLog->checkin_distance,
+            'location_status'    => $this->locationStatus($visitLog),
+            'checkin_latitude'   => $visitLog->checkin_location?->latitude,
+            'checkin_longitude'  => $visitLog->checkin_location?->longitude,
+            'checkin_accuracy'   => $visitLog->checkin_accuracy,
             'is_mock_location'   => $visitLog->is_mock_location,
             'photos_count'       => $visitLog->photos?->count() ?? 0,
         ];
@@ -447,6 +463,19 @@ class CheckInController extends Controller
         }
 
         return min($radius, self::MAX_VISIT_GEOFENCE_RADIUS_METERS);
+    }
+
+    private function locationStatus(VisitLog $visitLog): string
+    {
+        if ($visitLog->is_mock_location) {
+            return 'mock';
+        }
+
+        if ($visitLog->checkin_distance === null) {
+            return 'unknown';
+        }
+
+        return $visitLog->checkin_valid ? 'valid' : 'outside_radius';
     }
 
     private function withSubmissionMeta(Request $request, array $formData): array

@@ -192,6 +192,26 @@ function VisitFormScreen({ route, navigation }) {
     : DEFAULT_PICKER_ITEM_COLOR;
   const checkinTime = formatTimeOnly(visit?.checkin_at);
   const checkoutTime = formatTimeOnly(visit?.checkout_at);
+  const checkinDistance = visit?.checkin_distance !== null
+    && visit?.checkin_distance !== undefined
+    && visit?.checkin_distance !== ''
+    && Number.isFinite(Number(visit?.checkin_distance))
+    ? Number(visit.checkin_distance)
+    : null;
+  const checkinRadiusValue = visit?.geofence_radius ?? store?.geofence_radius;
+  const checkinRadius = checkinRadiusValue !== null
+    && checkinRadiusValue !== undefined
+    && Number.isFinite(Number(checkinRadiusValue))
+    ? Number(checkinRadiusValue)
+    : null;
+  const locationStatus = visit?.location_status
+    || (checkinDistance === null ? 'unknown' : (visit?.checkin_valid ? 'valid' : 'outside_radius'));
+  const locationStatusLabel = {
+    valid: 'Valid dalam radius',
+    outside_radius: 'Di luar radius · tidak dihitung ke target',
+    unknown: 'Jarak belum dapat divalidasi',
+    mock: 'Lokasi GPS tidak valid',
+  }[locationStatus] || 'Status lokasi belum tersedia';
   const visitTimelineText = canEditVisit
     ? (
       currentLocation?.coords
@@ -772,6 +792,50 @@ function VisitFormScreen({ route, navigation }) {
               {visitTimelineText}
             </Text>
           </View>
+
+          {visit && (
+            <View style={[styles.locationAuditCard, locationStatus === 'outside_radius' && styles.locationAuditWarning]}>
+              <Text style={styles.locationAuditTitle}>Validasi Lokasi Check-in</Text>
+              <Text style={styles.locationAuditText}>{locationStatusLabel}</Text>
+              <Text style={styles.locationAuditText}>
+                Jarak: {checkinDistance === null ? 'Belum diketahui' : `${Math.round(checkinDistance)} m`}
+                {checkinRadius !== null ? ` · Radius: ${checkinRadius} m` : ''}
+              </Text>
+              {Number.isFinite(Number(visit?.checkin_accuracy)) && visit?.checkin_accuracy !== null && (
+                <Text style={styles.locationAuditText}>
+                  Akurasi GPS: ±{Math.round(Number(visit.checkin_accuracy))} m
+                </Text>
+              )}
+              {visit?.checkin_latitude !== null
+                && visit?.checkin_latitude !== undefined
+                && visit?.checkin_longitude !== null
+                && visit?.checkin_longitude !== undefined
+                && Number.isFinite(Number(visit.checkin_latitude))
+                && Number.isFinite(Number(visit.checkin_longitude)) && (
+                <Text style={styles.locationAuditText}>
+                  Titik check-in: {Number(visit.checkin_latitude).toFixed(6)}, {Number(visit.checkin_longitude).toFixed(6)}
+                </Text>
+              )}
+              {store?.latitude !== null
+                && store?.latitude !== undefined
+                && store?.longitude !== null
+                && store?.longitude !== undefined
+                && Number.isFinite(Number(store.latitude))
+                && Number.isFinite(Number(store.longitude)) && (
+                <Text style={styles.locationAuditText}>
+                  Koordinat toko tersimpan: {Number(store.latitude).toFixed(6)}, {Number(store.longitude).toFixed(6)}
+                </Text>
+              )}
+              <Text style={styles.locationAuditText}>
+                Dihitung ke target: {visit?.counted_as_target ? 'Ya' : 'Tidak'}
+              </Text>
+              {locationStatus === 'unknown' && !store?.has_location && (
+                <Text style={styles.locationAuditHint}>
+                  Koordinat toko belum tersedia. Jika check-in memenuhi syarat akurasi, titik ini dapat menjadi observasi awal setelah checkout.
+                </Text>
+              )}
+            </View>
+          )}
 
           {hasStoreRoute && (
             <TouchableOpacity style={styles.routeButton} onPress={handleOpenRoute} activeOpacity={0.85}>
@@ -1798,6 +1862,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9A3412',
     marginTop: 3,
+  },
+  locationAuditCard: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  locationAuditWarning: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  locationAuditTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  locationAuditText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#334155',
+    marginTop: 2,
+  },
+  locationAuditHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#475569',
+    marginTop: 6,
   },
   photoCard: {
     backgroundColor: '#fff',

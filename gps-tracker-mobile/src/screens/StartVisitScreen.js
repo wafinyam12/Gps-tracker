@@ -53,6 +53,18 @@ const normalizeStore = (store) => ({
   has_location: Boolean(store.has_location),
 });
 
+const distanceBetweenMeters = (first, second) => {
+  const earthRadius = 6371000;
+  const latitudeDelta = ((second.latitude - first.latitude) * Math.PI) / 180;
+  const longitudeDelta = ((second.longitude - first.longitude) * Math.PI) / 180;
+  const latitude1 = (first.latitude * Math.PI) / 180;
+  const latitude2 = (second.latitude * Math.PI) / 180;
+  const value = Math.min(1, Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(latitude1) * Math.cos(latitude2) * Math.sin(longitudeDelta / 2) ** 2);
+
+  return earthRadius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+};
+
 const PAGE_SIZE = 25;
 
 const extractAvailableStoresPayload = (response) => {
@@ -128,6 +140,12 @@ const StartVisitScreen = ({ navigation }) => {
         page: nextPage,
         per_page: PAGE_SIZE,
       };
+      if (location?.coords
+        && Number.isFinite(location.coords.latitude)
+        && Number.isFinite(location.coords.longitude)) {
+        params.latitude = location.coords.latitude;
+        params.longitude = location.coords.longitude;
+      }
       if (trimmedKeyword) {
         params.search = trimmedKeyword;
       }
@@ -208,7 +226,7 @@ const StartVisitScreen = ({ navigation }) => {
         }
       }
     }
-  }, []);
+  }, [location?.coords?.latitude, location?.coords?.longitude]);
 
   const requestLocation = useCallback(async () => {
     try {
@@ -408,6 +426,12 @@ const StartVisitScreen = ({ navigation }) => {
   const renderStore = ({ item }) => {
     const isSelected = selectedStore?.id === item.id;
     const hasLocation = canOpenRoute(item);
+    const distanceMeters = location?.coords && hasLocation
+      ? distanceBetweenMeters(
+        { latitude: location.coords.latitude, longitude: location.coords.longitude },
+        { latitude: item.latitude, longitude: item.longitude }
+      )
+      : null;
 
     return (
       <TouchableOpacity
@@ -425,17 +449,22 @@ const StartVisitScreen = ({ navigation }) => {
           <Text style={styles.storeMeta} numberOfLines={1}>
             {item.branch || 'Cabang belum tersedia'}{hasLocation ? ' - Koordinat tersimpan' : ' - Koordinat belum ada'}
           </Text>
-          {hasLocation && (
-            <TouchableOpacity
-              style={styles.routeButton}
-              onPress={() => handleOpenRoute(item)}
-              disabled={starting}
-              activeOpacity={0.85}
-            >
-              <Navigation size={13} color="#0F766E" />
-              <Text style={styles.routeButtonText}>Rute</Text>
-            </TouchableOpacity>
-          )}
+          <Text style={styles.storeDistance} numberOfLines={1}>
+            {distanceMeters !== null
+              ? `${distanceMeters < 1000 ? `${Math.round(distanceMeters)} m` : `${(distanceMeters / 1000).toFixed(1)} km`} dari lokasi Anda${item.geofence_radius ? ` · radius ${item.geofence_radius} m` : ''}`
+              : (hasLocation ? 'Jarak menunggu GPS' : 'Jarak belum diketahui · radius belum dapat divalidasi')}
+          </Text>
+          <TouchableOpacity
+            style={[styles.routeButton, !hasLocation && styles.routeButtonUnavailable]}
+            onPress={() => handleOpenRoute(item)}
+            disabled={starting}
+            activeOpacity={0.85}
+          >
+            <Navigation size={13} color={hasLocation ? '#0F766E' : '#64748B'} />
+            <Text style={[styles.routeButtonText, !hasLocation && styles.routeButtonUnavailableText]}>
+              {hasLocation ? 'Rute' : 'Rute Belum Tersedia'}
+            </Text>
+          </TouchableOpacity>
         </View>
         <TouchableOpacity
           style={[styles.startButton, starting && styles.disabled]}
@@ -479,6 +508,14 @@ const StartVisitScreen = ({ navigation }) => {
                 : 'Mencari lokasi...'}
             </Text>
           </View>
+          <TouchableOpacity
+            style={styles.refreshLocationButton}
+            onPress={requestLocation}
+            activeOpacity={0.85}
+          >
+            <Navigation size={13} color="#0F766E" />
+            <Text style={styles.refreshLocationText}>Perbarui GPS dan urutan toko</Text>
+          </TouchableOpacity>
           <Text style={styles.noteText}>
             Pilih toko dari master data SAP. Koordinat toko baru akan tersimpan saat visit valid pertama.
           </Text>
@@ -623,6 +660,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'monospace',
   },
+  refreshLocationButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    paddingVertical: 3,
+  },
+  refreshLocationText: {
+    color: '#0F766E',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   noteText: {
     marginTop: 8,
     fontSize: 12,
@@ -747,6 +797,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 3,
   },
+  storeDistance: {
+    color: '#475569',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
+    fontWeight: '700',
+  },
   routeButton: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -764,6 +821,13 @@ const styles = StyleSheet.create({
     color: '#0F766E',
     fontSize: 11,
     fontWeight: '900',
+  },
+  routeButtonUnavailable: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+  },
+  routeButtonUnavailableText: {
+    color: '#64748B',
   },
   startButton: {
     minWidth: 62,
