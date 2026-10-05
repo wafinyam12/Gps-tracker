@@ -1,4 +1,6 @@
 // Simple event emitter for auth events (logout)
+import { logEvent } from './diagnosticLogger';
+
 const listeners = {};
 
 export const on = (event, cb) => {
@@ -11,7 +13,7 @@ export const on = (event, cb) => {
 
 export const emit = (event, payload) => {
   (listeners[event] || []).forEach(cb => {
-    try { cb(payload); } catch (e) { console.error('authEvents handler error', e); }
+    try { cb(payload); } catch (e) { logEvent('auth.event_handler_failed', { error_code: e?.code }); }
   });
 };
 

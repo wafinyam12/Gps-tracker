@@ -11,18 +11,9 @@ import {
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { logEvent } from '../utils/diagnosticLogger';
 
-const logPhotoLoadError = (photo, error) => {
-  if (!__DEV__) {
-    return;
-  }
-
-  console.warn('[PhotoPreviewModal] Failed to load visit photo preview', {
-    photoId: photo?.id,
-    url: photo?.url,
-    error: error?.nativeEvent?.error,
-  });
-};
+const logPhotoLoadError = () => logEvent('photo.preview_load_failed');
 
 const PhotoPreviewModal = ({
   visible,

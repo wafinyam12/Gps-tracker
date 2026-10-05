@@ -7,6 +7,8 @@ import AppScreen from '../components/ui/AppScreen';
 import Surface from '../components/ui/Surface';
 import { colors, radii, shadows, spacing } from '../styles/theme';
 import OpenStreetMapView from '../components/maps/OpenStreetMapView';
+import { logEvent } from '../utils/diagnosticLogger';
+import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -96,7 +98,7 @@ const MyLocationScreen = () => {
       setStoreCandidateLimitReached(Boolean(payload.meta?.candidate_limit_reached));
     } catch (error) {
       if (requestSequence === markerRequestSequenceRef.current) {
-        console.log('Load store map markers error:', error.response?.data || error);
+        logEvent('location.store_markers_fetch_failed', { status: error.response?.status, error_code: error.code });
         setStoreMarkersError(true);
       }
     } finally {
@@ -175,6 +177,17 @@ const MyLocationScreen = () => {
     let mounted = true;
 
     const start = async () => {
+      const disclosed = await confirmLocationDisclosure({
+        title: 'Gunakan lokasi saat ini',
+        message: 'Lokasi perangkat digunakan untuk menampilkan posisi Anda dan area peta. Permintaan peta ke penyedia tile dapat menunjukkan area yang sedang dilihat. Lokasi tidak dikirim untuk pelacakan berkala dari layar ini.',
+      });
+      if (!disclosed) {
+        if (mounted) {
+          setErrorMsg('Lokasi belum diizinkan untuk ditampilkan di peta.');
+          setLoading(false);
+        }
+        return;
+      }
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         if (mounted) {

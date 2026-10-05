@@ -5,6 +5,7 @@ import { ChevronLeft, AlertTriangle, User, CheckCircle } from 'lucide-react-nati
 import moment from 'moment';
 import { reportService } from '../../api/services/reportService';
 import { getJakartaDateString } from '../../utils/date';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const AlertListScreen = () => {
   const navigation = useNavigation();
@@ -29,7 +30,7 @@ const AlertListScreen = () => {
       const payload = response.data?.data || response.data || {};
       setWarnings(Array.isArray(payload.warnings) ? payload.warnings : []);
     } catch (error) {
-      console.log('Error fetching warnings', error.response?.data || error);
+      logEvent('alerts.fetch_failed', { status: error.response?.status, error_code: error.code });
       Alert.alert('Error', 'Gagal mengambil data warning');
     } finally {
       setLoading(false);

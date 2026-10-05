@@ -42,6 +42,11 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
           if (!canTrackLocation(user)) {
             return;
           }
+          const consent = await SecureStore.getItemAsync(`background_location_consent_${user.id}`);
+          if (consent !== 'accepted') {
+            await stopBackgroundTracking();
+            return;
+          }
 
           // Ping ke server
           await apiClient.post('/location/ping', {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Edit3, KeyRound, LogOut, Mail, MapPin, ShieldCheck, User } from 'lucide-react-native';
@@ -12,6 +12,8 @@ import Surface from '../components/ui/Surface';
 import AppButton from '../components/ui/AppButton';
 import { colors, radii, shadows, spacing } from '../styles/theme';
 import { logEvent, readDiagnosticLogs } from '../utils/diagnosticLogger';
+import { offlineQueue } from '../utils/offlineQueue';
+import { getPrivacyPolicyUrl } from '../api/client';
 
 const getErrorMessage = (error, fallback) => {
   const errors = error.response?.data?.errors;
@@ -65,15 +67,40 @@ const ProfileScreen = () => {
   };
 
   const handleLogout = async () => {
+    const pending = await offlineQueue.getQueueSize();
+    if (pending > 0) {
+      Alert.alert(
+        'Data offline belum terkirim',
+        `Ada ${pending} item visit yang belum tersinkron. Sinkronkan sebelum keluar, atau hapus permanen data offline dari perangkat.`,
+        [
+          { text: 'Batal', style: 'cancel' },
+          {
+            text: 'Sinkronkan lalu keluar',
+            onPress: async () => {
+              const result = await offlineQueue.processQueue({ silent: true });
+              if (result.pending > 0) {
+                Alert.alert('Belum dapat logout', 'Masih ada data offline yang belum terkirim. Periksa koneksi atau pilih hapus data offline jika memang ingin menghapusnya.');
+                return;
+              }
+              await logout();
+            },
+          },
+          {
+            text: 'Hapus & keluar',
+            style: 'destructive',
+            onPress: async () => {
+              await offlineQueue.clearQueue();
+              await logout();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
     Alert.alert('Keluar akun', 'Anda yakin ingin logout dari perangkat ini?', [
       { text: 'Batal', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-        },
-      },
+      { text: 'Logout', style: 'destructive', onPress: logout },
     ]);
   };
 
@@ -397,6 +424,12 @@ const ProfileScreen = () => {
         <AppButton
           label="Bagikan log diagnostik"
           onPress={handleShareDiagnostics}
+          variant="secondary"
+        />
+
+        <AppButton
+          label="Kebijakan Privasi"
+          onPress={() => Linking.openURL(getPrivacyPolicyUrl()).catch(() => Alert.alert('Tidak dapat membuka tautan', 'Kebijakan privasi belum dapat dibuka. Periksa koneksi internet Anda.'))}
           variant="secondary"
         />
 

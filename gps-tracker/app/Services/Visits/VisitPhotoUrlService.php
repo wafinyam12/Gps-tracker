@@ -21,6 +21,6 @@ class VisitPhotoUrlService
 
     private function previewTtlMinutes(): int
     {
-        return max((int) config('filesystems.visit_photo_preview_url_ttl', 120), 1);
+        return min(max((int) config('filesystems.visit_photo_preview_url_ttl', 15), 1), 15);
     }
 }

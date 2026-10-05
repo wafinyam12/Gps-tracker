@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { storeService } from '../../api/services/storeService';
+import { logEvent } from '../../utils/diagnosticLogger';
 import { MapPin, ShieldCheck } from 'lucide-react-native';
 import AppScreen from '../../components/ui/AppScreen';
 import PageHeader from '../../components/ui/PageHeader';
@@ -23,7 +24,7 @@ const StoreListScreen = () => {
       const response = await storeService.getStores();
       setStores(response.data?.data || response.data || []);
     } catch (error) {
-      console.log('Fetch stores error:', error.response?.data || error);
+      logEvent('stores.fetch_failed', { status: error.response?.status, error_code: error.code });
       Alert.alert('Error', 'Gagal mengambil data toko');
     } finally {
       setLoading(false);

@@ -18,6 +18,7 @@ import { reportService } from '../../api/services/reportService';
 import { teamService } from '../../api/services/teamService';
 import { useAuth } from '../../context/AuthContext';
 import { getRoleName } from '../../utils/roles';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const TeamSummaryScreen = () => {
   const navigation = useNavigation();
@@ -52,7 +53,7 @@ const TeamSummaryScreen = () => {
       const payload = response.data?.data;
       setTeams(Array.isArray(payload) ? payload : payload?.data || []);
     } catch (error) {
-      console.log('Error fetching teams', error.response?.data || error);
+      logEvent('teams.fetch_failed', { status: error.response?.status, error_code: error.code });
     }
   };
 
@@ -67,7 +68,7 @@ const TeamSummaryScreen = () => {
       });
       setSummaryData(response.data?.data || response.data || null);
     } catch (error) {
-      console.log('Error fetching summary', error.response?.data || error);
+      logEvent('teams.summary_fetch_failed', { status: error.response?.status, error_code: error.code });
       Alert.alert('Error', 'Gagal mengambil ringkasan cabang');
     } finally {
       setLoading(false);

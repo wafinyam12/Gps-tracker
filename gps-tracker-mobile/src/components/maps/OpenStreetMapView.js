@@ -9,15 +9,34 @@ const DEFAULT_CENTER = {
 };
 
 const toNumber = (value) => {
+  if ((typeof value !== 'number' && typeof value !== 'string') || value === '') {
+    return null;
+  }
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 };
+
+const isValidCoordinate = (latitude, longitude) => (
+  Number.isFinite(latitude)
+  && Number.isFinite(longitude)
+  && latitude >= -90
+  && latitude <= 90
+  && longitude >= -180
+  && longitude <= 180
+);
+
+const safeColor = (value, fallback) => (
+  typeof value === 'string'
+  && /^(#[0-9a-f]{3,8}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(\s*,\s*(0|1|0?\.\d+))?\s*\))$/i.test(value)
+    ? value
+    : fallback
+);
 
 const normalizePoint = (point) => {
   const latitude = toNumber(point?.latitude);
   const longitude = toNumber(point?.longitude);
 
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+  if (!isValidCoordinate(latitude, longitude)) {
     return null;
   }
 
@@ -35,7 +54,7 @@ const buildMapHtml = () => `<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; background: #dbe7e3; }
     .marker-dot {
@@ -75,7 +94,7 @@ const buildMapHtml = () => `<!doctype html>
 </head>
 <body>
   <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     const map = L.map('map', {
       zoomControl: true,
@@ -126,7 +145,7 @@ const buildMapHtml = () => `<!doctype html>
         });
       }
 
-      const color = marker.color || (marker.kind === 'customer_store' ? '#f59e0b' : '#0f766e');
+      const color = safeColor(marker.color, marker.kind === 'customer_store' ? '#f59e0b' : '#0f766e');
       return L.divIcon({
         className: '',
         html: '<div class="marker-dot" style="background:' + color + '"></div>',
@@ -243,8 +262,8 @@ const OpenStreetMapView = ({
       return {
         ...point,
         radius: Number.isFinite(radius) ? radius : 0,
-        strokeColor: circle.strokeColor || 'rgba(30, 64, 175, 0.35)',
-        fillColor: circle.fillColor || 'rgba(30, 64, 175, 0.12)',
+          strokeColor: safeColor(circle.strokeColor, 'rgba(30, 64, 175, 0.35)'),
+          fillColor: safeColor(circle.fillColor, 'rgba(30, 64, 175, 0.12)'),
       };
     }).filter((circle) => circle && circle.radius > 0),
     [circles]
@@ -285,9 +304,36 @@ const OpenStreetMapView = ({
       if (data.type === 'mapReady') {
         setMapReady(true);
       } else if (data.type === 'markerPress') {
-        onMarkerPress?.(data.marker);
+        const marker = data.marker;
+        const point = normalizePoint(marker);
+        const allowedKinds = new Set(['branch', 'customer_cluster', 'customer_store', 'store', 'user']);
+        if (!point || !allowedKinds.has(marker?.kind)) return;
+        const safeId = (value) => (
+          (typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+          || (typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value))
+          ? value
+          : undefined
+        );
+        onMarkerPress?.({
+          kind: marker.kind,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          ...(safeId(marker.id) !== undefined ? { id: safeId(marker.id) } : {}),
+          ...(safeId(marker.userId) !== undefined ? { userId: safeId(marker.userId) } : {}),
+          ...(safeId(marker.teamId) !== undefined ? { teamId: safeId(marker.teamId) } : {}),
+        });
       } else if (data.type === 'viewportChange') {
-        onViewportChange?.(data.viewport);
+        const viewport = data.viewport;
+        const south = toNumber(viewport?.south);
+        const north = toNumber(viewport?.north);
+        const west = toNumber(viewport?.west);
+        const east = toNumber(viewport?.east);
+        const viewportZoom = toNumber(viewport?.zoom);
+        if (Number.isFinite(viewportZoom)
+          && isValidCoordinate(south, west) && isValidCoordinate(north, east)
+          && south <= north && west <= east && viewportZoom >= 0 && viewportZoom <= 22) {
+          onViewportChange?.({ south, north, west, east, zoom: viewportZoom });
+        }
       }
     } catch (error) {
       // Ignore malformed messages from the WebView.
@@ -301,7 +347,11 @@ const OpenStreetMapView = ({
         originWhitelist={['*']}
         source={{ html }}
         javaScriptEnabled
-        domStorageEnabled
+        domStorageEnabled={false}
+        allowFileAccess={false}
+        allowUniversalAccessFromFileURLs={false}
+        mixedContentMode="never"
+        onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
         onMessage={handleMessage}
         scrollEnabled={false}
         style={styles.webview}

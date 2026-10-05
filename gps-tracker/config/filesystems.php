@@ -78,23 +78,22 @@ return [
             'driver' => env('VISIT_PHOTOS_DRIVER', 'local'),
             'root' => env('VISIT_PHOTOS_DRIVER', 'local') === 's3'
                 ? (env('VISIT_PHOTOS_ROOT') ?: 'crm/visit-photo')
-                : storage_path('app/public/visit_photos'),
+                : storage_path('app/private/visit_photos'),
             'key' => env('R2_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
             'secret' => env('R2_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
             'region' => env('R2_REGION', env('R2_DEFAULT_REGION', env('AWS_DEFAULT_REGION', 'auto'))),
             'bucket' => env('VISIT_PHOTOS_BUCKET') ?: env('R2_BUCKET', env('AWS_BUCKET')),
-            'url' => env('VISIT_PHOTOS_URL') ?: env('R2_URL', env('APP_URL') . '/storage/visit_photos'),
             'endpoint' => env('R2_ENDPOINT') ?: env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('R2_USE_PATH_STYLE_ENDPOINT', env('AWS_USE_PATH_STYLE_ENDPOINT', true)),
             'directory_separator' => '/',
-            'visibility' => env('VISIT_PHOTOS_VISIBILITY', env('VISIT_PHOTOS_DRIVER', 'local') === 's3' ? 'private' : 'public'),
+            'visibility' => 'private',
             'throw' => true,
             'report' => false,
         ],
 
     ],
 
-    'visit_photo_preview_url_ttl' => env('VISIT_PHOTOS_PREVIEW_URL_TTL', 120),
+    'visit_photo_preview_url_ttl' => env('VISIT_PHOTOS_PREVIEW_URL_TTL', 15),
 
     /*
     |--------------------------------------------------------------------------

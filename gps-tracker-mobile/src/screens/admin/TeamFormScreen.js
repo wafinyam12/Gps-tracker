@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
 import { logEvent } from '../../utils/diagnosticLogger';
+import { confirmLocationDisclosure } from '../../utils/locationDisclosure';
 
 const TeamFormScreen = () => {
   const navigation = useNavigation();
@@ -68,6 +69,11 @@ const TeamFormScreen = () => {
   };
 
   const getCurrentLocation = async () => {
+    const disclosed = await confirmLocationDisclosure({
+      title: 'Gunakan lokasi untuk koordinat cabang',
+      message: 'Lokasi perangkat digunakan untuk mengisi koordinat cabang dan akan tersimpan ke server saat formulir disimpan.',
+    });
+    if (!disclosed) return;
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       logEvent('admin.branch_location_permission_denied', { permission: 'foreground', result: status });

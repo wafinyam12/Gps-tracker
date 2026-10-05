@@ -1,6 +1,7 @@
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import { offlineQueue } from './offlineQueue';
+import { logEvent } from './diagnosticLogger';
 
 export const OFFLINE_SYNC_TASK = 'sales-daily-offline-visit-sync';
 
@@ -10,7 +11,7 @@ if (!TaskManager.isTaskDefined(OFFLINE_SYNC_TASK)) {
       await offlineQueue.processQueue({ silent: true });
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch (error) {
-      console.error('Background offline sync failed:', error);
+      logEvent('offline.background_sync_failed', { error_code: error?.code });
       return BackgroundTask.BackgroundTaskResult.Failed;
     }
   });
@@ -32,7 +33,7 @@ export const registerOfflineSyncTask = async () => {
 
     return true;
   } catch (error) {
-    console.log('Unable to register offline sync background task:', error?.message || error);
+    logEvent('offline.background_task_registration_failed', { error_code: error?.code });
     return false;
   }
 };

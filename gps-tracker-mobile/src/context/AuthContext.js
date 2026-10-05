@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import { Alert, Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import apiClient from '../api/client';
+import apiClient, { getPrivacyPolicyUrl, setAccessToken } from '../api/client';
 import authEvents from '../utils/authEvents';
 import { canTrackLocation } from '../utils/roles';
 import { startBackgroundTracking, stopBackgroundTracking } from '../utils/backgroundTracker';
@@ -38,6 +39,8 @@ const parseRetryAfterSeconds = (value) => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(false);
+  const [locationConsentGranted, setLocationConsentGranted] = useState(false);
 
   useEffect(() => {
     restoreSession();
@@ -50,7 +53,10 @@ export const AuthProvider = ({ children }) => {
       try {
         await stopBackgroundTracking();
         await SecureStore.deleteItemAsync('user_token');
+        await SecureStore.deleteItemAsync('user_token_refreshed_at');
         await SecureStore.deleteItemAsync('user_data');
+        setBackgroundTrackingEnabled(false);
+        setLocationConsentGranted(false);
       } catch (e) {
         logEvent('auth.session_cleanup_failed', { error_code: e?.code });
       }
@@ -59,27 +65,114 @@ export const AuthProvider = ({ children }) => {
     return () => unsub();
   }, []);
 
+  const consentKeyForUser = (targetUser) => `background_location_consent_${targetUser?.id}`;
+
+  const askBackgroundLocationConsent = async (targetUser) => new Promise((resolve) => {
+    Alert.alert(
+      'Pelacakan lokasi di latar belakang',
+      'Untuk mendukung catatan dan pemantauan visit, Sales Daily mengirim lokasi perangkat secara berkala (lintang, bujur, akurasi, kecepatan, dan waktu) saat aplikasi digunakan maupun berjalan di latar belakang. Pelacakan tetap aktif sampai Anda keluar atau menonaktifkan izin lokasi di Pengaturan Android. Anda dapat menolak dan tetap menggunakan fitur lain yang tidak memerlukan lokasi.',
+      [
+        {
+          text: 'Nanti',
+          style: 'cancel',
+          onPress: () => {
+            SecureStore.setItemAsync(consentKeyForUser(targetUser), 'declined')
+              .then(() => {
+                setLocationConsentGranted(false);
+                resolve(false);
+              })
+              .catch((error) => {
+                logEvent('tracking.consent_save_failed', { error_code: error?.code });
+                resolve(false);
+              });
+          },
+        },
+        {
+          text: 'Kebijakan Privasi',
+          onPress: () => {
+            Linking.openURL(getPrivacyPolicyUrl())
+              .catch((error) => logEvent('privacy_policy.open_failed', { error_code: error?.code }))
+              .finally(() => resolve(false));
+          },
+        },
+        {
+          text: 'Setuju & lanjutkan',
+          onPress: () => {
+            SecureStore.setItemAsync(consentKeyForUser(targetUser), 'accepted')
+              .then(async () => {
+                setLocationConsentGranted(true);
+                const started = await startBackgroundTracking();
+                setBackgroundTrackingEnabled(started);
+                resolve(started);
+              })
+              .catch((error) => {
+                logEvent('tracking.consent_save_failed', { error_code: error?.code });
+                Alert.alert('Pengaturan lokasi gagal', 'Persetujuan tidak dapat disimpan dengan aman. Pelacakan tidak dimulai.');
+                resolve(false);
+              });
+          },
+        },
+      ],
+      { cancelable: false },
+    );
+  });
+
+  const requestBackgroundLocationConsent = async () => {
+    if (!canTrackLocation(user)) return false;
+    const consent = await SecureStore.getItemAsync(consentKeyForUser(user));
+    if (consent === 'accepted') {
+      setLocationConsentGranted(true);
+      const started = await startBackgroundTracking();
+      setBackgroundTrackingEnabled(started);
+      return started;
+    }
+    return askBackgroundLocationConsent(user);
+  };
+
+  const disableBackgroundLocationTracking = async () => {
+    await SecureStore.deleteItemAsync(consentKeyForUser(user));
+    await stopBackgroundTracking();
+    setLocationConsentGranted(false);
+    setBackgroundTrackingEnabled(false);
+  };
+
   useEffect(() => {
+    let active = true;
     const syncTracking = async () => {
-      try {
-        if (canTrackLocation(user)) {
-          await startBackgroundTracking();
-        } else {
-          await stopBackgroundTracking();
+      if (!canTrackLocation(user)) {
+        await stopBackgroundTracking();
+        if (active) {
+          setBackgroundTrackingEnabled(false);
+          setLocationConsentGranted(false);
         }
-      } catch (e) {
-        logEvent('tracking.sync_failed', { error_code: e?.code });
+        return;
+      }
+
+      const consent = await SecureStore.getItemAsync(consentKeyForUser(user));
+      if (consent === 'accepted') {
+        if (active) setLocationConsentGranted(true);
+        const started = await startBackgroundTracking();
+        if (active) setBackgroundTrackingEnabled(started);
+      } else if (consent !== 'declined') {
+        if (active) setLocationConsentGranted(false);
+        await stopBackgroundTracking();
+        if (active) setBackgroundTrackingEnabled(false);
+        await askBackgroundLocationConsent(user);
+      } else if (active) {
+        setLocationConsentGranted(false);
       }
     };
 
-    syncTracking();
-  }, [user]);
+    syncTracking().catch((error) => logEvent('tracking.sync_failed', { error_code: error?.code }));
+    return () => { active = false; };
+  }, [user?.id]);
 
   const clearStoredSession = async () => {
     try {
       await stopBackgroundTracking();
       await Promise.all([
         SecureStore.deleteItemAsync('user_token'),
+        SecureStore.deleteItemAsync('user_token_refreshed_at'),
         SecureStore.deleteItemAsync('user_data'),
       ]);
     } catch (e) {
@@ -153,7 +246,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       const { token, user: userData } = response.data.data;
-      await SecureStore.setItemAsync('user_token', token);
+      await setAccessToken(token);
       await SecureStore.setItemAsync('user_data', JSON.stringify(userData));
       logEvent('auth.login_succeeded');
 
@@ -231,11 +324,24 @@ export const AuthProvider = ({ children }) => {
     } finally {
       await clearStoredSession();
       setUser(null);
+      setBackgroundTrackingEnabled(false);
+      setLocationConsentGranted(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, updateStoredUser }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      login,
+      logout,
+      refreshUser,
+      updateStoredUser,
+      backgroundTrackingEnabled,
+      locationConsentGranted,
+      requestBackgroundLocationConsent,
+      disableBackgroundLocationTracking,
+    }}>
       {children}
     </AuthContext.Provider>
   );

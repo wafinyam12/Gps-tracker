@@ -36,7 +36,19 @@ const createUuid = () => {
 const readJson = async (key, fallback) => {
   try {
     const raw = await AsyncStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    const parsed = raw ? JSON.parse(raw) : fallback;
+    if (key === OFFLINE_QUEUE_KEY && Array.isArray(parsed)) {
+      const sanitized = parsed.map((item) => ({
+        ...item,
+        headers: sanitizeQueuedHeaders(item?.headers),
+        ...(item?.lastError ? { lastError: 'Item antrean perlu diperiksa.' } : {}),
+      }));
+      if (JSON.stringify(sanitized) !== JSON.stringify(parsed)) {
+        await AsyncStorage.setItem(key, JSON.stringify(sanitized));
+      }
+      return sanitized;
+    }
+    return parsed;
   } catch (error) {
     logEvent('offline.storage_read_failed', { error_code: error?.code });
     return fallback;
@@ -46,6 +58,12 @@ const readJson = async (key, fallback) => {
 const writeJson = async (key, value) => {
   await AsyncStorage.setItem(key, JSON.stringify(value));
 };
+
+const sanitizeQueuedHeaders = (headers) => Object.fromEntries(
+  Object.entries(headers || {})
+    .filter(([key]) => ['accept', 'content-type'].includes(key.toLowerCase()))
+    .filter(([, value]) => typeof value === 'string' && value.length <= 120)
+);
 
 const isReachable = async () => {
   const netInfo = await NetInfo.fetch();
@@ -274,7 +292,7 @@ export const offlineQueue = {
         endpoint,
         method,
         data: persistedPayload.data,
-        headers,
+        headers: sanitizeQueuedHeaders(headers),
         timestamp: new Date().toISOString(),
         retries: 0,
         ownerUserId,
@@ -296,7 +314,7 @@ export const offlineQueue = {
       processAgainSilent = false;
     } else if (await isReachable()) {
       this.processQueue({ silent: false }).catch((error) => {
-        console.error('Unable to start offline queue sync after enqueue:', error);
+        logEvent('offline.sync_after_enqueue_failed', { error_code: error?.code });
       });
     }
 
@@ -382,7 +400,7 @@ export const offlineQueue = {
       processAgainSilent = false;
     } else if (removal.cancellationQueued && await isReachable()) {
       this.processQueue({ silent: false }).catch((error) => {
-        console.error('Unable to sync cancelled visit:', error);
+        logEvent('offline.cancelled_visit_sync_failed', { status: error?.response?.status, error_code: error?.code });
       });
     }
 
@@ -413,14 +431,18 @@ export const offlineQueue = {
   },
 
   async cacheStores(stores) {
-    await writeJson(OFFLINE_STORE_CACHE_KEY, {
+    const ownerUserId = await currentUserId();
+    if (!ownerUserId) return;
+    await writeJson(`${OFFLINE_STORE_CACHE_KEY}:${ownerUserId}`, {
       savedAt: new Date().toISOString(),
       stores,
     });
   },
 
   async cachedStores() {
-    return readJson(OFFLINE_STORE_CACHE_KEY, { savedAt: null, stores: [] });
+    const ownerUserId = await currentUserId();
+    if (!ownerUserId) return { savedAt: null, stores: [] };
+    return readJson(`${OFFLINE_STORE_CACHE_KEY}:${ownerUserId}`, { savedAt: null, stores: [] });
   },
 
   async processQueue({ silent = false } = {}) {
@@ -449,7 +471,7 @@ export const offlineQueue = {
         processAgainRequested = false;
         processAgainSilent = true;
         Promise.resolve().then(() => this.processQueue({ silent: silentRerun })).catch((error) => {
-          console.error('Unable to continue offline queue sync:', error);
+          logEvent('offline.queue_processing_failed', { status: error?.response?.status, error_code: error?.code });
         });
       }
     }
@@ -511,8 +533,10 @@ export const offlineQueue = {
           continue;
         }
 
-        const message = String(error?.response?.data?.message || error?.message || 'Sinkronisasi gagal');
         const status = error?.response?.status;
+        const message = status >= 400 && status < 500
+          ? `Data ditolak server (HTTP ${status}). Periksa kembali data visit.`
+          : 'Sinkronisasi belum berhasil. Data tetap tersimpan di perangkat.';
         const permanentRejection = status >= 400
           && status < 500
           && status !== 401
@@ -525,7 +549,7 @@ export const offlineQueue = {
           lastAttemptAt: new Date().toISOString(),
           ...(permanentRejection ? { status: 'blocked' } : {}),
         }));
-        console.error(`Failed to sync ${item.method} ${item.endpoint}:`, error);
+        logEvent('offline.item_sync_failed', { method: item.method?.toUpperCase(), path: item.endpoint, status: error?.response?.status, error_code: error?.code });
 
         if (permanentRejection) {
           issues.push({ id: item.id, message });
@@ -572,10 +596,15 @@ export const offlineQueue = {
   },
 
   async clearQueue() {
+    const ownerUserId = await currentUserId();
     const photoUris = await withQueueMutation(async () => {
       const queue = await readJson(OFFLINE_QUEUE_KEY, []);
       await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
       await AsyncStorage.removeItem(OFFLINE_VISIT_MAP_KEY);
+      if (ownerUserId) {
+        await AsyncStorage.removeItem(`${OFFLINE_STORE_CACHE_KEY}:${ownerUserId}`);
+      }
+      await AsyncStorage.removeItem(OFFLINE_STORE_CACHE_KEY);
       await AsyncStorage.removeItem(OFFLINE_SYNC_NOTICE_KEY);
       return queue.flatMap((item) => (
         Array.isArray(item.data?.photos) ? item.data.photos.map((photo) => photo.uri) : []

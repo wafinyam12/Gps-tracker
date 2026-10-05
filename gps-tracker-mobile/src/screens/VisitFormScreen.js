@@ -29,6 +29,7 @@ import { evaluateVisitLocation } from '../utils/locationIntegrity';
 import { ACTIVITY_TYPES, VISIT_RESULTS } from '../utils/visitOptions';
 import { offlineQueue } from '../utils/offlineQueue';
 import { logEvent } from '../utils/diagnosticLogger';
+import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 
 const EMPTY_FORM = {
   visitResult: 'order_taken',
@@ -299,6 +300,11 @@ function VisitFormScreen({ route, navigation }) {
 
   const requestLocation = useCallback(async () => {
     try {
+      const disclosed = await confirmLocationDisclosure({
+        title: 'Lokasi untuk checkout visit',
+        message: 'Lokasi saat ini dan waktu pengambilan akan disimpan bersama catatan checkout visit dan dikirim ke server. Pelacakan berkala di latar belakang memerlukan persetujuan terpisah.',
+      });
+      if (!disclosed) return null;
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (!isMountedRef.current) {
         return null;

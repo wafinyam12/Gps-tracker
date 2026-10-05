@@ -18,6 +18,8 @@ import { storeService } from '../api/services/storeService';
 import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
+import { logEvent } from '../utils/diagnosticLogger';
+import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 import { offlineQueue } from '../utils/offlineQueue';
 import OpenStreetMapView from '../components/maps/OpenStreetMapView';
 
@@ -204,7 +206,7 @@ const StartVisitScreen = ({ navigation }) => {
         return;
       }
 
-      console.log('Load stores error:', error.response?.data || error);
+      logEvent('visit.stores_fetch_failed', { status: error.response?.status, error_code: error.code });
       if (!append) {
         const cached = await offlineQueue.cachedStores();
         const cachedStores = Array.isArray(cached.stores) ? cached.stores : [];
@@ -230,6 +232,11 @@ const StartVisitScreen = ({ navigation }) => {
 
   const requestLocation = useCallback(async () => {
     try {
+      const disclosed = await confirmLocationDisclosure({
+        title: 'Lokasi untuk visit ini',
+        message: 'Lokasi saat ini digunakan untuk mencatat dan memverifikasi visit ini. Koordinat dan waktu akan dikirim bersama data visit. Pelacakan berkala di latar belakang memerlukan persetujuan terpisah.',
+      });
+      if (!disclosed) return null;
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Izin Ditolak', 'Izin lokasi diperlukan untuk memulai visit.');
@@ -321,7 +328,7 @@ const StartVisitScreen = ({ navigation }) => {
         Alert.alert('Info Visit', warning);
       }
     } catch (error) {
-      console.log('Start visit error:', error.response?.data || error);
+      logEvent('visit.start_failed', { status: error.response?.status, error_code: error.code });
       const responseData = error.response?.data || {};
       const activeVisitId = responseData?.errors?.visit_log_id || responseData?.data?.visit_log_id || null;
 
@@ -361,7 +368,7 @@ const StartVisitScreen = ({ navigation }) => {
           Alert.alert('Disimpan Offline', 'Check-in tersimpan di perangkat. Selesaikan form visit, data akan dikirim otomatis saat koneksi kembali.');
           return;
         } catch (queueError) {
-          console.log('Offline start queue error:', queueError);
+          logEvent('visit.offline_enqueue_failed', { error_code: queueError?.code });
           Alert.alert('Gagal', 'Tidak dapat menyimpan kunjungan offline di perangkat.');
           return;
         }

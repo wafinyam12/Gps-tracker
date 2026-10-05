@@ -114,12 +114,23 @@ class AuthController extends Controller
     public function changePassword(ChangePasswordRequest $request)
     {
         $user = $request->user();
+        $currentToken = $user->currentAccessToken();
+        $deviceName = $currentToken->name ?: 'mobile';
 
         $user->update([
             'password' => Hash::make($request->password),
         ]);
 
-        return response()->success(null, 'Password berhasil diperbarui.');
+        $user->tokens()->where('id', '!=', $currentToken->getKey())->delete();
+        $currentToken->delete();
+        $token = $user->createToken(
+            $deviceName,
+            $user->getAllPermissions()->pluck('name')->toArray(),
+        )->plainTextToken;
+
+        return response()->success([
+            'token' => $token,
+        ], 'Password berhasil diperbarui.');
     }
 
     public function updateProfilePhoto(UpdateProfilePhotoRequest $request)

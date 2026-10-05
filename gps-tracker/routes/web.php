@@ -4,6 +4,8 @@ use App\Http\Controllers\Web\CrmAuthController;
 use App\Http\Controllers\Web\CrmDashboardController;
 use Illuminate\Support\Facades\Route;
 
+Route::view('/privacy-policy', 'privacy-policy')->name('privacy-policy');
+
 Route::get('/', function () {
     if (auth()->check()) {
         return redirect()->route('crm.dashboard');

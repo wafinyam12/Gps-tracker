@@ -4,6 +4,7 @@ import { storeService } from '../../api/services/storeService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ChevronLeft, Save, Trash2, MapPin } from 'lucide-react-native';
 import * as Location from 'expo-location';
+import { confirmLocationDisclosure } from '../../utils/locationDisclosure';
 
 const MAX_GEOFENCE_RADIUS_METERS = 50;
 
@@ -73,6 +74,11 @@ const StoreFormScreen = () => {
   };
 
   const getCurrentLocation = async () => {
+    const disclosed = await confirmLocationDisclosure({
+      title: 'Gunakan lokasi untuk koordinat toko',
+      message: 'Lokasi perangkat digunakan untuk mengisi koordinat toko dan akan tersimpan ke server saat formulir disimpan.',
+    });
+    if (!disclosed) return;
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission Denied', 'Izin lokasi diperlukan untuk mengambil koordinat');

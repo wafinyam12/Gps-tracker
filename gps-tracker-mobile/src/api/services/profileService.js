@@ -1,4 +1,4 @@
-import apiClient from '../client';
+import apiClient, { setAccessToken } from '../client';
 
 export const profileService = {
   updateProfile: async (data) => {
@@ -8,6 +8,10 @@ export const profileService = {
 
   changePassword: async (data) => {
     const response = await apiClient.post('/auth/change-password', data);
+    const rotatedToken = response.data?.data?.token;
+    if (typeof rotatedToken === 'string') {
+      await setAccessToken(rotatedToken);
+    }
     return response.data;
   },
 

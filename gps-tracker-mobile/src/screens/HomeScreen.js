@@ -23,9 +23,10 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useLocationTracker } from '../hooks/useLocationTracker';
 import { reportService } from '../api/services/reportService';
-import { canVisitStores } from '../utils/roles';
+import { canTrackLocation, canVisitStores } from '../utils/roles';
 import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { getVisitResultLabel } from '../utils/visitOptions';
+import { logEvent } from '../utils/diagnosticLogger';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import AppScreen from '../components/ui/AppScreen';
 import Surface from '../components/ui/Surface';
@@ -35,7 +36,7 @@ import AppButton from '../components/ui/AppButton';
 import { colors, radii, shadows, spacing } from '../styles/theme';
 
 const HomeScreen = () => {
-  const { user } = useAuth();
+  const { user, backgroundTrackingEnabled, locationConsentGranted, requestBackgroundLocationConsent, disableBackgroundLocationTracking } = useAuth();
   const navigation = useNavigation();
   const { isTracking, startTracking } = useLocationTracker();
   const [summary, setSummary] = useState(null);
@@ -53,7 +54,7 @@ const HomeScreen = () => {
       const payload = response.data?.data || response.data || {};
       setSummary(payload);
     } catch (error) {
-      console.log('Fetch summary error:', error.response?.data || error);
+      logEvent('home.summary_fetch_failed', { status: error.response?.status, error_code: error.code });
       setSummary(null);
     } finally {
       setLoading(false);
@@ -62,10 +63,10 @@ const HomeScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (canVisit) {
+    if (canVisit && locationConsentGranted && backgroundTrackingEnabled) {
       startTracking();
     }
-  }, [canVisit, startTracking]);
+  }, [backgroundTrackingEnabled, canVisit, locationConsentGranted, startTracking]);
 
   useFocusEffect(
     useCallback(() => {
@@ -106,7 +107,7 @@ const HomeScreen = () => {
         return;
       }
     } catch (error) {
-      console.log('Open route error:', error.message);
+      logEvent('maps.route_open_failed', { error_code: error.code });
       Alert.alert('Gagal Membuka Maps', 'Tidak bisa membuka Google Maps dari perangkat ini.');
     }
   };
@@ -169,6 +170,11 @@ const HomeScreen = () => {
       icon: <Clock size={18} color={colors.primary} />,
       onPress: () => navigation.navigate('MySummary'),
     },
+    ...(canTrackLocation(user) ? [{
+      label: backgroundTrackingEnabled ? 'Matikan GPS Latar' : 'Aktifkan GPS Latar',
+      icon: <MapPin size={18} color={colors.primary} />,
+      onPress: backgroundTrackingEnabled ? disableBackgroundLocationTracking : requestBackgroundLocationConsent,
+    }] : []),
   ];
 
   if (loading) {

@@ -18,6 +18,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { Camera, CheckCircle2, ClipboardList, MapPin, Save, Trash2 } from 'lucide-react-native';
 import AppScreen from '../components/ui/AppScreen';
+import { logEvent } from '../utils/diagnosticLogger';
+import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 import AppButton from '../components/ui/AppButton';
 import PageHeader from '../components/ui/PageHeader';
 import Surface from '../components/ui/Surface';
@@ -26,6 +28,7 @@ import { normalizePhoneNumber } from '../utils/phone';
 import { useAuth } from '../context/AuthContext';
 
 const KYC_DRAFT_STORAGE_KEY = 'customer_kyc_drafts';
+const kycDraftStorageKey = (userId) => `${KYC_DRAFT_STORAGE_KEY}:${userId || 'unknown'}`;
 
 const REQUEST_TYPES = [
   { label: 'Penambahan', value: 'add', text: 'Pengajuan penambahan Customer.' },
@@ -281,8 +284,8 @@ const validateForm = (form) => {
   return errors;
 };
 
-const readDrafts = async () => {
-  const raw = await AsyncStorage.getItem(KYC_DRAFT_STORAGE_KEY);
+const readDrafts = async (userId) => {
+  const raw = await AsyncStorage.getItem(kycDraftStorageKey(userId));
 
   if (!raw) {
     return [];
@@ -487,13 +490,18 @@ const CustomerKycScreen = ({ navigation }) => {
         captured_at: new Date().toISOString(),
       });
     } catch (error) {
-      console.log('Capture KYC attachment error:', error);
+      logEvent('kyc.attachment_capture_failed', { error_code: error?.code });
       Alert.alert('Gagal', 'Foto attachment belum bisa diambil.');
     }
   };
 
   const captureStoreLocation = async () => {
     try {
+      const disclosed = await confirmLocationDisclosure({
+        title: 'Lokasi toko customer',
+        message: 'Lokasi perangkat digunakan untuk merekam koordinat toko pada draft KYC. Koordinat akan ikut dikirim saat data customer diajukan.',
+      });
+      if (!disclosed) return;
       const permission = await Location.requestForegroundPermissionsAsync();
 
       if (permission.status !== 'granted') {
@@ -522,7 +530,7 @@ const CustomerKycScreen = ({ navigation }) => {
         recorded_at: new Date(location?.timestamp || Date.now()).toISOString(),
       });
     } catch (error) {
-      console.log('Capture KYC store location error:', error);
+      logEvent('kyc.store_location_capture_failed', { error_code: error?.code });
       Alert.alert('Gagal', 'Titik lokasi toko belum bisa direkam.');
     }
   };
@@ -537,7 +545,7 @@ const CustomerKycScreen = ({ navigation }) => {
 
     setSaving(true);
     try {
-      const drafts = await readDrafts();
+      const drafts = await readDrafts(user?.id);
       const now = new Date().toISOString();
       const draft = {
         id: `kyc-${Date.now()}`,
@@ -570,14 +578,14 @@ const CustomerKycScreen = ({ navigation }) => {
       };
 
       await AsyncStorage.setItem(
-        KYC_DRAFT_STORAGE_KEY,
+        kycDraftStorageKey(user?.id),
         JSON.stringify([draft, ...drafts].slice(0, 50))
       );
 
       setLastSavedAt(now);
       Alert.alert('Draft Tersimpan', 'Draft KYC customer siap direview.');
     } catch (error) {
-      console.log('Save KYC draft error:', error);
+      logEvent('kyc.draft_save_failed', { error_code: error?.code });
       Alert.alert('Gagal', 'Draft KYC belum bisa disimpan di perangkat.');
     } finally {
       setSaving(false);

@@ -15,6 +15,7 @@ import PhotoPreviewModal from '../components/PhotoPreviewModal';
 import AppScreen from '../components/ui/AppScreen';
 import PageHeader from '../components/ui/PageHeader';
 import { getVisitResultLabel } from '../utils/visitOptions';
+import { logEvent } from '../utils/diagnosticLogger';
 
 const MySummaryScreen = () => {
   const navigation = useNavigation();
@@ -29,7 +30,7 @@ const MySummaryScreen = () => {
       const response = await reportService.targetToday();
       setSummary(response.data?.data || response.data || null);
     } catch (error) {
-      console.log('Fetch summary error:', error.response?.data || error);
+      logEvent('summary.fetch_failed', { status: error.response?.status, error_code: error.code });
       setSummary(null);
     } finally {
       setLoading(false);

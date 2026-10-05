@@ -15,6 +15,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ChevronLeft, RefreshCw } from 'lucide-react-native';
 import { locationService } from '../../api/services/locationService';
 import OpenStreetMapView from '../../components/maps/OpenStreetMapView';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const LIVE_REFRESH_MS = 60_000;
 const VIEWPORT_DEBOUNCE_MS = 450;
@@ -117,7 +118,7 @@ const LiveMapScreen = () => {
       });
     } catch (error) {
       if (requestSequence === customerRequestSequenceRef.current) {
-        console.log('Error fetching customer markers', error.response?.data || error);
+        logEvent('monitoring.customer_markers_fetch_failed', { status: error.response?.status, error_code: error.code });
         setCustomerLayer({ mode: 'clusters', items: [], meta: null });
       }
     } finally {
@@ -178,7 +179,7 @@ const LiveMapScreen = () => {
       }
     } catch (error) {
       if (requestSequence === liveRequestSequenceRef.current) {
-        console.log('Error fetching live locations', error.response?.data || error);
+        logEvent('monitoring.live_locations_fetch_failed', { status: error.response?.status, error_code: error.code });
       }
     } finally {
       if (requestSequence === liveRequestSequenceRef.current) {

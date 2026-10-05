@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
+import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { canTrackLocation } from '../utils/roles';
+import { logEvent } from '../utils/diagnosticLogger';
 
 const normalizeBearing = (heading) => (
   typeof heading === 'number' && heading >= 0 && heading <= 360 ? heading : null
 );
 
 export const useLocationTracker = () => {
-  const { user } = useAuth();
+  const { user, locationConsentGranted } = useAuth();
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [isTracking, setIsTracking] = useState(false);
@@ -26,7 +28,7 @@ export const useLocationTracker = () => {
   }, []);
 
   const pingLocation = useCallback(async (loc) => {
-    if (!canTrack) {
+    if (!canTrack || !locationConsentGranted) {
       return;
     }
 
@@ -41,13 +43,18 @@ export const useLocationTracker = () => {
         is_mock_location: loc.mocked || false,
       });
     } catch (e) {
-      console.log('Failed to ping location', e.response?.status, e.response?.data || e.message);
+      logEvent('tracking.foreground_ping_failed', { status: e.response?.status, error_code: e.code });
     }
-  }, [canTrack]);
+  }, [canTrack, locationConsentGranted]);
 
   const startTracking = useCallback(async () => {
-    if (!canTrack) {
+    if (!canTrack || !locationConsentGranted) {
       stopTracking();
+      return null;
+    }
+
+    const consent = await SecureStore.getItemAsync(`background_location_consent_${user?.id}`);
+    if (consent !== 'accepted') {
       return null;
     }
 
@@ -79,13 +86,13 @@ export const useLocationTracker = () => {
 
     subscriptionRef.current = subscription;
     return subscription;
-  }, [canTrack, pingLocation, stopTracking]);
+  }, [canTrack, locationConsentGranted, pingLocation, stopTracking, user?.id]);
 
   useEffect(() => {
-    if (!canTrack) {
+    if (!canTrack || !locationConsentGranted) {
       stopTracking();
     }
-  }, [canTrack, stopTracking]);
+  }, [canTrack, locationConsentGranted, stopTracking]);
 
   useEffect(() => stopTracking, [stopTracking]);
 

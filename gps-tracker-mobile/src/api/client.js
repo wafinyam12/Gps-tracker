@@ -28,6 +28,58 @@ const resolveBaseUrl = () => {
 };
 
 const BASE_URL = resolveBaseUrl();
+const TOKEN_REFRESHED_AT_KEY = 'user_token_refreshed_at';
+const TOKEN_REFRESH_INTERVAL_MS = 20 * 24 * 60 * 60 * 1000;
+let tokenRefreshPromise = null;
+
+export const getPrivacyPolicyUrl = () => `${BASE_URL.replace(/\/api\/v1\/?$/, '')}/privacy-policy`;
+
+export const setAccessToken = async (token) => {
+  await SecureStore.setItemAsync('user_token', token);
+  await SecureStore.setItemAsync(TOKEN_REFRESHED_AT_KEY, String(Date.now()));
+};
+
+const getUsableToken = async (url) => {
+  const token = await SecureStore.getItemAsync('user_token');
+  if (!token || /\/auth\/(login|refresh)(\?|$)/.test(url || '')) return token;
+
+  const refreshedAt = await SecureStore.getItemAsync(TOKEN_REFRESHED_AT_KEY);
+  const refreshedAtNumber = Number(refreshedAt);
+  if (!Number.isFinite(refreshedAtNumber)) {
+    await SecureStore.setItemAsync(TOKEN_REFRESHED_AT_KEY, String(Date.now()));
+    return token;
+  }
+  if (Date.now() - refreshedAtNumber < TOKEN_REFRESH_INTERVAL_MS) return token;
+
+  if (!tokenRefreshPromise) {
+    tokenRefreshPromise = axios.post(`${BASE_URL}/auth/refresh`, {}, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    }).then(async (response) => {
+      const freshToken = response.data?.data?.token;
+      if (typeof freshToken !== 'string' || freshToken.length < 20) {
+        throw new Error('Token refresh response is invalid.');
+      }
+      await setAccessToken(freshToken);
+      logEvent('auth.token_refreshed');
+      return freshToken;
+    }).catch(async (error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        await Promise.all([
+          SecureStore.deleteItemAsync('user_token'),
+          SecureStore.deleteItemAsync(TOKEN_REFRESHED_AT_KEY),
+          SecureStore.deleteItemAsync('user_data'),
+        ]);
+        authEvents.emit('logout', { status: error.response.status });
+      }
+      if (!error.response || error.response.status >= 500) return token;
+      throw error;
+    }).finally(() => {
+      tokenRefreshPromise = null;
+    });
+  }
+
+  return tokenRefreshPromise;
+};
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -68,7 +120,7 @@ apiClient.interceptors.request.use(async (config) => {
     config.headers['X-Request-ID'] = requestId;
   }
 
-  const token = await SecureStore.getItemAsync('user_token');
+  const token = await getUsableToken(config.url);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -116,6 +168,7 @@ apiClient.interceptors.response.use(
       logEvent('api.auth_rejected', { status });
       try {
         await SecureStore.deleteItemAsync('user_token');
+        await SecureStore.deleteItemAsync(TOKEN_REFRESHED_AT_KEY);
         await SecureStore.deleteItemAsync('user_data');
       } catch (e) {
         logEvent('api.auth_cleanup_failed', { error_code: e?.code });
