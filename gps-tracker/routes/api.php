@@ -12,9 +12,10 @@ use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VisitLogController;
 use App\Http\Controllers\Api\VisitPhotoController;
+use App\Http\Middleware\ApiRequestLog;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->group(function () {
+Route::prefix('v1')->middleware(ApiRequestLog::class)->group(function () {
     Route::middleware(['throttle:login', 'brute.force'])->group(function () {
         Route::post('auth/login', [AuthController::class, 'login']);
     });

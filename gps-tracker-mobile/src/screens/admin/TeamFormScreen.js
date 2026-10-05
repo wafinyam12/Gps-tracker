@@ -10,6 +10,7 @@ import Surface from '../../components/ui/Surface';
 import { useAuth } from '../../context/AuthContext';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const TeamFormScreen = () => {
   const navigation = useNavigation();
@@ -58,6 +59,7 @@ const TeamFormScreen = () => {
         is_active: team.is_active,
       });
     } catch (error) {
+      logEvent('admin.branch_load_failed', { status: error.response?.status, error_code: error?.code });
       Alert.alert('Error', 'Gagal mengambil detail cabang');
       navigation.goBack();
     } finally {
@@ -68,6 +70,7 @@ const TeamFormScreen = () => {
   const getCurrentLocation = async () => {
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
+      logEvent('admin.branch_location_permission_denied', { permission: 'foreground', result: status });
       Alert.alert('Permission Denied', 'Izin lokasi diperlukan untuk mengambil koordinat cabang');
       return;
     }
@@ -80,7 +83,9 @@ const TeamFormScreen = () => {
         latitude: location.coords.latitude.toString(),
         longitude: location.coords.longitude.toString(),
       });
+      logEvent('admin.branch_location_captured');
     } catch (error) {
+      logEvent('admin.branch_location_failed', { error_code: error?.code });
       Alert.alert('Error', 'Gagal mendapatkan lokasi saat ini');
     } finally {
       setLoading(false);
@@ -107,6 +112,7 @@ const TeamFormScreen = () => {
     }
 
     setLoading(true);
+    logEvent('admin.branch_save_started', { action: isEdit ? 'update' : 'create' });
     try {
       const payload = {
         ...form,
@@ -122,6 +128,7 @@ const TeamFormScreen = () => {
       } else {
         await userService.createTeam(payload);
       }
+      logEvent('admin.branch_save_succeeded', { action: isEdit ? 'update' : 'create' });
       Alert.alert('Sukses', `Cabang berhasil ${isEdit ? 'diupdate' : 'dibuat'}`);
       navigation.goBack();
     } catch (error) {
@@ -144,8 +151,10 @@ const TeamFormScreen = () => {
           onPress: async () => {
             try {
               await userService.deleteTeam(teamId);
+              logEvent('admin.branch_delete_succeeded');
               navigation.goBack();
             } catch (error) {
+              logEvent('admin.branch_delete_failed', { status: error.response?.status, error_code: error?.code });
               const msg = error.response?.data?.message || 'Gagal menghapus cabang';
               Alert.alert('Error', msg);
             }

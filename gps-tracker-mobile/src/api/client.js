@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import authEvents from '../utils/authEvents';
+import { createRequestId, logApiOutcome, logEvent } from '../utils/diagnosticLogger';
 
 // Standalone builds must never silently fall back to a developer machine.
 // Local development can still override this explicitly through EXPO_PUBLIC_API_BASE_URL.
@@ -27,7 +28,6 @@ const resolveBaseUrl = () => {
 };
 
 const BASE_URL = resolveBaseUrl();
-console.log('[apiClient] Base URL:', BASE_URL);
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -38,8 +38,15 @@ const apiClient = axios.create({
 
 // Interceptor untuk menyisipkan token secara otomatis
 apiClient.interceptors.request.use(async (config) => {
+  config.__diagnostic = { requestId: createRequestId(), startedAt: Date.now() };
+  config.headers = config.headers || {};
+  if (typeof config.headers.set === 'function') {
+    config.headers.set('X-Request-ID', config.__diagnostic.requestId);
+  } else {
+    config.headers['X-Request-ID'] = config.__diagnostic.requestId;
+  }
+
   const token = await SecureStore.getItemAsync('user_token');
-  console.log('API REQUEST', config.method?.toUpperCase(), config.url, 'TOKEN:', token ? `${token.substring(0, 20)}...` : 'NO_TOKEN');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -48,26 +55,53 @@ apiClient.interceptors.request.use(async (config) => {
 
 // Response interceptor to catch auth errors globally
 apiClient.interceptors.response.use(
-  response => response,
+  response => {
+    const config = response.config || {};
+    const requestId = config.__diagnostic?.requestId;
+    const serverRequestId = response.headers?.['x-request-id'];
+    logApiOutcome({
+      request_id: requestId,
+      request_id_mismatch: Boolean(serverRequestId && requestId && serverRequestId !== requestId),
+      method: config.method?.toUpperCase(),
+      path: config.url,
+      status: response.status,
+      duration_ms: config.__diagnostic?.startedAt ? Date.now() - config.__diagnostic.startedAt : undefined,
+      action: config.diagnosticAction,
+    });
+    return response;
+  },
   async (error) => {
     const status = error.response?.status;
     const data = error.response?.data;
+    const config = error.config || {};
+    const requestId = config.__diagnostic?.requestId;
+    const serverRequestId = error.response?.headers?.['x-request-id'];
+    logApiOutcome({
+      request_id: requestId,
+      request_id_mismatch: Boolean(serverRequestId && requestId && serverRequestId !== requestId),
+      method: config.method?.toUpperCase(),
+      path: config.url,
+      status,
+      duration_ms: config.__diagnostic?.startedAt ? Date.now() - config.__diagnostic.startedAt : undefined,
+      error_code: error.code,
+      action: config.diagnosticAction,
+    });
     const message = String(data?.message || '').toLowerCase();
     const isInactiveAccount = message.includes('akun tidak aktif');
 
     // Logout on 401 (unauthenticated) and on inactive accounts so stale sessions do not linger.
     if (status === 401 || (status === 403 && isInactiveAccount)) {
-      console.log('API client detected auth error - logging out');
+      logEvent('api.auth_rejected', { status });
       try {
         await SecureStore.deleteItemAsync('user_token');
         await SecureStore.deleteItemAsync('user_data');
       } catch (e) {
-        console.log('Failed clearing token on auth error', e);
+        logEvent('api.auth_cleanup_failed', { error_code: e?.code });
       }
       // notify app to force logout UI-wise
-      try { authEvents.emit('logout', { status, data }); } catch (e) { }
+      try { authEvents.emit('logout', { status }); } catch (e) { }
     } else if (status === 403) {
-      console.log('API client detected 403 Forbidden - permission denied');
+      logEvent('api.permission_denied', { status });
     }
     return Promise.reject(error);
   }

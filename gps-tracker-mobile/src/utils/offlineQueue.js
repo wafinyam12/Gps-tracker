@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { Alert } from 'react-native';
 import apiClient from '../api/client';
+import { logEvent } from './diagnosticLogger';
 
 const OFFLINE_QUEUE_KEY = 'offlineQueue';
 const OFFLINE_VISIT_MAP_KEY = 'offlineVisitServerMap';
@@ -24,7 +25,7 @@ const readJson = async (key, fallback) => {
     const raw = await AsyncStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch (error) {
-    console.error(`Error reading offline storage ${key}:`, error);
+    logEvent('offline.storage_read_failed', { error_code: error?.code });
     return fallback;
   }
 };
@@ -155,6 +156,7 @@ export const offlineQueue = {
       localVisitId,
       clientUuid,
     });
+    logEvent('offline.visit_start_queued', { queue_size: await this.getQueueSize() });
 
     return { localVisitId, clientUuid };
   },
@@ -168,6 +170,7 @@ export const offlineQueue = {
       kind: 'visit_checkout',
       localVisitId,
     });
+    logEvent('offline.visit_checkout_queued', { queue_size: await this.getQueueSize() });
   },
 
   async enqueueVisitPhotos(localVisitId, data) {

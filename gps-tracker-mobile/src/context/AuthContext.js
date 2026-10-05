@@ -4,6 +4,7 @@ import apiClient from '../api/client';
 import authEvents from '../utils/authEvents';
 import { canTrackLocation } from '../utils/roles';
 import { startBackgroundTracking, stopBackgroundTracking } from '../utils/backgroundTracker';
+import { logEvent } from '../utils/diagnosticLogger';
 
 const AuthContext = createContext();
 
@@ -45,13 +46,13 @@ export const AuthProvider = ({ children }) => {
   // Subscribe to global auth events (e.g., forced logout from API client)
   useEffect(() => {
     const unsub = authEvents.on('logout', async (payload) => {
-      console.log('AuthContext received logout event', payload);
+      logEvent('auth.forced_logout', { status: payload?.status });
       try {
         await stopBackgroundTracking();
         await SecureStore.deleteItemAsync('user_token');
         await SecureStore.deleteItemAsync('user_data');
       } catch (e) {
-        console.log('Error clearing secure storage on forced logout', e);
+        logEvent('auth.session_cleanup_failed', { error_code: e?.code });
       }
       setUser(null);
     });
@@ -67,7 +68,7 @@ export const AuthProvider = ({ children }) => {
           await stopBackgroundTracking();
         }
       } catch (e) {
-        console.log('Failed to sync background tracking', e);
+        logEvent('tracking.sync_failed', { error_code: e?.code });
       }
     };
 
@@ -82,7 +83,7 @@ export const AuthProvider = ({ children }) => {
         SecureStore.deleteItemAsync('user_data'),
       ]);
     } catch (e) {
-      console.log('Error clearing stored auth data', e);
+      logEvent('auth.session_cleanup_failed', { error_code: e?.code });
     }
   };
 
@@ -107,7 +108,7 @@ export const AuthProvider = ({ children }) => {
           parsedUser = JSON.parse(storedUser);
           setUser(parsedUser);
         } catch (parseError) {
-          console.log('Error parsing stored auth data', parseError);
+          logEvent('auth.stored_user_parse_failed', { error_code: parseError?.code });
           await SecureStore.deleteItemAsync('user_data');
         }
       }
@@ -133,10 +134,10 @@ export const AuthProvider = ({ children }) => {
           }
         })
         .catch((error) => {
-          console.log('Background auth refresh failed', error.response?.status || error.message);
+          logEvent('auth.session_refresh_failed', { status: error.response?.status, error_code: error.code });
         });
     } catch (error) {
-      console.log('Error restoring auth data', error);
+      logEvent('auth.session_restore_failed', { status: error.response?.status, error_code: error.code });
     } finally {
       setLoading(false);
     }
@@ -144,7 +145,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password, deviceName) => {
     try {
-      console.log('LOGIN: attempting', username, deviceName);
+      logEvent('auth.login_started');
       const response = await apiClient.post('/auth/login', {
         username,
         password,
@@ -152,22 +153,14 @@ export const AuthProvider = ({ children }) => {
       });
 
       const { token, user: userData } = response.data.data;
-      console.log('LOGIN: success, token:', token.substring(0, 20) + '...');
-
       await SecureStore.setItemAsync('user_token', token);
       await SecureStore.setItemAsync('user_data', JSON.stringify(userData));
-      console.log('LOGIN: stored in SecureStore');
+      logEvent('auth.login_succeeded');
 
       setUser(userData);
       return { success: true };
     } catch (error) {
-      console.log('LOGIN: error', {
-        message: error.message,
-        code: error.code,
-        status: error.response?.status,
-        data: error.response?.data,
-        baseURL: apiClient.defaults.baseURL,
-      });
+      logEvent('auth.login_failed', { status: error.response?.status, error_code: error.code });
 
       if (!error.response) {
         return {
@@ -234,7 +227,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await apiClient.post('/auth/logout');
     } catch (e) {
-      console.log('Logout error', e);
+      logEvent('auth.logout_request_failed', { status: e.response?.status, error_code: e.code });
     } finally {
       await clearStoredSession();
       setUser(null);

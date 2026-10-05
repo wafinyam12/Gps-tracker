@@ -28,6 +28,7 @@ import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
 import { ACTIVITY_TYPES, VISIT_RESULTS } from '../utils/visitOptions';
 import { offlineQueue } from '../utils/offlineQueue';
+import { logEvent } from '../utils/diagnosticLogger';
 
 const EMPTY_FORM = {
   visitResult: 'order_taken',
@@ -286,7 +287,7 @@ function VisitFormScreen({ route, navigation }) {
         return;
       }
 
-      console.log('Load visit error:', error.response?.data || error);
+      logEvent('visit.detail_load_failed', { status: error.response?.status, error_code: error?.code });
       Alert.alert('Error', 'Gagal memuat data kunjungan.');
     } finally {
       if (isMountedRef.current) {
@@ -374,11 +375,7 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    console.warn('[VisitFormScreen] Failed to load visit photo preview', {
-      photoId: photo?.id,
-      url: photo?.url,
-      error: error?.nativeEvent?.error,
-    });
+    logEvent('visit.photo_preview_failed');
   };
 
   const backToHome = useCallback(() => {
@@ -482,7 +479,7 @@ function VisitFormScreen({ route, navigation }) {
         type: 'image/jpeg',
       });
     } catch (error) {
-      console.log('Cash payment photo error:', error);
+      logEvent('cash_payment.photo_capture_failed', { error_code: error?.code });
       Alert.alert('Gagal', 'Gagal mengambil foto bukti pembayaran.');
     }
   };
@@ -554,6 +551,7 @@ function VisitFormScreen({ route, navigation }) {
         accuracy: locationPayload.accuracy,
         photo: cashPaymentPhoto,
       });
+      logEvent('cash_payment.submit_succeeded');
 
       setCashPaymentForm((previous) => ({
         ...previous,
@@ -564,7 +562,7 @@ function VisitFormScreen({ route, navigation }) {
 
       Alert.alert('Berhasil', response?.message || 'Cash payment berhasil dikirim.');
     } catch (error) {
-      console.log('Cash payment submit error:', error.response?.data || error);
+      logEvent('cash_payment.submit_failed', { status: error.response?.status, error_code: error?.code });
       Alert.alert('Gagal', error.response?.data?.message || 'Gagal mengirim cash payment.');
     } finally {
       if (isMountedRef.current) {
@@ -624,7 +622,7 @@ function VisitFormScreen({ route, navigation }) {
               await visitService.deleteVisit(resolvedVisitLogId);
               returnToStoreList();
             } catch (error) {
-              console.log('Cancel visit error:', error.response?.data || error);
+              logEvent('visit.cancel_failed', { status: error.response?.status, error_code: error?.code });
               Alert.alert('Gagal', error.response?.data?.message || 'Gagal membatalkan visit.');
             } finally {
               if (isMountedRef.current) {
@@ -684,6 +682,7 @@ function VisitFormScreen({ route, navigation }) {
 
       if (isOfflineVisit) {
         await offlineQueue.enqueueVisitCheckout(offlineVisit.localVisitId, checkoutPayload);
+        logEvent('visit.checkout_queued_offline');
         Alert.alert('Visit Disimpan Offline', 'Check-out tersimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
           { text: 'OK', onPress: () => navigation.popToTop() },
         ]);
@@ -707,6 +706,7 @@ function VisitFormScreen({ route, navigation }) {
           clientUuid: checkoutPayload.client_uuid,
         }
       );
+      logEvent('visit.checkout_succeeded');
 
       if (!isMountedRef.current) {
         return;
@@ -723,7 +723,7 @@ function VisitFormScreen({ route, navigation }) {
         return;
       }
 
-      console.log('Save visit error:', error.response?.data || error);
+      logEvent('visit.checkout_failed', { status: error.response?.status, error_code: error?.code });
       if (!error.response || !await offlineQueue.isReachable()) {
         await offlineQueue.addItem('/visit/checkout', 'post', {
           ...checkoutPayload,

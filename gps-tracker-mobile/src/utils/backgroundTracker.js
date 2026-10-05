@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 import { canTrackLocation } from './roles';
 import { offlineQueue } from './offlineQueue';
+import { logEvent } from './diagnosticLogger';
 
 const LOCATION_TRACKING_TASK = 'background-location-tracking';
 
@@ -20,7 +21,7 @@ const getStoredUser = async () => {
   try {
     return JSON.parse(storedUser);
   } catch (e) {
-    console.log('Failed parsing stored user for background tracking', e.message);
+    logEvent('tracking.stored_user_parse_failed', { error_code: e?.code });
     return null;
   }
 };
@@ -29,7 +30,7 @@ const getStoredUser = async () => {
 if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefined(LOCATION_TRACKING_TASK)) {
   TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
     if (error) {
-      console.log('Background location error:', error.message);
+      logEvent('tracking.background_task_failed', { error_code: error?.code });
       return;
     }
     if (data) {
@@ -57,7 +58,7 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
           // another opportunity to leave the device without user interaction.
           await offlineQueue.processQueue({ silent: true });
         } catch (e) {
-          console.log('Background ping failed', e.message);
+          logEvent('tracking.background_ping_failed', { status: e.response?.status, error_code: e.code });
         }
       }
     }
@@ -73,11 +74,13 @@ export const startBackgroundTracking = async () => {
 
     const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
     if (foregroundStatus !== 'granted') {
+      logEvent('tracking.permission_denied', { permission: 'foreground', result: foregroundStatus });
       return false;
     }
 
     const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
     if (backgroundStatus !== 'granted') {
+      logEvent('tracking.permission_denied', { permission: 'background', result: backgroundStatus });
       return false;
     }
 
@@ -91,11 +94,11 @@ export const startBackgroundTracking = async () => {
         notificationColor: "#FF0000",
       },
     });
-    console.log('Background tracking started');
+    logEvent('tracking.started');
 
     return true;
   } catch (e) {
-    console.log('Failed to start background tracking', e.message);
+    logEvent('tracking.start_failed', { error_code: e?.code });
     return false;
   }
 };
@@ -106,11 +109,11 @@ export const stopBackgroundTracking = async () => {
     const hasStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK);
     if (hasStarted) {
       await Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
-      console.log('Background tracking stopped');
+      logEvent('tracking.stopped');
     }
     return true;
   } catch (e) {
-    console.log('Failed to stop background tracking', e.message);
+    logEvent('tracking.stop_failed', { error_code: e?.code });
     return false;
   }
 };

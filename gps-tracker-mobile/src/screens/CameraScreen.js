@@ -8,6 +8,7 @@ import { offlineQueue } from '../utils/offlineQueue';
 import NetInfo from '@react-native-community/netinfo';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
+import { logEvent } from '../utils/diagnosticLogger';
 
 const PhotoUploadScreen = () => {
   const navigation = useNavigation();
@@ -52,8 +53,9 @@ const PhotoUploadScreen = () => {
 
       setPhotos(prevPhotos => [...prevPhotos, manipulated]);
       setShowPreview(true);
+      logEvent('visit.photo_captured', { source: 'camera' });
     } catch (error) {
-      console.log('Error taking picture:', error);
+      logEvent('visit.photo_capture_failed', { error_code: error?.code });
       Alert.alert('Error', 'Gagal mengambil foto. Coba lagi.');
     }
   };
@@ -90,6 +92,7 @@ const PhotoUploadScreen = () => {
 
       if (offlineVisitId) {
         await offlineQueue.enqueueVisitPhotos(offlineVisitId, photoPayload);
+        logEvent('visit.photo_queued_offline', { result: 'queued' });
         Alert.alert('Foto Disimpan Offline', 'Foto akan otomatis diunggah setelah visit tersinkron ke server.');
         navigation.goBack();
         return;
@@ -100,17 +103,16 @@ const PhotoUploadScreen = () => {
         userId: userId || user?.id,
         username: username || user?.name,
       });
+      logEvent('visit.photo_upload_succeeded');
       Alert.alert('Berhasil', 'Foto kunjungan berhasil diunggah.');
       navigation.goBack();
     } catch (e) {
       const netInfo = await NetInfo.fetch();
       const isOnline = Boolean(netInfo.isConnected && netInfo.isInternetReachable !== false);
-      console.log('Upload failed, adding to offline queue:', {
-        message: e.message,
+      logEvent('visit.photo_upload_failed', {
         status: e.response?.status,
-        data: e.response?.data,
-        isConnected: netInfo.isConnected,
-        isInternetReachable: netInfo.isInternetReachable,
+        error_code: e?.code,
+        result: isOnline ? 'online' : 'offline',
       });
       try {
         await offlineQueue.addItem('/visit/photos', 'post', {
@@ -127,6 +129,7 @@ const PhotoUploadScreen = () => {
           submitted_by_user_id: userId || user?.id,
           submitted_by_username: username || user?.name,
         });
+        logEvent('visit.photo_saved_for_retry');
         Alert.alert(
           isOnline ? 'Upload gagal' : 'Offline Mode',
           isOnline
@@ -135,6 +138,7 @@ const PhotoUploadScreen = () => {
         );
         navigation.goBack();
       } catch (offlineError) {
+        logEvent('visit.photo_offline_save_failed', { error_code: offlineError?.code });
         Alert.alert('Gagal', 'Gagal mengunggah foto dan gagal menyimpan ke antrian offline.');
       }
     } finally {

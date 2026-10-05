@@ -21,6 +21,7 @@ import { useAuth } from '../../context/AuthContext';
 import { normalizePhoneNumber } from '../../utils/phone';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const UserFormScreen = () => {
   const navigation = useNavigation();
@@ -74,7 +75,7 @@ const UserFormScreen = () => {
       const payload = response.data?.data;
       setTeams(Array.isArray(payload) ? payload : payload?.data || []);
     } catch (error) {
-      console.log('Error fetching teams', error);
+      logEvent('admin.user_form_branches_load_failed', { status: error.response?.status, error_code: error?.code });
     }
   };
 
@@ -95,6 +96,7 @@ const UserFormScreen = () => {
         is_active: user.is_active,
       });
     } catch (error) {
+      logEvent('admin.user_load_failed', { status: error.response?.status, error_code: error?.code });
       Alert.alert('Error', 'Gagal mengambil detail user');
       navigation.goBack();
     } finally {
@@ -133,6 +135,7 @@ const UserFormScreen = () => {
     }
 
     setLoading(true);
+    logEvent('admin.user_save_started', { action: isEdit ? 'update' : 'create' });
     try {
       const payload = {
         ...form,
@@ -151,9 +154,11 @@ const UserFormScreen = () => {
       } else {
         await userService.createUser(payload);
       }
+      logEvent('admin.user_save_succeeded', { action: isEdit ? 'update' : 'create' });
       Alert.alert('Sukses', `User berhasil ${isEdit ? 'diupdate' : 'dibuat'}`);
       navigation.goBack();
     } catch (error) {
+      logEvent('admin.user_save_failed', { action: isEdit ? 'update' : 'create', status: error.response?.status, error_code: error?.code });
       const msg = error.response?.data?.message || 'Terjadi kesalahan saat menyimpan data';
       Alert.alert('Error', msg);
     } finally {
@@ -173,8 +178,10 @@ const UserFormScreen = () => {
           onPress: async () => {
             try {
               await userService.deleteUser(userId);
+              logEvent('admin.user_delete_succeeded');
               navigation.goBack();
             } catch (error) {
+              logEvent('admin.user_delete_failed', { status: error.response?.status, error_code: error?.code });
               const msg = error.response?.data?.message || 'Gagal menghapus user';
               Alert.alert('Error', msg);
             }

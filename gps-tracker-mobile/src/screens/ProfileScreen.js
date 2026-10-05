@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Edit3, KeyRound, LogOut, Mail, MapPin, ShieldCheck, User } from 'lucide-react-native';
@@ -11,6 +11,7 @@ import PageHeader from '../components/ui/PageHeader';
 import Surface from '../components/ui/Surface';
 import AppButton from '../components/ui/AppButton';
 import { colors, radii, shadows, spacing } from '../styles/theme';
+import { logEvent, readDiagnosticLogs } from '../utils/diagnosticLogger';
 
 const getErrorMessage = (error, fallback) => {
   const errors = error.response?.data?.errors;
@@ -92,6 +93,7 @@ const ProfileScreen = () => {
     });
 
     if (result.canceled || !result.assets?.[0]) {
+      logEvent('profile.photo_picker_cancelled');
       return;
     }
 
@@ -105,10 +107,28 @@ const ProfileScreen = () => {
       }
 
       Alert.alert('Sukses', 'Foto profile berhasil diperbarui.');
+      logEvent('profile.photo_updated');
     } catch (error) {
+      logEvent('profile.photo_update_failed', { status: error.response?.status, error_code: error?.code });
       Alert.alert('Gagal', getErrorMessage(error, 'Gagal mengupload foto profile.'));
     } finally {
       setPhotoUploading(false);
+    }
+  };
+
+  const handleShareDiagnostics = async () => {
+    try {
+      const logs = await readDiagnosticLogs();
+      if (!logs) {
+        Alert.alert('Log belum tersedia', 'Belum ada log diagnostik yang tersimpan di perangkat.');
+        return;
+      }
+
+      logEvent('diagnostics.shared');
+      await Share.share({ message: logs, title: 'Log Diagnostik Sales Daily' });
+    } catch (error) {
+      logEvent('diagnostics.share_failed', { error_code: error?.code });
+      Alert.alert('Gagal', 'Log diagnostik tidak dapat dibagikan.');
     }
   };
 
@@ -364,6 +384,12 @@ const ProfileScreen = () => {
             Session tersimpan aman di perangkat dan akan dipakai ulang saat aplikasi dibuka kembali.
           </Text>
         </Surface>
+
+        <AppButton
+          label="Bagikan log diagnostik"
+          onPress={handleShareDiagnostics}
+          variant="secondary"
+        />
 
         <AppButton
           label="Logout"
