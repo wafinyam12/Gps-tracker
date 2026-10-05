@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Platform, View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, AlertTriangle, User, CheckCircle } from 'lucide-react-native';
+import moment from 'moment';
 import { reportService } from '../../api/services/reportService';
 import { getJakartaDateString } from '../../utils/date';
 
@@ -9,6 +10,7 @@ const AlertListScreen = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [warnings, setWarnings] = useState([]);
+  const [warningDate, setWarningDate] = useState(() => getJakartaDateString(-1));
 
   useEffect(() => {
     fetchWarnings();
@@ -18,6 +20,7 @@ const AlertListScreen = () => {
     setLoading(true);
     try {
       const yesterday = getJakartaDateString(-1);
+      setWarningDate(yesterday);
       const response = await reportService.targetSummary({
         date_from: yesterday,
         date_to: yesterday,
@@ -67,7 +70,12 @@ const AlertListScreen = () => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <ChevronLeft size={24} color="#1E293B" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Warning Audit</Text>
+        <View>
+          <Text style={styles.headerTitle}>Warning Audit</Text>
+          <Text style={styles.headerSubtitle}>
+            Data untuk {moment(warningDate, 'YYYY-MM-DD').format('DD MMMM YYYY')} (hari sebelumnya)
+          </Text>
+        </View>
       </View>
 
       <FlatList
@@ -113,6 +121,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1E293B',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
   },
   list: {
     padding: 20,

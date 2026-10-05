@@ -38,12 +38,34 @@ const apiClient = axios.create({
 
 // Interceptor untuk menyisipkan token secara otomatis
 apiClient.interceptors.request.use(async (config) => {
-  config.__diagnostic = { requestId: createRequestId(), startedAt: Date.now() };
+  if (config.offlineOwnerUserId !== undefined && config.offlineOwnerUserId !== null) {
+    const storedUser = await SecureStore.getItemAsync('user_data');
+    let activeUserId = null;
+    try {
+      activeUserId = storedUser ? JSON.parse(storedUser)?.id : null;
+    } catch (error) {
+      activeUserId = null;
+    }
+
+    if (activeUserId === null || String(activeUserId) !== String(config.offlineOwnerUserId)) {
+      const ownerError = new Error('Data offline ini dibuat oleh akun lain. Masuk dengan akun pemilik data untuk menyinkronkannya.');
+      ownerError.code = 'OFFLINE_OWNER_MISMATCH';
+      return Promise.reject(ownerError);
+    }
+  }
+
   config.headers = config.headers || {};
+  const existingRequestId = typeof config.headers.get === 'function'
+    ? config.headers.get('X-Request-ID')
+    : (config.headers['X-Request-ID'] || config.headers['x-request-id']);
+  const requestId = typeof existingRequestId === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(existingRequestId)
+    ? existingRequestId
+    : createRequestId();
+  config.__diagnostic = { requestId, startedAt: Date.now() };
   if (typeof config.headers.set === 'function') {
-    config.headers.set('X-Request-ID', config.__diagnostic.requestId);
+    config.headers.set('X-Request-ID', requestId);
   } else {
-    config.headers['X-Request-ID'] = config.__diagnostic.requestId;
+    config.headers['X-Request-ID'] = requestId;
   }
 
   const token = await SecureStore.getItemAsync('user_token');

@@ -10,6 +10,7 @@ use App\Models\VisitPhoto;
 use App\Services\Visits\VisitPhotoExifService;
 use App\Services\Visits\VisitPhotoUrlService;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -46,42 +47,93 @@ class VisitPhotoController extends Controller
         $takenAt = $request->filled('taken_at')
             ? Carbon::parse($request->taken_at)->setTimezone(self::LOCAL_TIMEZONE)
             : now(self::LOCAL_TIMEZONE);
+        $photos = $request->file('photos');
+        $clientUuids = array_values($request->input('photo_client_uuids', []));
+
+        if ($clientUuids && count($clientUuids) !== count($photos)) {
+            return response()->error('ID foto tidak sesuai dengan jumlah foto yang dikirim.', 422);
+        }
+
+        foreach ($clientUuids as $clientUuid) {
+            $existingPhoto = VisitPhoto::where('client_uuid', $clientUuid)->first();
+            if ($existingPhoto && (int) $existingPhoto->visit_log_id !== (int) $visitLog->id) {
+                return response()->error('ID foto sudah digunakan oleh kunjungan lain.', 409);
+            }
+        }
 
         // Pastikan visit log masih aktif (belum checkout) atau baru selesai
         // Foto bisa diupload saat checkin maupun checkout
         $uploaded = [];
+        $createdCount = 0;
 
-        foreach ($request->file('photos') as $photo) {
+        foreach ($photos as $index => $photo) {
+            $clientUuid = $clientUuids[$index] ?? null;
+            $existingPhoto = $clientUuid
+                ? VisitPhoto::where('client_uuid', $clientUuid)->first()
+                : null;
+
+            if ($existingPhoto) {
+                $uploaded[] = $this->formatUploadedPhoto($existingPhoto, $user);
+                continue;
+            }
+
             $path = $this->processAndStore($photo, $visitLog->id, $latitude, $longitude, $takenAt);
 
-            $visitPhoto = VisitPhoto::create([
-                'visit_log_id' => $visitLog->id,
-                'path'         => $path,
-                'type'         => $request->type ?? 'checkin',
-                'location'     => ($latitude !== null && $longitude !== null)
-                                    ? new Point(
-                                          latitude: $latitude,
-                                          longitude: $longitude,
-                                      )
-                                    : null,
-                'taken_at'     => $takenAt,
-            ]);
+            try {
+                $visitPhoto = VisitPhoto::create([
+                    'visit_log_id' => $visitLog->id,
+                    'client_uuid'  => $clientUuid,
+                    'path'         => $path,
+                    'type'         => $request->type ?? 'checkin',
+                    'location'     => ($latitude !== null && $longitude !== null)
+                        ? new Point(
+                            latitude: $latitude,
+                            longitude: $longitude,
+                        )
+                        : null,
+                    'taken_at'     => $takenAt,
+                ]);
+                $createdCount++;
+            } catch (QueryException $exception) {
+                if ($clientUuid) {
+                    try {
+                        $existingPhoto = VisitPhoto::where('client_uuid', $clientUuid)->first();
+                    } catch (Throwable $lookupException) {
+                        Storage::disk('visit_photos')->delete($path);
+                        throw $exception;
+                    }
 
-            $uploaded[] = [
-                'id'       => $visitPhoto->id,
-                'url'      => $this->photoUrl($visitPhoto),
-                'type'     => $visitPhoto->type,
-                'taken_at' => $visitPhoto->taken_at->toISOString(),
-                'uploaded_by' => [
-                    'user_id'  => $user->id,
-                    'username' => $user->name,
-                ],
-            ];
+                    if ($existingPhoto && (int) $existingPhoto->visit_log_id === (int) $visitLog->id) {
+                        Storage::disk('visit_photos')->delete($path);
+                        $uploaded[] = $this->formatUploadedPhoto($existingPhoto, $user);
+                        continue;
+                    }
+                }
+
+                Storage::disk('visit_photos')->delete($path);
+                throw $exception;
+            }
+
+            $uploaded[] = $this->formatUploadedPhoto($visitPhoto, $user);
         }
 
         return response()->success([
             'photos'  => $uploaded,
-        ], count($uploaded).' foto berhasil diupload.', 201);
+        ], count($uploaded).' foto berhasil diupload.', $createdCount > 0 ? 201 : 200);
+    }
+
+    private function formatUploadedPhoto(VisitPhoto $photo, User $user): array
+    {
+        return [
+            'id'       => $photo->id,
+            'url'      => $this->photoUrl($photo),
+            'type'     => $photo->type,
+            'taken_at' => $photo->taken_at->toISOString(),
+            'uploaded_by' => [
+                'user_id'  => $user->id,
+                'username' => $user->name,
+            ],
+        ];
     }
 
     /**

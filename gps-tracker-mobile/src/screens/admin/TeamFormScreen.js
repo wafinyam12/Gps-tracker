@@ -132,7 +132,14 @@ const TeamFormScreen = () => {
       Alert.alert('Sukses', `Cabang berhasil ${isEdit ? 'diupdate' : 'dibuat'}`);
       navigation.goBack();
     } catch (error) {
-      const msg = error.response?.data?.message || 'Terjadi kesalahan saat menyimpan data';
+      logEvent('admin.branch_save_failed', { action: isEdit ? 'update' : 'create', status: error.response?.status, error_code: error?.code });
+      const fieldErrors = error.response?.data?.errors;
+      const fieldMessages = fieldErrors
+        ? Object.values(fieldErrors).flat().filter(Boolean).join('\n')
+        : '';
+      const msg = fieldMessages
+        || error.response?.data?.message
+        || 'Terjadi kesalahan saat menyimpan data';
       Alert.alert('Error', msg);
     } finally {
       setLoading(false);

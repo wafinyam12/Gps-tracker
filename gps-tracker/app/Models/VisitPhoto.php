@@ -11,7 +11,7 @@ class VisitPhoto extends Model
     use HasSpatial;
 
     protected $fillable = [
-        'visit_log_id', 'path', 'type', 'location', 'taken_at',
+        'visit_log_id', 'client_uuid', 'path', 'type', 'location', 'taken_at',
     ];
 
     protected $casts = [

@@ -138,7 +138,10 @@ const buildMapHtml = () => `<!doctype html>
     const addMarkers = (markers) => {
       markersLayer.clearLayers();
       markers.forEach((marker) => {
-        const leafletMarker = L.marker([marker.latitude, marker.longitude], { icon: markerIcon(marker) })
+        const leafletMarker = L.marker([marker.latitude, marker.longitude], {
+          icon: markerIcon(marker),
+          zIndexOffset: Number(marker.zIndexOffset || 0),
+        })
           .addTo(markersLayer)
           .bindPopup(
             '<div class="popup-title">' + escapeHtml(marker.title || 'Lokasi') + '</div>' +

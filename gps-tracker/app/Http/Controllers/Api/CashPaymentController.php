@@ -25,6 +25,10 @@ class CashPaymentController extends Controller
 
     public function store(Request $request)
     {
+        if (! config('services.cash_payment.enabled', false)) {
+            return response()->error('Fitur Cash Payment sementara dinonaktifkan.', 503);
+        }
+
         $validator = Validator::make($request->all(), [
             'visit_log_id' => ['nullable', 'integer', 'exists:visit_logs,id'],
             'store_id' => ['nullable', 'integer', 'exists:stores,id'],

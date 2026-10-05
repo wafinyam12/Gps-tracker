@@ -78,19 +78,28 @@ const ProfileScreen = () => {
   };
 
   const handlePickPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    let result;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    if (!permission.granted) {
-      Alert.alert('Izin Dibutuhkan', 'Izinkan akses galeri untuk memilih foto profile.');
+      if (!permission.granted) {
+        logEvent('profile.photo_permission_denied', { permission: 'media_library', result: permission.status });
+        Alert.alert('Izin Dibutuhkan', 'Izinkan akses foto untuk memilih foto profil.');
+        return;
+      }
+      logEvent('profile.photo_permission_granted', { permission: 'media_library' });
+
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.82,
+      });
+    } catch (error) {
+      logEvent('profile.photo_picker_failed', { error_code: error?.code });
+      Alert.alert('Gagal', getErrorMessage(error, 'Tidak dapat membuka pemilih foto.'));
       return;
     }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.82,
-    });
 
     if (result.canceled || !result.assets?.[0]) {
       logEvent('profile.photo_picker_cancelled');

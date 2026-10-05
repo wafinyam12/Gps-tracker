@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'cash_payment' => [
+        'enabled' => env('CASH_PAYMENT_ENABLED', false),
+    ],
+
 ];

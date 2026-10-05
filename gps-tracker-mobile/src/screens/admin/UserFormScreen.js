@@ -32,6 +32,7 @@ const UserFormScreen = () => {
   const currentRole = getRoleName(currentUser);
   const isSuperAdmin = currentRole === 'superadmin';
   const isBranchAdmin = currentRole === 'admin';
+  const isEditingSelf = isEdit && String(currentUser?.id) === String(userId);
   const currentBranchId = currentUser?.branch?.id?.toString() || currentUser?.team?.id?.toString() || '';
 
   const [loading, setLoading] = useState(false);
@@ -397,18 +398,25 @@ const UserFormScreen = () => {
             </View>
           )}
 
-          <View style={styles.switchGroup}>
-            <View>
+          {isEditingSelf ? (
+            <View style={styles.infoBox}>
               <Text style={styles.label}>Status Aktif</Text>
-              <Text style={styles.subLabel}>User dapat login jika aktif</Text>
+              <Text style={styles.subLabel}>Akun Anda tidak dapat dinonaktifkan dari layar ini.</Text>
             </View>
-            <Switch
-              value={form.is_active}
-              onValueChange={(val) => setForm({ ...form, is_active: val })}
-              trackColor={{ false: colors.surfaceStrong, true: colors.primarySoft }}
-              thumbColor={form.is_active ? colors.primary : colors.surface}
-            />
-          </View>
+          ) : (
+            <View style={styles.switchGroup}>
+              <View>
+                <Text style={styles.label}>Status Aktif</Text>
+                <Text style={styles.subLabel}>User dapat login jika aktif</Text>
+              </View>
+              <Switch
+                value={form.is_active}
+                onValueChange={(val) => setForm({ ...form, is_active: val })}
+                trackColor={{ false: colors.surfaceStrong, true: colors.primarySoft }}
+                thumbColor={form.is_active ? colors.primary : colors.surface}
+              />
+            </View>
+          )}
         </Surface>
 
         {isEdit && (

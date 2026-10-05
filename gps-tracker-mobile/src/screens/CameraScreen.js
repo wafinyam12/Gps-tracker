@@ -75,13 +75,15 @@ const PhotoUploadScreen = () => {
     }
 
     setIsProcessing(true);
+    let photoPayload;
     try {
-      const photoPayload = {
+      photoPayload = {
         type: resolvedType,
         photos: photos.map((photo, index) => ({
           uri: photo.uri,
           name: `photo_${index}.jpg`,
           type: 'image/jpeg',
+          client_uuid: offlineQueue.createUuid(),
         })),
         latitude,
         longitude,
@@ -98,7 +100,7 @@ const PhotoUploadScreen = () => {
         return;
       }
 
-      await visitService.uploadPhotos(visitLogId, photos, latitude, longitude, resolvedType, {
+      await visitService.uploadPhotos(visitLogId, photoPayload.photos, latitude, longitude, resolvedType, {
         takenAt: takenAt || new Date().toISOString(),
         userId: userId || user?.id,
         username: username || user?.name,
@@ -117,17 +119,7 @@ const PhotoUploadScreen = () => {
       try {
         await offlineQueue.addItem('/visit/photos', 'post', {
           visit_log_id: visitLogId,
-          type: resolvedType,
-          photos: photos.map((p, index) => ({
-            uri: p.uri,
-            name: `photo_${index}.jpg`,
-            type: 'image/jpeg',
-          })),
-          latitude: latitude,
-          longitude: longitude,
-          taken_at: takenAt || new Date().toISOString(),
-          submitted_by_user_id: userId || user?.id,
-          submitted_by_username: username || user?.name,
+          ...photoPayload,
         });
         logEvent('visit.photo_saved_for_retry');
         Alert.alert(

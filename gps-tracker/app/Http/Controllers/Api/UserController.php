@@ -112,6 +112,12 @@ class UserController extends Controller
             return response()->error('Anda hanya dapat mengubah user cabang sendiri.', 403);
         }
 
+        if ((int) $actor->id === (int) $user->id
+            && $request->exists('is_active')
+            && ! $request->boolean('is_active')) {
+            return response()->error('Tidak bisa menonaktifkan akun sendiri.', 422);
+        }
+
         if ($actor->isBranchAdmin() && $request->role !== 'sales') {
             return response()->error('Admin cabang hanya dapat mengubah user sales di cabangnya sendiri.', 403);
         }

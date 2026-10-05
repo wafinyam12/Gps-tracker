@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { AppState } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Alert, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import NetInfo from '@react-native-community/netinfo';
@@ -227,15 +227,51 @@ const AdminStack = () => (
 
 const RootNavigator = () => {
   const { user, loading } = useAuth();
+  const notifiedSyncIssues = useRef(new Set());
 
   useEffect(() => {
     if (!user) {
       return undefined;
     }
 
-    const syncWhenReachable = (state) => {
+    const syncWhenReachable = async (state) => {
       if (state.isConnected && state.isInternetReachable !== false) {
-        offlineQueue.processQueue({ silent: true });
+        const result = await offlineQueue.processQueue({ silent: true });
+        const issue = result.issues?.find((item) => !notifiedSyncIssues.current.has(item.id));
+        if (issue) {
+          notifiedSyncIssues.current.add(issue.id);
+          if (issue.canClaim) {
+            Alert.alert('Pilih Akun Pemilik Data', issue.message, [
+              {
+                text: 'Nanti',
+                style: 'cancel',
+                onPress: () => notifiedSyncIssues.current.delete(issue.id),
+              },
+              {
+                text: 'Kaitkan ke akun ini',
+                onPress: async () => {
+                  await offlineQueue.claimUnownedItems(user.id);
+                  const retryResult = await offlineQueue.processQueue({ silent: true });
+                  if (retryResult.issues?.length) {
+                    Alert.alert('Sinkronisasi Perlu Perhatian', retryResult.issues[0].message);
+                  } else if (retryResult.pending === 0) {
+                    const successNotice = await offlineQueue.consumeSyncSuccessNotice(user.id);
+                    if (successNotice) {
+                      Alert.alert('Sinkronisasi Berhasil', 'Semua data visit offline berhasil dikirim.');
+                    }
+                  }
+                },
+              },
+            ]);
+          } else {
+            Alert.alert('Sinkronisasi Perlu Perhatian', issue.message);
+          }
+        } else if (result.pending === 0) {
+          const successNotice = await offlineQueue.consumeSyncSuccessNotice(user.id);
+          if (successNotice) {
+            Alert.alert('Sinkronisasi Berhasil', 'Semua data visit offline berhasil dikirim.');
+          }
+        }
       }
     };
 
@@ -244,7 +280,7 @@ const RootNavigator = () => {
     const networkSubscription = NetInfo.addEventListener(syncWhenReachable);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        offlineQueue.processQueue({ silent: true });
+        NetInfo.fetch().then(syncWhenReachable).catch(() => {});
       }
     });
 

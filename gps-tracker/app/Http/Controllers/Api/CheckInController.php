@@ -292,7 +292,7 @@ class CheckInController extends Controller
                 'is_offline_sync'   => $offlineSync,
                 'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : null,
                 'is_duplicate'      => $isDuplicate,
-                'counted_as_target' => $isValidLocation && $distanceMeters !== null && ! $isDuplicate,
+                'counted_as_target' => $isValidLocation && ! $isDuplicate,
                 'duplicate_reason'  => $isDuplicate ? 'store_already_visited_today' : null,
                 'form_data'         => $this->withSubmissionMeta($request, [
                     'started_from' => 'mobile_self_service',
@@ -321,7 +321,7 @@ class CheckInController extends Controller
         }
 
         if (! $visitLog->is_mock_location && $visitLog->checkin_distance === null) {
-            $warnings[] = 'Koordinat toko belum tersedia. Jarak dan radius belum dapat divalidasi, sehingga visit belum dihitung ke target. Visit dapat dilanjutkan sebagai observasi lokasi awal.';
+            $warnings[] = 'Koordinat toko belum tersedia. Jarak dan radius belum dapat divalidasi. Visit dapat dilanjutkan sebagai observasi lokasi awal.';
         }
 
         if (! $visitLog->is_mock_location

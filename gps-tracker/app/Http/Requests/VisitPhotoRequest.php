@@ -22,6 +22,8 @@ class VisitPhotoRequest extends FormRequest
                 'mimes:jpg,jpeg,png,webp',
                 'max:5120', // 5MB per foto
             ],
+            'photo_client_uuids' => 'sometimes|array|min:1|max:5',
+            'photo_client_uuids.*' => 'required|uuid|distinct',
             'type'         => 'nullable|in:checkin,checkout,product,other',
             'latitude'     => 'nullable|numeric|between:-90,90',
             'longitude'    => 'nullable|numeric|between:-180,180',

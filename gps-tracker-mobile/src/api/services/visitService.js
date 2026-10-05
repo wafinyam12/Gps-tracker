@@ -89,6 +89,9 @@ export const visitService = {
         name: `photo_${index}.jpg`,
         type: 'image/jpeg',
       });
+      if (photo.client_uuid) {
+        formData.append('photo_client_uuids[]', photo.client_uuid);
+      }
     });
 
     const response = await apiClient.post('/visit/photos', formData);

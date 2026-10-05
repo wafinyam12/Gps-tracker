@@ -702,17 +702,23 @@ class CoreApiTest extends TestCase
         $checkoutResponse = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/visit/checkout', [
                 'visit_log_id' => $visitLogId,
-                'latitude' => -6.21462,
-                'longitude' => 106.82172,
+                'latitude' => -6.21460,
+                'longitude' => 106.82174,
                 'accuracy' => 10,
                 'is_mock_location' => false,
                 'visit_result' => 'order_taken',
             ]);
 
         $checkoutResponse->assertStatus(200);
+        $this->assertEqualsWithDelta(-6.21462, (float) $checkoutResponse->json('data.visit.checkin_latitude'), 0.000001);
+        $this->assertEqualsWithDelta(106.82172, (float) $checkoutResponse->json('data.visit.checkin_longitude'), 0.000001);
+        $this->assertEqualsWithDelta(-6.21462, (float) $checkoutResponse->json('data.store.latitude'), 0.000001);
+        $this->assertEqualsWithDelta(106.82172, (float) $checkoutResponse->json('data.store.longitude'), 0.000001);
 
         $store->refresh();
         $this->assertTrue($store->hasLocation());
+        $this->assertEqualsWithDelta(-6.21462, $store->location->latitude, 0.000001);
+        $this->assertEqualsWithDelta(106.82172, $store->location->longitude, 0.000001);
     }
 
     public function test_cancelling_open_visit_does_not_save_store_location(): void

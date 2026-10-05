@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   ActivityIndicator,
   Dimensions,
   Platform,
@@ -60,6 +61,7 @@ const LiveMapScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [customerLoading, setCustomerLoading] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [region, setRegion] = useState(DEFAULT_REGION);
   const [mapZoom, setMapZoom] = useState(12);
   const [viewportKey, setViewportKey] = useState(0);
@@ -162,6 +164,7 @@ const LiveMapScreen = () => {
       setLocations(users);
       setBranchLocations(branches);
       setScopeTeamId(nextScopeTeamId);
+      setLastUpdatedAt(new Date());
 
       if (!hasCenteredRef.current) {
         const selectedBranch = branches.find((branch) => branch.id === (selectedTeamId || nextScopeTeamId));
@@ -188,9 +191,21 @@ const LiveMapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       fetchLocations();
-      const interval = setInterval(fetchLocations, LIVE_REFRESH_MS);
+      const interval = setInterval(() => {
+        if (AppState.currentState === 'active') {
+          fetchLocations();
+        }
+      }, LIVE_REFRESH_MS);
+      const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+        if (nextState === 'active') {
+          fetchLocations();
+        }
+      });
 
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        appStateSubscription.remove();
+      };
     }, [fetchLocations])
   );
 
@@ -242,6 +257,7 @@ const LiveMapScreen = () => {
         id: `user-${item.user_id}`,
         kind: 'user',
         userId: item.user_id,
+        zIndexOffset: 1000,
         latitude: Number(item.location.latitude),
         longitude: Number(item.location.longitude),
         title: item.name || 'Sales',
@@ -254,6 +270,7 @@ const LiveMapScreen = () => {
       id: `branch-${branch.id}`,
       kind: 'branch',
       teamId: branch.id,
+      zIndexOffset: 500,
       latitude: branch.latitude,
       longitude: branch.longitude,
       title: branch.name || 'Cabang',
@@ -270,7 +287,8 @@ const LiveMapScreen = () => {
       })).filter((marker) => Number.isFinite(marker.latitude) && Number.isFinite(marker.longitude))
       : [];
 
-    return [...branchMarkers, ...userMarkers, ...customerMarkers];
+    // Put sales last so their marker remains tappable when locations overlap.
+    return [...customerMarkers, ...branchMarkers, ...userMarkers];
   }, [branchLocations, customerLayer.items, locations, showCustomers]);
 
   const handleMarkerPress = (marker) => {
@@ -362,6 +380,11 @@ const LiveMapScreen = () => {
         <Text style={styles.mapStatusTitle}>
           {selectedBranch?.name || (isGlobalView ? 'Pilih marker cabang untuk melihat customer' : 'Monitoring Cabang')}
         </Text>
+        {!!lastUpdatedAt && (
+          <Text style={styles.mapStatusMeta}>
+            Status diperbarui {moment(lastUpdatedAt).format('HH:mm:ss')}
+          </Text>
+        )}
         {showCustomers && activeTeamId && (
           <Text style={styles.mapStatusMeta}>
             {customerLoading ? 'Memuat customer di area peta...' : customerMetaText || 'Geser atau perbesar peta untuk memuat customer.'}
@@ -380,7 +403,7 @@ const LiveMapScreen = () => {
             <TouchableOpacity
               key={item.user_id}
               style={styles.userCard}
-              onPress={() => focusMap(Number(item.location.latitude), Number(item.location.longitude), 15)}
+              onPress={() => navigation.navigate('SalesDetail', { userId: item.user_id })}
             >
               <View style={[styles.statusIndicator, { backgroundColor: item.is_online ? '#10B981' : '#EF4444' }]} />
               <Text style={styles.userCardName}>{item.name}</Text>

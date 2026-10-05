@@ -52,6 +52,7 @@ const EMPTY_CASH_PAYMENT_FORM = {
 const CASH_PAYMENT_TYPES = ['Tunai', 'Transfer', 'BG / Giro'];
 const INVOICE_PREVIEW_LIMIT = 3;
 const SHOW_MOBILE_RECEIVABLES = false; // Temporary v0.5 testing: focus mobile on visit flow.
+const CASH_PAYMENT_ENABLED = false; // Re-enable only after the payment workflow is ready.
 const ANDROID_PICKER_ITEM_COLOR = '#FFFFFF';
 const DEFAULT_PICKER_ITEM_COLOR = '#1E293B';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -439,6 +440,11 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const handleTakeCashPaymentPhoto = async () => {
+    if (!CASH_PAYMENT_ENABLED) {
+      Alert.alert('Belum Tersedia', 'Cash Payment sementara dinonaktifkan dan sedang dikembangkan.');
+      return;
+    }
+
     if (!canEditVisit || cashPaymentSubmitting) {
       return;
     }
@@ -485,6 +491,11 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const handleSubmitCashPayment = async () => {
+    if (!CASH_PAYMENT_ENABLED) {
+      Alert.alert('Belum Tersedia', 'Cash Payment sementara dinonaktifkan dan sedang dikembangkan.');
+      return;
+    }
+
     if (!canEditVisit || cashPaymentSubmitting) {
       return;
     }
@@ -594,8 +605,32 @@ function VisitFormScreen({ route, navigation }) {
             text: 'Ya, batalkan',
             style: 'destructive',
             onPress: async () => {
-              await offlineQueue.removeVisit(offlineVisit.localVisitId);
-              returnToStoreList();
+              setCancelling(true);
+              try {
+                const result = await offlineQueue.removeVisit(offlineVisit.localVisitId);
+                if (result.cleanupFailed) {
+                  Alert.alert(
+                    'Visit Dibatalkan',
+                    'Antrian sinkronisasi sudah dihapus, tetapi beberapa file foto lokal gagal dibersihkan.',
+                    [{ text: 'OK', onPress: returnToStoreList }]
+                  );
+                  } else if (result.cancellationQueued) {
+                    Alert.alert(
+                      'Visit Dibatalkan',
+                      'Data lokal sudah dihapus. Visit yang sempat tersinkron akan dihapus dari server saat koneksi tersedia.',
+                      [{ text: 'OK', onPress: returnToStoreList }]
+                    );
+                } else {
+                  returnToStoreList();
+                }
+              } catch (error) {
+              logEvent('visit.offline_cancel_failed', { error_code: error?.code });
+                Alert.alert('Gagal Membatalkan Visit', 'Data lokal belum dapat dibersihkan. Coba lagi.');
+              } finally {
+                if (isMountedRef.current) {
+                  setCancelling(false);
+                }
+              }
             },
           },
         ]
@@ -1028,7 +1063,7 @@ function VisitFormScreen({ route, navigation }) {
           </View>
         )}
 
-        {SHOW_MOBILE_RECEIVABLES && canEditVisit && (
+        {CASH_PAYMENT_ENABLED && SHOW_MOBILE_RECEIVABLES && canEditVisit && (
           <View style={styles.cashPaymentCard}>
             <View style={styles.cashPaymentHeader}>
               <View>
