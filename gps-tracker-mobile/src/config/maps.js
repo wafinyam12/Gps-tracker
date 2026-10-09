@@ -3,3 +3,4 @@ export const OSM_TILE_URL = (
 ).trim();
 
 export const OSM_ATTRIBUTION = 'OpenStreetMap contributors';
+export const OSM_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';

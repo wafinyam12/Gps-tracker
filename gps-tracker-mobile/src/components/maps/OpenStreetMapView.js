@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, Linking, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { OSM_ATTRIBUTION, OSM_TILE_URL } from '../../config/maps';
+import { OSM_ATTRIBUTION, OSM_ATTRIBUTION_URL, OSM_TILE_URL } from '../../config/maps';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const DEFAULT_CENTER = {
   latitude: -6.2,
@@ -49,7 +50,7 @@ const normalizePoint = (point) => {
 
 const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 
-const buildMapHtml = () => `<!doctype html>
+const buildMapHtml = (initialCenter, initialZoom) => `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -99,7 +100,7 @@ const buildMapHtml = () => `<!doctype html>
     const map = L.map('map', {
       zoomControl: true,
       attributionControl: true
-    }).setView([${DEFAULT_CENTER.latitude}, ${DEFAULT_CENTER.longitude}], 13);
+    }).setView([${initialCenter.latitude}, ${initialCenter.longitude}], ${initialZoom});
     const markersLayer = L.layerGroup().addTo(map);
     const circlesLayer = L.layerGroup().addTo(map);
     const polylineLayer = L.layerGroup().addTo(map);
@@ -107,7 +108,7 @@ const buildMapHtml = () => `<!doctype html>
 
     L.tileLayer(${safeJson(OSM_TILE_URL)}, {
       maxZoom: 19,
-      attribution: '&copy; ' + ${safeJson(OSM_ATTRIBUTION)}
+      attribution: '&copy; <a href="' + ${safeJson(OSM_ATTRIBUTION_URL)} + '">' + ${safeJson(OSM_ATTRIBUTION)} + '</a>'
     }).addTo(map);
 
     const escapeHtml = (value) => String(value || '')
@@ -228,6 +229,7 @@ const buildMapHtml = () => `<!doctype html>
     window.addEventListener('message', (event) => receive(event.data));
     map.on('moveend', postViewport);
     post({ type: 'mapReady' });
+    postViewport();
   </script>
 </body>
 </html>`;
@@ -275,7 +277,11 @@ const OpenStreetMapView = ({
   const normalizedCenter = normalizePoint(center) || DEFAULT_CENTER;
   const centerKey = `${normalizedCenter.latitude}:${normalizedCenter.longitude}`;
   const previousCenterKeyRef = useRef(centerKey);
-  const html = useMemo(() => buildMapHtml(), []);
+  const initialViewportRef = useRef({ center: normalizedCenter, zoom });
+  const html = useMemo(
+    () => buildMapHtml(initialViewportRef.current.center, initialViewportRef.current.zoom),
+    []
+  );
 
   useEffect(() => {
     if (!mapReady || !webViewRef.current) {
@@ -340,6 +346,21 @@ const OpenStreetMapView = ({
     }
   };
 
+  const handleShouldStartLoadWithRequest = (request) => {
+    if (request.url === 'about:blank') {
+      return true;
+    }
+
+    if (request.url === OSM_ATTRIBUTION_URL) {
+      Linking.openURL(OSM_ATTRIBUTION_URL).catch(() => {
+        logEvent('map.attribution_open_failed', { error_code: 'open_url_failed' });
+        Alert.alert('Atribusi peta tidak dapat dibuka', 'Periksa koneksi internet Anda.');
+      });
+    }
+
+    return false;
+  };
+
   return (
     <View style={[styles.container, style]}>
       <WebView
@@ -351,7 +372,7 @@ const OpenStreetMapView = ({
         allowFileAccess={false}
         allowUniversalAccessFromFileURLs={false}
         mixedContentMode="never"
-        onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
+        onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
         onMessage={handleMessage}
         scrollEnabled={false}
         style={styles.webview}
