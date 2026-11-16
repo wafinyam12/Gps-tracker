@@ -88,6 +88,9 @@ adb install path/to/sales-daily.apk
 
 ## Smoke Test
 
+- Login as superadmin and open **Manajemen User**. Use the `+` button to add a
+  sales account with a branch and SAP sales code; confirm the new account can
+  log in. **Manajemen Cabang** remains available to prepare the branch first.
 - Login with an active sales user.
 - Open store list or available stores.
 - Send location ping.

@@ -7,6 +7,8 @@ import {
   LogOut,
   MapPin,
   UserCircle,
+  Users,
+  UsersRound,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { canVisitStores, getRoleDisplayName, getRoleName } from '../../utils/roles';
@@ -19,6 +21,7 @@ const AdminDashboardScreen = () => {
   const { user, logout } = useAuth();
   const navigation = useNavigation();
   const roleName = getRoleName(user) || 'admin';
+  const canManageUsersAndBranches = ['admin', 'superadmin'].includes(roleName);
   const canVisit = canVisitStores(user);
 
   const menuItems = useMemo(() => ([
@@ -28,6 +31,20 @@ const AdminDashboardScreen = () => {
       icon: <MapPin size={24} color={colors.primary} />,
       screen: 'Home',
     }
+    ] : []),
+    ...(canManageUsersAndBranches ? [
+      {
+        title: 'Manajemen User',
+        subtitle: 'Tambah dan kelola akun sales untuk kunjungan',
+        icon: <Users size={24} color={colors.primary} />,
+        screen: 'UserList',
+      },
+      {
+        title: 'Manajemen Cabang',
+        subtitle: 'Atur cabang untuk penempatan sales',
+        icon: <UsersRound size={24} color={colors.primary} />,
+        screen: 'TeamList',
+      },
     ] : []),
     {
       title: 'Monitoring Kunjungan',
@@ -47,7 +64,7 @@ const AdminDashboardScreen = () => {
       icon: <UserCircle size={24} color={colors.primary} />,
       screen: 'Profile',
     },
-  ]), [canVisit]);
+  ]), [canManageUsersAndBranches, canVisit]);
 
   const quickStats = [
     { label: 'Role', value: getRoleDisplayName(roleName), tone: colors.primary },
