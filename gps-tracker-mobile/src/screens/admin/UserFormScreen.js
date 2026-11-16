@@ -19,6 +19,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Surface from '../../components/ui/Surface';
 import { useAuth } from '../../context/AuthContext';
 import { normalizePhoneNumber } from '../../utils/phone';
+import { formatUserValidationError } from '../../utils/userFormValidation';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
 import { logEvent } from '../../utils/diagnosticLogger';
@@ -160,7 +161,7 @@ const UserFormScreen = () => {
       navigation.goBack();
     } catch (error) {
       logEvent('admin.user_save_failed', { action: isEdit ? 'update' : 'create', status: error.response?.status, error_code: error?.code });
-      const msg = error.response?.data?.message || 'Terjadi kesalahan saat menyimpan data';
+      const msg = formatUserValidationError(error.response?.data);
       Alert.alert('Error', msg);
     } finally {
       setLoading(false);
