@@ -19,8 +19,10 @@ Android package staging:
 xyz.utomodev.salesdaily.staging
 ```
 
-Current staging version: `1.1.4` (Expo SDK 54)
-Current staging `versionCode`: `7`
+Current staging version: `1.1.5` (Expo SDK 54)
+Current staging `versionCode`: `8`
+This APK embeds the restored **Manajemen User** and **Manajemen Cabang** menus;
+it does not rely on the SDK 54 `1.1.4` OTA update to show them.
 
 The queue, store cache, KYC drafts, and queued visit photos are encrypted in
 SQLCipher. Queued photos are BLOBs in `offline-visits-encrypted.db`. This needs
