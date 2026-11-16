@@ -10,6 +10,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
 import { logEvent } from '../utils/diagnosticLogger';
+import { createPhotoSaveCoordinator } from '../utils/photoSaveCoordinator';
 
 const PhotoUploadScreen = () => {
   const navigation = useNavigation();
@@ -23,6 +24,13 @@ const PhotoUploadScreen = () => {
   const [showPreview, setShowPreview] = useState(false);
   const cameraRef = useRef(null);
   const photosRef = useRef(photos);
+  const saveCoordinatorRef = useRef(null);
+  if (!saveCoordinatorRef.current) {
+    saveCoordinatorRef.current = createPhotoSaveCoordinator(
+      (uris) => secureOfflineVisitStorage.deleteTemporaryPhotoFiles(uris)
+    );
+  }
+  const saveCoordinator = saveCoordinatorRef.current;
   const allowedPhotoTypes = new Set(['checkin', 'checkout', 'product', 'other']);
   const resolvedType = allowedPhotoTypes.has(type) ? type : 'other';
 
@@ -37,12 +45,16 @@ const PhotoUploadScreen = () => {
   }, [photos]);
 
   useEffect(() => () => {
-    secureOfflineVisitStorage.deleteTemporaryPhotoFiles(
+    saveCoordinator.cleanupWhenSafe(
       photosRef.current.map((photo) => photo.uri)
     ).then((cleanupFailed) => {
       if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
     }).catch(() => logEvent('visit.photo_temp_cleanup_failed'));
-  }, []);
+  }, [saveCoordinator]);
+
+  useEffect(() => navigation.addListener('beforeRemove', (event) => {
+    if (!saveCoordinator.canLeave()) event.preventDefault();
+  }), [navigation, saveCoordinator]);
 
   const takePicture = async () => {
     if (!cameraRef.current) {
@@ -82,6 +94,7 @@ const PhotoUploadScreen = () => {
   };
 
   const removePhoto = (uri) => {
+    if (saveCoordinator.isSaving()) return;
     setPhotos(prevPhotos => {
       const newPhotos = prevPhotos.filter(p => p.uri !== uri);
       if (newPhotos.length === 0) setShowPreview(false);
@@ -98,6 +111,7 @@ const PhotoUploadScreen = () => {
       return;
     }
 
+    if (!saveCoordinator.begin()) return;
     setIsProcessing(true);
     let photoPayload;
     let savedOrUploaded = false;
@@ -122,6 +136,7 @@ const PhotoUploadScreen = () => {
         savedOrUploaded = true;
         logEvent('visit.photo_queued_offline', { result: 'queued' });
         Alert.alert('Foto Disimpan Offline', 'Foto akan otomatis diunggah setelah visit tersinkron ke server.');
+        saveCoordinator.allowLeave();
         navigation.goBack();
         return;
       }
@@ -134,6 +149,7 @@ const PhotoUploadScreen = () => {
       savedOrUploaded = true;
       logEvent('visit.photo_upload_succeeded');
       Alert.alert('Berhasil', 'Foto kunjungan berhasil diunggah.');
+      saveCoordinator.allowLeave();
       navigation.goBack();
     } catch (e) {
       const netInfo = await NetInfo.fetch();
@@ -156,6 +172,7 @@ const PhotoUploadScreen = () => {
             ? 'Server tidak bisa dijangkau saat ini. Foto disimpan lokal dan akan dicoba sinkronisasi lagi.'
             : 'Data Anda telah disimpan secara offline dan akan disinkronkan saat koneksi kembali.'
         );
+        saveCoordinator.allowLeave();
         navigation.goBack();
       } catch (offlineError) {
         logEvent('visit.photo_offline_save_failed', { error_code: offlineError?.code });
@@ -168,6 +185,7 @@ const PhotoUploadScreen = () => {
         );
         if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
       }
+      saveCoordinator.finish();
       setIsProcessing(false);
     }
   };
@@ -199,7 +217,7 @@ const PhotoUploadScreen = () => {
             renderItem={({ item }) => (
               <View style={styles.previewItem}>
                 <Image source={{ uri: item.uri }} style={styles.previewImage} />
-                <TouchableOpacity style={styles.removeBtn} onPress={() => removePhoto(item.uri)}>
+                <TouchableOpacity style={styles.removeBtn} onPress={() => removePhoto(item.uri)} disabled={isProcessing}>
                   <X size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -208,7 +226,7 @@ const PhotoUploadScreen = () => {
         </View>
 
         <View style={styles.controls}>
-          <TouchableOpacity style={[styles.controlBtn, styles.btnCancel]} onPress={() => setShowPreview(false)}>
+          <TouchableOpacity style={[styles.controlBtn, styles.btnCancel]} onPress={() => setShowPreview(false)} disabled={isProcessing}>
             <RefreshCcw size={28} color="#fff" />
             <Text style={styles.controlText}>Tambah Lagi</Text>
           </TouchableOpacity>

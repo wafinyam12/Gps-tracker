@@ -19,8 +19,8 @@ Android package staging:
 xyz.utomodev.salesdaily.staging
 ```
 
-Current staging version: `1.1.3` (Expo SDK 54)
-Current staging `versionCode`: `6`
+Current staging version: `1.1.4` (Expo SDK 54)
+Current staging `versionCode`: `7`
 
 The queue, store cache, KYC drafts, and queued visit photos are encrypted in
 SQLCipher. Queued photos are BLOBs in `offline-visits-encrypted.db`. This needs
@@ -96,6 +96,12 @@ adb install path/to/sales-daily.apk
 - Reconnect, wait for sync, and confirm the visit and photo appear once on the backend.
 - Check out and confirm the result on the backend.
 - Repeat login and visit access with an admin account.
+- On a device with a pending visit/photo from the old SDK 54 APK, install this
+  APK over it without clearing data; confirm the old visit syncs once.
+- Interrupt that upgrade once during the first launch, reopen, and confirm
+  the same queue/photo is still available and can sync.
+- Queue several visits with up to five photos each while offline, restart, and
+  confirm the queue opens and syncs without freezing or exhausting storage.
 
 Do not clear application data or uninstall an existing APK if it has unsynced
 visits. A device with photo files created by the SDK 58 AES implementation

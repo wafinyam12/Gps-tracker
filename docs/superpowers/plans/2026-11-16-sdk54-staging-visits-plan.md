@@ -32,7 +32,7 @@
 **Files:** `gps-tracker-mobile/package.json`, `gps-tracker-mobile/package-lock.json`, `gps-tracker-mobile/app.json`, `gps-tracker-mobile/AGENTS.md`
 
 - [ ] Pin the SDK 54 package family and add compatible `expo-crypto` and `expo-sqlite`.
-- [ ] Set app version 1.1.3 and Android versionCode 6; enable SQLCipher.
+- [ ] Set app version 1.1.4 and Android versionCode 7; enable SQLCipher.
 - [ ] Install from the lock file and run `expo install --check`.
 
 ### Task 2: Encrypted photo storage

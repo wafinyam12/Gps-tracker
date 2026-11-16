@@ -1,6 +1,6 @@
 {
   "name": "sales-daily-mobile",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "main": "index.js",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -42,7 +42,7 @@
     "web": "expo start --web",
     "doctor": "expo install --check",
     "check": "npm run doctor",
-    "test:offline": "node --test tests/offlineDataMigration.test.mjs tests/sqlcipherPhotoRepository.test.mjs"
+    "test:offline": "node --test tests/offlineDataMigration.test.mjs tests/sqlcipherPhotoRepository.test.mjs tests/encryptedMigrationCommit.test.mjs tests/kycDraftMigration.test.mjs tests/photoSaveCoordinator.test.mjs"
   },
   "private": true
 }

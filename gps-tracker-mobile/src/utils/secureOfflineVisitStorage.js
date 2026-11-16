@@ -9,6 +9,7 @@ import {
   migrateLegacyOfflineData,
 } from './offlineDataMigration';
 import { createSqlcipherPhotoRepository, isSqlcipherPhotoReference } from './sqlcipherPhotoRepository';
+import { commitEncryptedMigration } from './encryptedMigrationCommit';
 
 const DATABASE_NAME = 'offline-visits-encrypted.db';
 const DATABASE_KEY_STORAGE_KEY = 'offline_visits_sqlcipher_key_v1';
@@ -101,12 +102,7 @@ const setRawValue = async (database, key, value) => {
 };
 
 const commitMigration = async (database, entries, markerKey, markerValue) => {
-  await database.withExclusiveTransactionAsync(async (transaction) => {
-    for (const entry of entries) {
-      await setRawValue(transaction, entry.key, entry.value);
-    }
-    await setRawValue(transaction, markerKey, markerValue);
-  });
+  await commitEncryptedMigration(database, entries, markerKey, markerValue, setRawValue);
 };
 
 const hashPhotoIdentity = async (itemId, photoKey) => Crypto.digestStringAsync(

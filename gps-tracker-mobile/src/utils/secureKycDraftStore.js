@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
+import { migrateLegacyKycDraftEntries } from './kycDraftMigration';
 
 const LEGACY_STORAGE_PREFIX = 'customer_kyc_drafts:';
 const DATABASE_KEY_STORAGE_KEY = 'customer_kyc_sqlcipher_key_v1';
@@ -96,27 +97,22 @@ const writeDrafts = async (database, userId, drafts) => {
 
 export const migrateLegacyKycDrafts = async () => {
   const storageKeys = await AsyncStorage.getAllKeys();
-  const legacyKeys = storageKeys.filter((key) => key.startsWith(LEGACY_STORAGE_PREFIX));
-
-  if (legacyKeys.length === 0) return;
+  if (!storageKeys.some((key) => key.startsWith(LEGACY_STORAGE_PREFIX))) return;
 
   const database = await getDatabase();
-
-  for (const storageKey of legacyKeys) {
-    const raw = await AsyncStorage.getItem(storageKey);
-    const userId = storageKey.slice(LEGACY_STORAGE_PREFIX.length) || 'unknown';
-    const stored = await database.getFirstAsync(
-      'SELECT user_id FROM customer_kyc_drafts WHERE user_id = ?',
-      userId
-    );
-
-    if (!stored && raw !== null) {
-      await writeDrafts(database, userId, parseDrafts(raw));
-    }
-
-    // Remove the old unencrypted copy only after the encrypted write succeeds.
-    await AsyncStorage.removeItem(storageKey);
-  }
+  await migrateLegacyKycDraftEntries({
+    legacyStorage: AsyncStorage,
+    encryptedStorage: {
+      getItem: async (userId) => {
+        const row = await database.getFirstAsync(
+          'SELECT drafts_json FROM customer_kyc_drafts WHERE user_id = ?',
+          userId
+        );
+        return row?.drafts_json ?? null;
+      },
+      setItem: async (userId, value) => writeDrafts(database, userId, JSON.parse(value)),
+    },
+  });
 };
 
 export const getKycDrafts = async (userId) => {
@@ -145,5 +141,12 @@ export const saveKycDrafts = async (userId, drafts) => {
 
   const database = await getDatabase();
   await writeDrafts(database, normalizedUserId, drafts);
+  const row = await database.getFirstAsync(
+    'SELECT drafts_json FROM customer_kyc_drafts WHERE user_id = ?',
+    normalizedUserId
+  );
+  if (row?.drafts_json !== JSON.stringify(drafts)) {
+    throw new Error('Verifikasi draft KYC terenkripsi gagal. Data lama tetap disimpan.');
+  }
   await AsyncStorage.removeItem(`${LEGACY_STORAGE_PREFIX}${normalizedUserId}`);
 };
