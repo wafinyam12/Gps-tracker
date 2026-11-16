@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
@@ -25,10 +24,8 @@ import PageHeader from '../components/ui/PageHeader';
 import Surface from '../components/ui/Surface';
 import { colors, radii, shadows, spacing } from '../styles/theme';
 import { normalizePhoneNumber } from '../utils/phone';
+import { getKycDrafts, saveKycDrafts } from '../utils/secureKycDraftStore';
 import { useAuth } from '../context/AuthContext';
-
-const KYC_DRAFT_STORAGE_KEY = 'customer_kyc_drafts';
-const kycDraftStorageKey = (userId) => `${KYC_DRAFT_STORAGE_KEY}:${userId || 'unknown'}`;
 
 const REQUEST_TYPES = [
   { label: 'Penambahan', value: 'add', text: 'Pengajuan penambahan Customer.' },
@@ -99,14 +96,14 @@ const EMPTY_FORM = {
 
 const SAMPLE_FORM = {
   ...EMPTY_FORM,
-  customerName: 'SUSI AWATI (TB. SUMBER SALUYU)',
-  contactPerson: 'SUSI AWATI',
-  phone: '+62 813-2245-2712',
-  addressStreet: 'JL. CICUKANG NO.39',
-  district: 'ARCAMANIK',
-  city: 'BANDUNG',
-  county: 'BANDUNG',
-  province: 'JAWA BARAT',
+  customerName: 'Contoh Toko Makmur',
+  contactPerson: 'Nama Kontak Contoh',
+  phone: '080000000000',
+  addressStreet: 'Jalan Contoh No. 1',
+  district: 'Kecamatan Contoh',
+  city: 'Kota Contoh',
+  county: 'Kabupaten Contoh',
+  province: 'Provinsi Contoh',
   ktpAvailable: true,
   npwpAvailable: true,
   purchaseHistoryAvailable: true,
@@ -282,21 +279,6 @@ const validateForm = (form) => {
   if (!attachments.storePhoto?.uri) errors.push('Foto toko wajib dilampirkan.');
 
   return errors;
-};
-
-const readDrafts = async (userId) => {
-  const raw = await AsyncStorage.getItem(kycDraftStorageKey(userId));
-
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const drafts = JSON.parse(raw);
-    return Array.isArray(drafts) ? drafts : [];
-  } catch (error) {
-    return [];
-  }
 };
 
 const Section = ({ title, children, meta }) => (
@@ -536,6 +518,11 @@ const CustomerKycScreen = ({ navigation }) => {
   };
 
   const saveDraft = async () => {
+    if (!user?.id) {
+      Alert.alert('Sesi Tidak Tersedia', 'Silakan login kembali sebelum menyimpan draft KYC.');
+      return;
+    }
+
     const errors = validateForm(form);
 
     if (errors.length > 0) {
@@ -545,7 +532,7 @@ const CustomerKycScreen = ({ navigation }) => {
 
     setSaving(true);
     try {
-      const drafts = await readDrafts(user?.id);
+      const drafts = await getKycDrafts(user.id);
       const now = new Date().toISOString();
       const draft = {
         id: `kyc-${Date.now()}`,
@@ -577,10 +564,7 @@ const CustomerKycScreen = ({ navigation }) => {
         sap_payload: sapPayload,
       };
 
-      await AsyncStorage.setItem(
-        kycDraftStorageKey(user?.id),
-        JSON.stringify([draft, ...drafts].slice(0, 50))
-      );
+      await saveKycDrafts(user.id, [draft, ...drafts].slice(0, 50));
 
       setLastSavedAt(now);
       Alert.alert('Draft Tersimpan', 'Draft KYC customer siap direview.');
@@ -659,19 +643,19 @@ const CustomerKycScreen = ({ navigation }) => {
               label="Nama Customer"
               value={form.customerName}
               onChangeText={(value) => setField('customerName', value)}
-              placeholder="SUSI AWATI (TB. SUMBER SALUYU)"
+              placeholder="Contoh Toko Makmur"
             />
             <Field
               label="Nama PIC"
               value={form.contactPerson}
               onChangeText={(value) => setField('contactPerson', value)}
-              placeholder="SUSI AWATI"
+              placeholder="Nama Kontak Contoh"
             />
             <Field
               label="No Telepon / WhatsApp"
               value={form.phone}
               onChangeText={(value) => setField('phone', value)}
-              placeholder="+62 813-2245-2712"
+              placeholder="08xxxxxxxxxx"
               keyboardType="phone-pad"
             />
             <Field
@@ -688,7 +672,7 @@ const CustomerKycScreen = ({ navigation }) => {
               label="Alamat"
               value={form.addressStreet}
               onChangeText={(value) => setField('addressStreet', value)}
-              placeholder="JL. CICUKANG NO.39"
+              placeholder="Jalan Contoh No. 1"
             />
             <View style={styles.twoColumn}>
               <Field
@@ -710,7 +694,7 @@ const CustomerKycScreen = ({ navigation }) => {
               label="Kecamatan"
               value={form.district}
               onChangeText={(value) => setField('district', value)}
-              placeholder="ARCAMANIK"
+              placeholder="Kecamatan Contoh"
             />
             <Field
               label="Kota / Kabupaten"
@@ -722,19 +706,19 @@ const CustomerKycScreen = ({ navigation }) => {
                   county: current.county || value,
                 }));
               }}
-              placeholder="BANDUNG"
+              placeholder="Kota Contoh"
             />
             <Field
               label="County SAP"
               value={form.county}
               onChangeText={(value) => setField('county', value)}
-              placeholder="BANDUNG"
+              placeholder="Kabupaten Contoh"
             />
             <Field
               label="Provinsi"
               value={form.province}
               onChangeText={(value) => setField('province', value)}
-              placeholder="JAWA BARAT"
+              placeholder="Provinsi Contoh"
             />
             <Field
               label="Kode Pos"

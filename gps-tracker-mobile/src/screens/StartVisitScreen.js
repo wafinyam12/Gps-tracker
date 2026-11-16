@@ -159,7 +159,11 @@ const StartVisitScreen = ({ navigation }) => {
 
       const { items, meta } = extractAvailableStoresPayload(response);
       const normalized = items.map(normalizeStore);
-      await offlineQueue.cacheStores(normalized);
+      try {
+        await offlineQueue.cacheStores(normalized);
+      } catch (cacheError) {
+        logEvent('visit.stores_cache_failed', { error_code: cacheError?.code });
+      }
 
       setStores((current) => {
         if (append && nextPage > 1) {
@@ -208,14 +212,19 @@ const StartVisitScreen = ({ navigation }) => {
 
       logEvent('visit.stores_fetch_failed', { status: error.response?.status, error_code: error.code });
       if (!append) {
-        const cached = await offlineQueue.cachedStores();
+        let cached = { stores: [] };
+        try {
+          cached = await offlineQueue.cachedStores();
+        } catch (cacheError) {
+          logEvent('visit.stores_cache_read_failed', { error_code: cacheError?.code });
+        }
         const cachedStores = Array.isArray(cached.stores) ? cached.stores : [];
         setStores(cachedStores);
         setSelectedStore(cachedStores[0] || null);
         setHasMore(false);
         setNotice(cachedStores.length > 0
           ? 'Mode offline: memakai daftar customer tersimpan. Data akan disinkronkan saat koneksi kembali.'
-          : (error.response?.data?.message || 'Daftar customer belum pernah tersimpan di perangkat ini.'));
+          : (error.response?.data?.message || 'Daftar customer belum pernah tersimpan di perangkat ini atau penyimpanan offline belum siap.'));
       } else {
         Alert.alert('Gagal', error.response?.data?.message || 'Gagal memuat data toko berikutnya.');
       }

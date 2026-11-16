@@ -5,6 +5,7 @@ import { Camera as CameraIcon, RefreshCcw, X, Check } from 'lucide-react-native'
 import { visitService } from '../api/services/visitService';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { offlineQueue } from '../utils/offlineQueue';
+import { secureOfflineVisitStorage } from '../utils/secureOfflineVisitStorage';
 import NetInfo from '@react-native-community/netinfo';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +22,7 @@ const PhotoUploadScreen = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const cameraRef = useRef(null);
+  const photosRef = useRef(photos);
   const allowedPhotoTypes = new Set(['checkin', 'checkout', 'product', 'other']);
   const resolvedType = allowedPhotoTypes.has(type) ? type : 'other';
 
@@ -29,6 +31,18 @@ const PhotoUploadScreen = () => {
       requestPermission();
     }
   }, [permission]);
+
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
+  useEffect(() => () => {
+    secureOfflineVisitStorage.deleteTemporaryPhotoFiles(
+      photosRef.current.map((photo) => photo.uri)
+    ).then((cleanupFailed) => {
+      if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
+    }).catch(() => logEvent('visit.photo_temp_cleanup_failed'));
+  }, []);
 
   const takePicture = async () => {
     if (!cameraRef.current) {
@@ -41,9 +55,11 @@ const PhotoUploadScreen = () => {
       return;
     }
 
+    let originalUri = null;
     try {
       const options = { quality: 0.7, base64: false };
       const data = await cameraRef.current.takePictureAsync(options);
+      originalUri = data.uri;
 
       const manipulated = await ImageManipulator.manipulateAsync(
         data.uri,
@@ -57,6 +73,11 @@ const PhotoUploadScreen = () => {
     } catch (error) {
       logEvent('visit.photo_capture_failed', { error_code: error?.code });
       Alert.alert('Error', 'Gagal mengambil foto. Coba lagi.');
+    } finally {
+      if (originalUri) {
+        const cleanupFailed = await secureOfflineVisitStorage.deleteTemporaryPhotoFiles([originalUri]);
+        if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
+      }
     }
   };
 
@@ -66,6 +87,9 @@ const PhotoUploadScreen = () => {
       if (newPhotos.length === 0) setShowPreview(false);
       return newPhotos;
     });
+    secureOfflineVisitStorage.deleteTemporaryPhotoFiles([uri]).then((cleanupFailed) => {
+      if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
+    }).catch(() => logEvent('visit.photo_temp_cleanup_failed'));
   };
 
   const uploadPhotos = async () => {
@@ -76,6 +100,7 @@ const PhotoUploadScreen = () => {
 
     setIsProcessing(true);
     let photoPayload;
+    let savedOrUploaded = false;
     try {
       photoPayload = {
         type: resolvedType,
@@ -94,6 +119,7 @@ const PhotoUploadScreen = () => {
 
       if (offlineVisitId) {
         await offlineQueue.enqueueVisitPhotos(offlineVisitId, photoPayload);
+        savedOrUploaded = true;
         logEvent('visit.photo_queued_offline', { result: 'queued' });
         Alert.alert('Foto Disimpan Offline', 'Foto akan otomatis diunggah setelah visit tersinkron ke server.');
         navigation.goBack();
@@ -105,6 +131,7 @@ const PhotoUploadScreen = () => {
         userId: userId || user?.id,
         username: username || user?.name,
       });
+      savedOrUploaded = true;
       logEvent('visit.photo_upload_succeeded');
       Alert.alert('Berhasil', 'Foto kunjungan berhasil diunggah.');
       navigation.goBack();
@@ -121,6 +148,7 @@ const PhotoUploadScreen = () => {
           visit_log_id: visitLogId,
           ...photoPayload,
         });
+        savedOrUploaded = true;
         logEvent('visit.photo_saved_for_retry');
         Alert.alert(
           isOnline ? 'Upload gagal' : 'Offline Mode',
@@ -134,6 +162,12 @@ const PhotoUploadScreen = () => {
         Alert.alert('Gagal', 'Gagal mengunggah foto dan gagal menyimpan ke antrian offline.');
       }
     } finally {
+      if (savedOrUploaded && photoPayload?.photos) {
+        const cleanupFailed = await secureOfflineVisitStorage.deleteTemporaryPhotoFiles(
+          photoPayload.photos.map((photo) => photo.uri)
+        );
+        if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
+      }
       setIsProcessing(false);
     }
   };

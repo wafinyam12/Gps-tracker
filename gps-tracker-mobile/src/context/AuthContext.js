@@ -6,6 +6,8 @@ import authEvents from '../utils/authEvents';
 import { canTrackLocation } from '../utils/roles';
 import { startBackgroundTracking, stopBackgroundTracking } from '../utils/backgroundTracker';
 import { logEvent } from '../utils/diagnosticLogger';
+import { migrateLegacyKycDrafts } from '../utils/secureKycDraftStore';
+import { offlineQueue } from '../utils/offlineQueue';
 
 const AuthContext = createContext();
 
@@ -232,6 +234,12 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       logEvent('auth.session_restore_failed', { status: error.response?.status, error_code: error.code });
     } finally {
+      await migrateLegacyKycDrafts().catch((error) => {
+        logEvent('kyc.legacy_drafts_migration_failed', { error_code: error?.code });
+      });
+      await offlineQueue.cleanupPendingPhotoSources().catch((error) => {
+        logEvent('offline.plaintext_photo_cleanup_failed', { error_code: error?.code });
+      });
       setLoading(false);
     }
   };

@@ -67,7 +67,22 @@ const ProfileScreen = () => {
   };
 
   const handleLogout = async () => {
-    const pending = await offlineQueue.getQueueSize();
+    let pending;
+    try {
+      pending = await offlineQueue.getQueueSize();
+    } catch (error) {
+      Alert.alert('Belum dapat logout', 'Status antrean kunjungan tidak dapat dibaca dari penyimpanan terenkripsi. Coba buka ulang aplikasi; data lokal tidak dihapus.');
+      return;
+    }
+
+    const logoutSafely = async () => {
+      try {
+        await logout();
+      } catch (error) {
+        Alert.alert('Logout belum berhasil', 'Sesi akun belum dapat dibersihkan dengan aman. Coba lagi setelah memeriksa penyimpanan perangkat.');
+      }
+    };
+
     if (pending > 0) {
       Alert.alert(
         'Data offline belum terkirim',
@@ -77,20 +92,31 @@ const ProfileScreen = () => {
           {
             text: 'Sinkronkan lalu keluar',
             onPress: async () => {
-              const result = await offlineQueue.processQueue({ silent: true });
-              if (result.pending > 0) {
+              try {
+                const result = await offlineQueue.processQueue({ silent: true });
+                if (result.pending > 0) {
+                  Alert.alert('Belum dapat logout', 'Masih ada data offline yang belum terkirim. Periksa koneksi atau pilih hapus data offline jika memang ingin menghapusnya.');
+                  return;
+                }
+                await logoutSafely();
+              } catch (error) {
                 Alert.alert('Belum dapat logout', 'Masih ada data offline yang belum terkirim. Periksa koneksi atau pilih hapus data offline jika memang ingin menghapusnya.');
-                return;
               }
-              await logout();
             },
           },
           {
             text: 'Hapus & keluar',
             style: 'destructive',
             onPress: async () => {
-              await offlineQueue.clearQueue();
-              await logout();
+              try {
+                const result = await offlineQueue.clearQueue();
+                if (result.cleanupFailed) {
+                  Alert.alert('Foto sedang dibersihkan', 'Data antrean sudah dihapus. Pembersihan foto sementara akan dicoba lagi saat aplikasi dibuka.');
+                }
+                await logoutSafely();
+              } catch (error) {
+                Alert.alert('Belum dapat logout', 'Antrean offline tidak dapat dihapus dari penyimpanan terenkripsi. Data tetap tersimpan di perangkat.');
+              }
             },
           },
         ],
@@ -100,7 +126,7 @@ const ProfileScreen = () => {
 
     Alert.alert('Keluar akun', 'Anda yakin ingin logout dari perangkat ini?', [
       { text: 'Batal', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
+      { text: 'Logout', style: 'destructive', onPress: logoutSafely },
     ]);
   };
 

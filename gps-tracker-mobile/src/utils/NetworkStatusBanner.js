@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { Alert, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { WifiOff, RefreshCw, Check } from 'lucide-react-native';
 import { offlineQueue } from './offlineQueue';
@@ -8,6 +8,7 @@ const NetworkStatusBanner = () => {
   const [isConnected, setIsConnected] = useState(true);
   const [queueSize, setQueueSize] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [storageUnavailable, setStorageUnavailable] = useState(false);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
@@ -18,26 +19,47 @@ const NetworkStatusBanner = () => {
   }, []);
 
   const updateQueueSize = async () => {
-    const size = await offlineQueue.getQueueSize();
-    setQueueSize(size);
+    try {
+      const size = await offlineQueue.getQueueSize();
+      setQueueSize(size);
+      setStorageUnavailable(false);
+      return true;
+    } catch (error) {
+      setStorageUnavailable(true);
+      return false;
+    }
   };
 
   const handleSync = async () => {
     setIsSyncing(true);
-    await offlineQueue.processQueue();
-    await updateQueueSize();
-    setIsSyncing(false);
+    try {
+      await offlineQueue.processQueue();
+      const available = await updateQueueSize();
+      if (!available) {
+        Alert.alert('Penyimpanan offline belum siap', 'Data kunjungan tetap dilindungi. Coba buka ulang aplikasi sebelum menyinkronkan.');
+      }
+    } catch (error) {
+      setStorageUnavailable(true);
+      Alert.alert('Sinkronisasi belum berhasil', 'Data kunjungan tetap tersimpan. Periksa koneksi dan penyimpanan perangkat, lalu coba lagi.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // If online and no queue, hide banner
-  if (isConnected && queueSize === 0) {
+  if (isConnected && queueSize === 0 && !storageUnavailable) {
     return null;
   }
 
   return (
-    <View style={[styles.banner, { backgroundColor: isConnected ? '#FEF3C7' : '#FEE2E2' }]}>
+    <View style={[styles.banner, { backgroundColor: isConnected && !storageUnavailable ? '#FEF3C7' : '#FEE2E2' }]}>
       <View style={styles.content}>
-        {isConnected ? (
+        {storageUnavailable ? (
+          <>
+            <WifiOff size={16} color="#991B1B" />
+            <Text style={styles.textOffline}>Penyimpanan offline tidak tersedia</Text>
+          </>
+        ) : isConnected ? (
           <>
             <RefreshCw size={16} color="#92400E" />
             <Text style={styles.text}>Sinkronisasi Tertunda</Text>
@@ -52,7 +74,7 @@ const NetworkStatusBanner = () => {
         )}
       </View>
 
-      {isConnected && queueSize > 0 && (
+      {isConnected && queueSize > 0 && !storageUnavailable && (
         <TouchableOpacity onPress={handleSync} disabled={isSyncing} style={styles.syncBtn}>
           <Text style={styles.syncText}>
             {isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}

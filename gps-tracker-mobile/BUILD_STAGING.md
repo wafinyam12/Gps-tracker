@@ -19,12 +19,23 @@ Android package staging:
 xyz.utomodev.salesdaily.staging
 ```
 
-Current staging `versionCode`: `2`
+Current staging version: `1.1.3` (Expo SDK 54)
+Current staging `versionCode`: `6`
+
+The queue, store cache, KYC drafts, and queued visit photos are encrypted in
+SQLCipher. Queued photos are BLOBs in `offline-visits-encrypted.db`. This needs
+a **new APK**; an OTA update cannot add SQLCipher to an older APK.
+
+This source is in the `staging/sdk54-uat` Git worktree. The original
+`security/mobile-security-hardening-followup` checkout retains SDK 58 for
+investigating its startup crash. Do not mix their `node_modules` or lock files.
 
 ## Check Project
 
 ```bash
+npm ci
 npm run check
+npm run test:offline
 ```
 
 ## Build APK With EAS
@@ -32,19 +43,13 @@ npm run check
 Run EAS from the mobile app folder, not from the repository root:
 
 ```bash
-cd "D:\gps tracker\gps-tracker-mobile"
+cd "D:\gps tracker\tmp\sdk54-staging\gps-tracker-mobile"
 ```
 
 Login once:
 
 ```bash
 npx eas-cli login
-```
-
-Configure EAS project if this is the first build:
-
-```bash
-npx eas-cli build:configure
 ```
 
 Build installable Android APK:
@@ -86,5 +91,13 @@ adb install path/to/sales-daily.apk
 - Login with an active sales user.
 - Open store list or available stores.
 - Send location ping.
-- Try check-in and checkout.
-- Upload a visit photo.
+- Turn off mobile data and Wi-Fi, then check in and take a photo.
+- Force close and reopen the app while offline; confirm the queued visit remains.
+- Reconnect, wait for sync, and confirm the visit and photo appear once on the backend.
+- Check out and confirm the result on the backend.
+- Repeat login and visit access with an admin account.
+
+Do not clear application data or uninstall an existing APK if it has unsynced
+visits. A device with photo files created by the SDK 58 AES implementation
+cannot upload them from this SDK 54 APK; leave that data intact and use an
+SDK 58 recovery build.

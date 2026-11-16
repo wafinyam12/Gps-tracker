@@ -1,15 +1,16 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system/legacy';
 import { Alert } from 'react-native';
 import apiClient from '../api/client';
 import { logEvent } from './diagnosticLogger';
+import { secureOfflineVisitStorage } from './secureOfflineVisitStorage';
+import {
+  OFFLINE_QUEUE_KEY,
+  OFFLINE_STORE_CACHE_KEY,
+  OFFLINE_SYNC_NOTICE_KEY,
+  OFFLINE_VISIT_MAP_KEY,
+} from './offlineDataMigration';
 
-const OFFLINE_QUEUE_KEY = 'offlineQueue';
-const OFFLINE_VISIT_MAP_KEY = 'offlineVisitServerMap';
-const OFFLINE_STORE_CACHE_KEY = 'offlineAvailableStores';
-const OFFLINE_SYNC_NOTICE_KEY = 'offlineSyncSuccessNotice';
 const ALLOWED_PHOTO_TYPES = new Set(['checkin', 'checkout', 'product', 'other']);
 
 let queueProcessingPromise = null;
@@ -34,29 +35,41 @@ const createUuid = () => {
 };
 
 const readJson = async (key, fallback) => {
+  let raw;
   try {
-    const raw = await AsyncStorage.getItem(key);
-    const parsed = raw ? JSON.parse(raw) : fallback;
-    if (key === OFFLINE_QUEUE_KEY && Array.isArray(parsed)) {
-      const sanitized = parsed.map((item) => ({
-        ...item,
-        headers: sanitizeQueuedHeaders(item?.headers),
-        ...(item?.lastError ? { lastError: 'Item antrean perlu diperiksa.' } : {}),
-      }));
-      if (JSON.stringify(sanitized) !== JSON.stringify(parsed)) {
-        await AsyncStorage.setItem(key, JSON.stringify(sanitized));
-      }
-      return sanitized;
-    }
-    return parsed;
+    raw = await secureOfflineVisitStorage.getItem(key);
   } catch (error) {
     logEvent('offline.storage_read_failed', { error_code: error?.code });
-    return fallback;
+    throw error;
   }
+
+  if (raw === null) return fallback;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    logEvent('offline.storage_parse_failed');
+    throw new Error('Data kunjungan offline tidak dapat dibaca. Data tetap tersimpan di perangkat.');
+  }
+
+  if (key === OFFLINE_QUEUE_KEY && Array.isArray(parsed)) {
+    const sanitized = parsed.map((item) => ({
+      ...item,
+      headers: sanitizeQueuedHeaders(item?.headers),
+      ...(item?.lastError ? { lastError: 'Item antrean perlu diperiksa.' } : {}),
+    }));
+    if (JSON.stringify(sanitized) !== JSON.stringify(parsed)) {
+      await secureOfflineVisitStorage.setItem(key, JSON.stringify(sanitized));
+    }
+    return sanitized;
+  }
+
+  return parsed;
 };
 
 const writeJson = async (key, value) => {
-  await AsyncStorage.setItem(key, JSON.stringify(value));
+  await secureOfflineVisitStorage.setItem(key, JSON.stringify(value));
 };
 
 const sanitizeQueuedHeaders = (headers) => Object.fromEntries(
@@ -82,60 +95,42 @@ const currentUserId = async () => {
 
 const persistQueuedPhotos = async (endpoint, data, itemId) => {
   if (endpoint !== '/visit/photos' || !Array.isArray(data?.photos)) {
-    return { data, copiedUris: [] };
+    return { data, copiedUris: [], sourceUris: [] };
   }
 
-  const documentDirectory = FileSystem.documentDirectory;
-  if (!documentDirectory) {
-    throw new Error('Penyimpanan lokal foto offline tidak tersedia.');
-  }
-
-  const destinationDirectory = `${documentDirectory}offline-visit-photos/${itemId}/`;
-  await FileSystem.makeDirectoryAsync(destinationDirectory, { intermediates: true });
   const copiedUris = [];
+  const sourceUris = [];
   const persistedPhotos = [];
 
   try {
     for (const [index, photo] of data.photos.entries()) {
-      if (!photo.uri || photo.uri.startsWith(documentDirectory)) {
+      if (!photo.uri) {
         persistedPhotos.push(photo);
         continue;
       }
 
-      const fileKey = photo.client_uuid || String(index);
-      const destinationUri = `${destinationDirectory}${fileKey}.jpg`;
-      await FileSystem.copyAsync({ from: photo.uri, to: destinationUri });
-      copiedUris.push(destinationUri);
-      persistedPhotos.push({ ...photo, uri: destinationUri });
+      const photoKey = photo.client_uuid || String(index);
+      const encryptedUri = await secureOfflineVisitStorage.persistPhoto(photo.uri, itemId, photoKey);
+      if (encryptedUri !== photo.uri) {
+        copiedUris.push(encryptedUri);
+        sourceUris.push(photo.uri);
+      }
+      persistedPhotos.push({ ...photo, uri: encryptedUri });
     }
   } catch (error) {
-    await Promise.all(copiedUris.map((uri) => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})));
-    await FileSystem.deleteAsync(destinationDirectory, { idempotent: true }).catch(() => {});
+    await secureOfflineVisitStorage.deletePhotoFiles(copiedUris);
     throw error;
   }
 
-  return { data: { ...data, photos: persistedPhotos }, copiedUris };
+  return { data: { ...data, photos: persistedPhotos }, copiedUris, sourceUris };
 };
 
 const deleteLocalPhotoFiles = async (uris) => {
-  let cleanupFailed = false;
-  const appDirectories = [FileSystem.cacheDirectory, FileSystem.documentDirectory].filter(Boolean);
-  for (const uri of new Set(uris)) {
-    if (!uri || !appDirectories.some((directory) => uri.startsWith(directory))) {
-      continue;
-    }
-
-    try {
-      await FileSystem.deleteAsync(uri, { idempotent: true });
-    } catch (error) {
-      cleanupFailed = true;
-    }
-  }
-
-  return cleanupFailed;
+  return secureOfflineVisitStorage.deletePhotoFiles(uris);
 };
 
-const buildRequestPayload = (endpoint, data, headers = {}) => {
+const buildRequestPayload = async (item, data) => {
+  const { endpoint, headers = {} } = item;
   if (endpoint === '/visit/photos' && data && Array.isArray(data.photos)) {
     const formData = new FormData();
     const sanitizedHeaders = Object.fromEntries(
@@ -155,21 +150,34 @@ const buildRequestPayload = (endpoint, data, headers = {}) => {
       formData.append(key, String(value));
     });
 
-    data.photos.forEach((photo, index) => {
-      formData.append('photos[]', {
-        uri: photo.uri,
-        name: photo.name || `photo_${index}.jpg`,
-        type: photo.type || 'image/jpeg',
-      });
-      if (photo.client_uuid) {
-        formData.append('photo_client_uuids[]', photo.client_uuid);
+    const temporaryUris = [];
+    try {
+      for (const [index, photo] of data.photos.entries()) {
+        const photoKey = photo.client_uuid || String(index);
+        const uploadUri = await secureOfflineVisitStorage.materializePhotoForUpload(
+          photo.uri,
+          item.id,
+          photoKey
+        );
+        temporaryUris.push(uploadUri);
+        formData.append('photos[]', {
+          uri: uploadUri,
+          name: photo.name || `photo_${index}.jpg`,
+          type: photo.type || 'image/jpeg',
+        });
+        if (photo.client_uuid) {
+          formData.append('photo_client_uuids[]', photo.client_uuid);
+        }
       }
-    });
+    } catch (error) {
+      await Promise.all(temporaryUris.map((uri) => secureOfflineVisitStorage.deleteUploadTempFile(uri)));
+      throw error;
+    }
 
-    return { data: formData, headers: sanitizedHeaders };
+    return { data: formData, headers: sanitizedHeaders, temporaryUris };
   }
 
-  return { data, headers };
+  return { data, headers, temporaryUris: [] };
 };
 
 const responseVisitId = (response) => {
@@ -237,14 +245,23 @@ const executeItem = async (item) => {
     data = { ...item.data, visit_log_id: serverVisitId };
   }
 
-  const payload = buildRequestPayload(item.endpoint, data, item.headers);
-  await apiClient({
-    method: item.method,
-    url: item.endpoint,
-    data: payload.data,
-    headers: payload.headers,
-    ...requestConfig,
-  });
+  const payload = await buildRequestPayload(item, data);
+  try {
+    await apiClient({
+      method: item.method,
+      url: item.endpoint,
+      data: payload.data,
+      headers: payload.headers,
+      ...requestConfig,
+    });
+  } finally {
+    const cleanupFailed = (await Promise.all(
+      payload.temporaryUris.map((uri) => secureOfflineVisitStorage.deleteUploadTempFile(uri))
+    )).some(Boolean);
+    if (cleanupFailed) {
+      logEvent('offline.upload_temp_cleanup_failed');
+    }
+  }
 };
 
 const updateQueuedItem = async (itemId, updater) => withQueueMutation(async () => {
@@ -264,12 +281,19 @@ const removeQueuedItem = async (itemId) => {
     const queue = await readJson(OFFLINE_QUEUE_KEY, []);
     const removedItem = queue.find((item) => item.id === itemId);
     await writeJson(OFFLINE_QUEUE_KEY, queue.filter((item) => item.id !== itemId));
-    return Array.isArray(removedItem?.data?.photos)
-      ? removedItem.data.photos.map((photo) => photo.uri)
-      : [];
+    return {
+      encrypted: Array.isArray(removedItem?.data?.photos)
+        ? removedItem.data.photos.map((photo) => photo.uri)
+        : [],
+      temporary: Array.isArray(removedItem?.pendingPhotoSourceCleanupUris)
+        ? removedItem.pendingPhotoSourceCleanupUris
+        : [],
+    };
   });
 
-  return deleteLocalPhotoFiles(photoUris);
+  const encryptedCleanupFailed = await deleteLocalPhotoFiles(photoUris.encrypted);
+  const temporaryCleanupFailed = await secureOfflineVisitStorage.deleteTemporaryPhotoFiles(photoUris.temporary);
+  return encryptedCleanupFailed || temporaryCleanupFailed;
 };
 
 export const offlineQueue = {
@@ -282,11 +306,12 @@ export const offlineQueue = {
   async addItem(endpoint, method, data, headers = {}, metadata = {}) {
     const item = await withQueueMutation(async () => {
       const id = createUuid();
-      const [queue, ownerUserId, persistedPayload] = await Promise.all([
-        readJson(OFFLINE_QUEUE_KEY, []),
-        currentUserId(),
-        persistQueuedPhotos(endpoint, data, id),
-      ]);
+      const queue = await readJson(OFFLINE_QUEUE_KEY, []);
+      const ownerUserId = await currentUserId();
+      if (!ownerUserId) {
+        throw new Error('Identitas akun tidak tersedia. Kunjungan offline tidak disimpan.');
+      }
+      const persistedPayload = await persistQueuedPhotos(endpoint, data, id);
       const item = {
         id,
         endpoint,
@@ -296,17 +321,38 @@ export const offlineQueue = {
         timestamp: new Date().toISOString(),
         retries: 0,
         ownerUserId,
+        ...(persistedPayload.sourceUris.length > 0
+          ? { pendingPhotoSourceCleanupUris: persistedPayload.sourceUris }
+          : {}),
         ...metadata,
       };
       queue.push(item);
       try {
         await writeJson(OFFLINE_QUEUE_KEY, queue);
       } catch (error) {
-        await Promise.all(persistedPayload.copiedUris.map((uri) => (
-          FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})
-        )));
+        await secureOfflineVisitStorage.deletePhotoFiles(persistedPayload.copiedUris);
         throw error;
       }
+
+      let sourceCleanupFailed = false;
+      try {
+        sourceCleanupFailed = await secureOfflineVisitStorage.deleteTemporaryPhotoFiles(
+          persistedPayload.sourceUris
+        );
+      } catch (error) {
+        sourceCleanupFailed = true;
+      }
+      if (sourceCleanupFailed) {
+        logEvent('offline.plaintext_photo_cleanup_failed');
+      } else if (persistedPayload.sourceUris.length > 0) {
+        delete item.pendingPhotoSourceCleanupUris;
+        try {
+          await writeJson(OFFLINE_QUEUE_KEY, queue);
+        } catch (error) {
+          // The item and retry pointer were already committed with the encrypted photo.
+        }
+      }
+
       return item;
     });
     if (queueProcessingPromise) {
@@ -366,6 +412,9 @@ export const offlineQueue = {
       const photoUris = removedItems.flatMap((item) => (
         Array.isArray(item.data?.photos) ? item.data.photos.map((photo) => photo.uri) : []
       ));
+      const temporaryPhotoUris = removedItems.flatMap((item) => (
+        Array.isArray(item.pendingPhotoSourceCleanupUris) ? item.pendingPhotoSourceCleanupUris : []
+      ));
       const visitMap = await readJson(OFFLINE_VISIT_MAP_KEY, {});
       const mapping = visitMap[localVisitId];
       const serverVisitId = typeof mapping === 'object' ? mapping?.visitLogId : mapping;
@@ -392,7 +441,7 @@ export const offlineQueue = {
 
       await writeJson(OFFLINE_QUEUE_KEY, remainingItems);
       await writeJson(OFFLINE_VISIT_MAP_KEY, visitMap);
-      return { photoUris, cancellationQueued };
+      return { photoUris, temporaryPhotoUris, cancellationQueued };
     });
 
     if (removal.cancellationQueued && queueProcessingPromise) {
@@ -404,9 +453,16 @@ export const offlineQueue = {
       });
     }
 
-    const cleanupFailed = await deleteLocalPhotoFiles(removal.photoUris);
+    const encryptedCleanupFailed = await deleteLocalPhotoFiles(removal.photoUris);
+    const temporaryCleanupFailed = await secureOfflineVisitStorage.deleteTemporaryPhotoFiles(
+      removal.temporaryPhotoUris
+    );
 
-    return { removed: true, cleanupFailed, cancellationQueued: removal.cancellationQueued };
+    return {
+      removed: true,
+      cleanupFailed: encryptedCleanupFailed || temporaryCleanupFailed,
+      cancellationQueued: removal.cancellationQueued,
+    };
   },
 
   async claimUnownedItems(ownerUserId) {
@@ -585,7 +641,7 @@ export const offlineQueue = {
         return null;
       }
 
-      await AsyncStorage.removeItem(OFFLINE_SYNC_NOTICE_KEY);
+      await secureOfflineVisitStorage.removeItem(OFFLINE_SYNC_NOTICE_KEY);
       return notice;
     });
   },
@@ -595,21 +651,55 @@ export const offlineQueue = {
     return queue.length;
   },
 
+  async cleanupPendingPhotoSources() {
+    return withQueueMutation(async () => {
+      const queue = await readJson(OFFLINE_QUEUE_KEY, []);
+      let changed = false;
+      let cleanupFailed = false;
+
+      for (const item of queue) {
+        const pendingUris = item.pendingPhotoSourceCleanupUris;
+        if (!Array.isArray(pendingUris) || pendingUris.length === 0) continue;
+
+        try {
+          if (await secureOfflineVisitStorage.deleteTemporaryPhotoFiles(pendingUris)) {
+            cleanupFailed = true;
+          } else {
+            delete item.pendingPhotoSourceCleanupUris;
+            changed = true;
+          }
+        } catch (error) {
+          cleanupFailed = true;
+        }
+      }
+
+      if (changed) await writeJson(OFFLINE_QUEUE_KEY, queue);
+      return { cleanupFailed };
+    });
+  },
+
   async clearQueue() {
     const ownerUserId = await currentUserId();
     const photoUris = await withQueueMutation(async () => {
       const queue = await readJson(OFFLINE_QUEUE_KEY, []);
-      await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
-      await AsyncStorage.removeItem(OFFLINE_VISIT_MAP_KEY);
+      await secureOfflineVisitStorage.removeItem(OFFLINE_QUEUE_KEY);
+      await secureOfflineVisitStorage.removeItem(OFFLINE_VISIT_MAP_KEY);
       if (ownerUserId) {
-        await AsyncStorage.removeItem(`${OFFLINE_STORE_CACHE_KEY}:${ownerUserId}`);
+        await secureOfflineVisitStorage.removeItem(`${OFFLINE_STORE_CACHE_KEY}:${ownerUserId}`);
       }
-      await AsyncStorage.removeItem(OFFLINE_STORE_CACHE_KEY);
-      await AsyncStorage.removeItem(OFFLINE_SYNC_NOTICE_KEY);
-      return queue.flatMap((item) => (
-        Array.isArray(item.data?.photos) ? item.data.photos.map((photo) => photo.uri) : []
-      ));
+      await secureOfflineVisitStorage.removeItem(OFFLINE_STORE_CACHE_KEY);
+      await secureOfflineVisitStorage.removeItem(OFFLINE_SYNC_NOTICE_KEY);
+      return {
+        encrypted: queue.flatMap((item) => (
+          Array.isArray(item.data?.photos) ? item.data.photos.map((photo) => photo.uri) : []
+        )),
+        temporary: queue.flatMap((item) => (
+          Array.isArray(item.pendingPhotoSourceCleanupUris) ? item.pendingPhotoSourceCleanupUris : []
+        )),
+      };
     });
-    return { cleanupFailed: await deleteLocalPhotoFiles(photoUris) };
+    const encryptedCleanupFailed = await deleteLocalPhotoFiles(photoUris.encrypted);
+    const temporaryCleanupFailed = await secureOfflineVisitStorage.deleteTemporaryPhotoFiles(photoUris.temporary);
+    return { cleanupFailed: encryptedCleanupFailed || temporaryCleanupFailed };
   },
 };

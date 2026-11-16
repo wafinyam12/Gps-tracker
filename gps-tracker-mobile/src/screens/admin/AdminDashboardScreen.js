@@ -6,10 +6,7 @@ import {
   ChevronRight,
   LogOut,
   MapPin,
-  Store,
   UserCircle,
-  Users,
-  UsersRound,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { canVisitStores, getRoleDisplayName, getRoleName } from '../../utils/roles';
@@ -22,8 +19,6 @@ const AdminDashboardScreen = () => {
   const { user, logout } = useAuth();
   const navigation = useNavigation();
   const roleName = getRoleName(user) || 'admin';
-  const canManageUsersAndBranches = ['admin', 'superadmin'].includes(roleName);
-  const canManageStores = roleName === 'superadmin';
   const canVisit = canVisitStores(user);
 
   const menuItems = useMemo(() => ([
@@ -33,28 +28,6 @@ const AdminDashboardScreen = () => {
       icon: <MapPin size={24} color={colors.primary} />,
       screen: 'Home',
     }
-    ] : []),
-    ...(canManageUsersAndBranches ? [
-      {
-        title: 'Manajemen User',
-        subtitle: 'Kelola data area manager, sales, dan admin cabang',
-        icon: <Users size={24} color={colors.primary} />,
-        screen: 'UserList',
-      },
-      {
-        title: 'Manajemen Cabang',
-        subtitle: 'Atur unit bisnis, area kerja, dan lokasi cabang',
-        icon: <UsersRound size={24} color={colors.primary} />,
-        screen: 'TeamList',
-      },
-    ] : []),
-    ...(canManageStores ? [
-      {
-        title: 'Manajemen Toko',
-        subtitle: 'Master toko read-only dari SAP',
-        icon: <Store size={24} color={colors.primary} />,
-        screen: 'StoreList',
-      },
     ] : []),
     {
       title: 'Monitoring Kunjungan',
@@ -74,7 +47,7 @@ const AdminDashboardScreen = () => {
       icon: <UserCircle size={24} color={colors.primary} />,
       screen: 'Profile',
     },
-  ]), [canManageStores, canManageUsersAndBranches, canVisit]);
+  ]), [canVisit]);
 
   const quickStats = [
     { label: 'Role', value: getRoleDisplayName(roleName), tone: colors.primary },
@@ -90,10 +63,8 @@ const AdminDashboardScreen = () => {
       <PageHeader
         variant="hero"
         title={`Selamat datang, ${user?.name || 'Admin'}`}
-        subtitle={canManageStores
-          ? 'Pusat kendali untuk user, cabang, toko, dan monitoring harian.'
-          : 'Pusat kendali untuk user, cabang, dan monitoring harian.'}
-        eyebrow="Admin Console"
+        subtitle="Pusat kendali kunjungan dan monitoring harian."
+        eyebrow="Pilot Kunjungan"
         right={(
           <TouchableOpacity onPress={logout} style={styles.logoutIcon} activeOpacity={0.85}>
             <LogOut size={18} color="#fff" />
