@@ -213,6 +213,8 @@ const TargetRangeScreen = () => {
                 onChangeText={(value) => { setTargetVisits(value.replace(/[^0-9]/g, '')); setErrors((current) => ({ ...current, targetVisits: undefined })); setSaveError(''); }}
                 onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 180)}
                 keyboardType="number-pad"
+                underlineColorAndroid="transparent"
+                selectionColor={visitColors.primary}
                 maxLength={3}
                 placeholder="Contoh: 5"
                 style={styles.input}
