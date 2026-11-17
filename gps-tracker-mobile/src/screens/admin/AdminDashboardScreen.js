@@ -1,123 +1,89 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import {
-  BarChart3,
-  ChevronRight,
-  LogOut,
-  MapPin,
-  UserCircle,
-  Users,
-  UsersRound,
-} from 'lucide-react-native';
+import { ArrowRight, BarChart3, LogOut, MapPin, UserCircle, Users, UsersRound } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
-import { canVisitStores, getRoleDisplayName, getRoleName } from '../../utils/roles';
+import { getRoleDisplayName, getRoleName } from '../../utils/roles';
+import { getMonitoringDashboardActions } from '../../utils/monitoringDashboardPresentation';
 import AppScreen from '../../components/ui/AppScreen';
-import PageHeader from '../../components/ui/PageHeader';
-import StatCard from '../../components/ui/StatCard';
-import { colors, radii, shadows, spacing } from '../../styles/theme';
+import VisitHeader from '../../components/visit/VisitHeader';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
+
+const ACTIONS = {
+  Home: { title: 'Kunjungan saya', detail: 'Lanjutkan kunjungan dan lihat hasil pribadi', Icon: MapPin },
+  UserList: { title: 'Manajemen User', detail: 'Siapkan akun Sales untuk kunjungan', Icon: Users },
+  TeamList: { title: 'Manajemen Cabang', detail: 'Atur penempatan dan data cabang', Icon: UsersRound },
+  TeamSummary: { title: 'Ringkasan kunjungan', detail: 'Target, progres Sales, dan peringatan', Icon: BarChart3 },
+  Profile: { title: 'Profil saya', detail: 'Data akun dan keamanan', Icon: UserCircle },
+};
 
 const AdminDashboardScreen = () => {
   const { user, logout } = useAuth();
   const navigation = useNavigation();
-  const roleName = getRoleName(user) || 'admin';
-  const canManageUsersAndBranches = ['admin', 'superadmin'].includes(roleName);
-  const canVisit = canVisitStores(user);
+  const roleName = getRoleName(user);
+  const actions = getMonitoringDashboardActions(roleName);
+  const firstName = (user?.name || getRoleDisplayName(roleName)).trim().split(/\s+/)[0];
+  const branchName = user?.branch?.name || user?.team?.name
+    || (roleName === 'superadmin' ? 'Semua cabang' : 'Cabang belum tersedia');
+  const isManagerRole = roleName === 'spv' || roleName === 'manager';
 
-  const menuItems = useMemo(() => ([
-    ...(canVisit ? [{
-      title: 'Kunjungan Saya',
-      subtitle: 'Mulai visit, ringkasan, dan lokasi pribadi',
-      icon: <MapPin size={24} color={colors.primary} />,
-      screen: 'Home',
-    }
-    ] : []),
-    ...(canManageUsersAndBranches ? [
-      {
-        title: 'Manajemen User',
-        subtitle: 'Tambah dan kelola akun sales untuk kunjungan',
-        icon: <Users size={24} color={colors.primary} />,
-        screen: 'UserList',
-      },
-      {
-        title: 'Manajemen Cabang',
-        subtitle: 'Atur cabang untuk penempatan sales',
-        icon: <UsersRound size={24} color={colors.primary} />,
-        screen: 'TeamList',
-      },
-    ] : []),
-    {
-      title: 'Monitoring Kunjungan',
-      subtitle: 'Pantau posisi sales dan cabang real-time',
-      icon: <MapPin size={24} color={colors.primary} />,
-      screen: 'LiveMap',
-    },
-    {
-      title: 'Ringkasan & Warning',
-      subtitle: 'Lihat progres visit dan audit warning per cabang',
-      icon: <BarChart3 size={24} color={colors.primary} />,
-      screen: 'TeamSummary',
-    },
-    {
-      title: 'Profil Saya',
-      subtitle: 'Ubah profile, foto, password, dan keluar akun',
-      icon: <UserCircle size={24} color={colors.primary} />,
-      screen: 'Profile',
-    },
-  ]), [canManageUsersAndBranches, canVisit]);
-
-  const quickStats = [
-    { label: 'Role', value: getRoleDisplayName(roleName), tone: colors.primary },
-    { label: 'Akses Visit', value: canVisit ? 'Ya' : 'Tidak', tone: canVisit ? colors.success : colors.warning },
-  ];
-
-  const openMenu = (screen) => {
-    navigation.navigate(screen);
-  };
+  const logoutButton = (
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Keluar dari akun" onPress={logout} style={styles.logoutButton}>
+      <LogOut size={20} color={visitColors.primary} />
+    </TouchableOpacity>
+  );
 
   return (
-    <AppScreen>
-      <PageHeader
-        variant="hero"
-        title={`Selamat datang, ${user?.name || 'Admin'}`}
-        subtitle="Pusat kendali kunjungan dan monitoring harian."
-        eyebrow="Pilot Kunjungan"
-        right={(
-          <TouchableOpacity onPress={logout} style={styles.logoutIcon} activeOpacity={0.85}>
-            <LogOut size={18} color="#fff" />
-          </TouchableOpacity>
-        )}
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader
+        title={'Halo, ' + firstName}
+        subtitle={getRoleDisplayName(roleName) + ' · ' + branchName}
+        right={logoutButton}
       />
-
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.statsRow}>
-          {quickStats.map((item) => (
-            <StatCard
-              key={item.label}
-              label={item.label}
-              value={item.value}
-              tone={item.tone}
-              icon={<View style={[styles.statDot, { backgroundColor: item.tone }]} />}
-            />
-          ))}
-        </View>
+        <Text style={styles.intro}>
+          {isManagerRole ? 'Pantau tim dan hasil kunjungan dari satu tempat.' : 'Siapkan akun, cabang, dan pantau kunjungan.'}
+        </Text>
 
-        <View style={styles.menuList}>
-          {menuItems.map((item) => (
-            <TouchableOpacity
-              key={item.title}
-              style={styles.menuCard}
-              onPress={() => openMenu(item.screen)}
-              activeOpacity={0.9}
-            >
-              <View style={styles.iconContainer}>{item.icon}</View>
-              <View style={styles.menuInfo}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-              </View>
-              <ChevronRight size={18} color={colors.textSoft} />
-            </TouchableOpacity>
-          ))}
+        {actions.includes('LiveMap') ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Buka monitoring posisi Sales"
+            onPress={() => navigation.navigate('LiveMap')}
+            style={styles.primaryAction}
+            activeOpacity={0.85}
+          >
+            <View style={styles.primaryCopy}>
+              <Text style={styles.primaryTitle}>Pantau posisi Sales</Text>
+              <Text style={styles.primaryDetail}>Lihat posisi terakhir dan toko di peta</Text>
+            </View>
+            <ArrowRight size={22} color={visitColors.surface} />
+          </TouchableOpacity>
+        ) : null}
+
+        <Text style={styles.sectionTitle}>{isManagerRole ? 'Akses cepat' : 'Kelola dan tinjau'}</Text>
+        <View style={styles.actionList}>
+          {actions.filter((route) => route !== 'LiveMap').map((route) => {
+            const action = ACTIONS[route];
+            const Icon = action.Icon;
+            return (
+              <TouchableOpacity
+                key={route}
+                accessibilityRole="button"
+                accessibilityLabel={action.title}
+                onPress={() => navigation.navigate(route)}
+                style={styles.actionRow}
+                activeOpacity={0.85}
+              >
+                <View style={styles.actionIcon}><Icon size={20} color={visitColors.primary} /></View>
+                <View style={styles.actionCopy}>
+                  <Text style={styles.actionTitle}>{action.title}</Text>
+                  <Text style={styles.actionDetail}>{action.detail}</Text>
+                </View>
+                <ArrowRight size={18} color={visitColors.primary} />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
     </AppScreen>
@@ -125,64 +91,22 @@ const AdminDashboardScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.md,
-  },
-  logoutIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radii.full,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  statDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  menuList: {
-    gap: spacing.sm,
-  },
-  menuCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
-  },
-  iconContainer: {
-    width: 46,
-    height: 46,
-    borderRadius: radii.md,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuInfo: {
-    flex: 1,
-  },
-  menuTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: colors.text,
-  },
-  menuSubtitle: {
-    marginTop: 3,
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textMuted,
-  },
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  content: { paddingHorizontal: visitSpacing.page, paddingTop: visitSpacing.section, paddingBottom: visitSpacing.sectionLarge },
+  logoutButton: { width: 44, height: 44, borderRadius: visitRadii.control, backgroundColor: visitColors.primaryTint, alignItems: 'center', justifyContent: 'center' },
+  intro: { ...visitType.body, color: visitColors.mutedInk },
+  primaryAction: { minHeight: 96, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.card, padding: visitSpacing.card, marginTop: visitSpacing.section, borderRadius: visitRadii.large, backgroundColor: visitColors.primary },
+  primaryCopy: { flex: 1, minWidth: 0 },
+  primaryTitle: { ...visitType.section, color: visitColors.surface },
+  primaryDetail: { ...visitType.body, color: visitColors.surface, marginTop: visitSpacing.xs },
+  sectionTitle: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.sectionLarge, marginBottom: visitSpacing.sm },
+  actionList: { gap: visitSpacing.sm },
+  actionRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.md, padding: visitSpacing.card, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card, backgroundColor: visitColors.surface },
+  actionIcon: { width: 44, height: 44, borderRadius: visitRadii.control, backgroundColor: visitColors.primaryTint, alignItems: 'center', justifyContent: 'center' },
+  actionCopy: { flex: 1, minWidth: 0 },
+  actionTitle: { ...visitType.label, color: visitColors.ink },
+  actionDetail: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
 });
 
 export default AdminDashboardScreen;
