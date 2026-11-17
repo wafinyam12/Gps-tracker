@@ -161,8 +161,8 @@ class DailyTargetController extends Controller
 
         $validated = $request->validate([
             'selection' => 'required|in:all,selected',
-            'user_ids' => 'required_if:selection,selected|array|min:1|max:100',
-            'user_ids.*' => 'integer|distinct|min:1',
+            'user_ids' => 'exclude_unless:selection,selected|required|array|min:1|max:100',
+            'user_ids.*' => 'exclude_unless:selection,selected|integer|distinct|min:1',
             'date_from' => 'required|date_format:Y-m-d',
             'date_to' => 'required|date_format:Y-m-d|after_or_equal:date_from',
             'target_visits' => 'required|integer|min:1|max:100',

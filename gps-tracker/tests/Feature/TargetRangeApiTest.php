@@ -109,7 +109,7 @@ class TargetRangeApiTest extends TestCase
         $this->postJson('/api/v1/target/range-set', [
             'selection' => 'all',
             'date_from' => '2026-11-17', 'date_to' => '2026-11-18', 'target_visits' => 4,
-            'user_ids' => [$outside->id],
+            'user_ids' => 'ignored-even-when-malformed',
         ])->assertStatus(201)
             ->assertJsonPath('data.sales_count', 2)
             ->assertJsonPath('data.days_count', 2)
