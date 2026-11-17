@@ -17,15 +17,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Save, Trash2 } from 'lucide-react-native';
 import { Picker } from '@react-native-picker/picker';
 import AppScreen from '../../components/ui/AppScreen';
-import PageHeader from '../../components/ui/PageHeader';
+import VisitHeader from '../../components/visit/VisitHeader';
 import Surface from '../../components/ui/Surface';
 import PasswordInput from '../../components/ui/PasswordInput';
 import { useAuth } from '../../context/AuthContext';
 import { normalizePhoneNumber } from '../../utils/phone';
-import { formatUserValidationError } from '../../utils/userFormValidation';
+import { formatUserValidationError, getUserFieldErrors } from '../../utils/userFormValidation';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
 import { logEvent } from '../../utils/diagnosticLogger';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
+
+const FieldError = ({ message }) => message ? <Text style={styles.fieldError}>{message}</Text> : null;
 
 const UserFormScreen = () => {
   const navigation = useNavigation();
@@ -40,6 +43,8 @@ const UserFormScreen = () => {
   const currentBranchId = currentUser?.branch?.id?.toString() || currentUser?.team?.id?.toString() || '';
 
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [saveError, setSaveError] = useState('');
   const [initialLoading, setInitialLoading] = useState(isEdit);
   const [teams, setTeams] = useState([]);
   const [form, setForm] = useState({
@@ -54,6 +59,12 @@ const UserFormScreen = () => {
     role: 'sales',
     is_active: true,
   });
+
+  const updateField = (field, value) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setFieldErrors((previous) => ({ ...previous, [field]: undefined }));
+    setSaveError('');
+  };
 
   useEffect(() => {
     fetchTeams();
@@ -140,6 +151,8 @@ const UserFormScreen = () => {
     }
 
     setLoading(true);
+    setFieldErrors({});
+    setSaveError('');
     logEvent('admin.user_save_started', { action: isEdit ? 'update' : 'create' });
     try {
       const payload = {
@@ -165,7 +178,9 @@ const UserFormScreen = () => {
     } catch (error) {
       logEvent('admin.user_save_failed', { action: isEdit ? 'update' : 'create', status: error.response?.status, error_code: error?.code });
       const msg = formatUserValidationError(error.response?.data);
-      Alert.alert('Error', msg);
+      const errors = getUserFieldErrors(error.response?.data);
+      setFieldErrors(errors);
+      setSaveError(Object.keys(errors).length > 0 ? 'Periksa kolom yang ditandai sebelum menyimpan.' : msg);
     } finally {
       setLoading(false);
     }
@@ -198,7 +213,7 @@ const UserFormScreen = () => {
 
   if (initialLoading) {
     return (
-      <AppScreen>
+      <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -207,15 +222,15 @@ const UserFormScreen = () => {
   }
 
   return (
-    <AppScreen>
-      <PageHeader
-        title={isEdit ? 'Edit User' : 'User Baru'}
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader
+        title={isEdit ? 'Edit user' : 'User baru'}
         subtitle={isBranchAdmin
-          ? 'Admin cabang hanya dapat mengelola sales di cabangnya.'
-          : 'Atur identitas, akses, role, dan cabang user.'}
+          ? 'Akun Sales cabang Anda'
+          : 'Identitas, akses, dan penugasan'}
         onBack={() => navigation.goBack()}
         right={(
-          <TouchableOpacity style={styles.savePill} onPress={handleSave} disabled={loading} activeOpacity={0.85}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Simpan user" style={styles.savePill} onPress={handleSave} disabled={loading} activeOpacity={0.85}>
             {loading ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
@@ -229,7 +244,7 @@ const UserFormScreen = () => {
       />
 
       <KeyboardAvoidingView style={styles.form} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView style={styles.form} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.form} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Surface tone="muted" style={styles.banner}>
           <Text style={styles.bannerTitle}>{isEdit ? 'Edit data user' : 'User baru'}</Text>
           <Text style={styles.bannerText}>
@@ -238,6 +253,8 @@ const UserFormScreen = () => {
               : 'Isi data dasar dulu, lalu tentukan role dan cabang sebelum menyimpan.'}
           </Text>
         </Surface>
+
+        {saveError ? <View style={styles.errorBanner}><Text style={styles.errorBannerText}>{saveError}</Text></View> : null}
 
         <Surface style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
@@ -250,9 +267,10 @@ const UserFormScreen = () => {
             <TextInput
               style={styles.input}
               value={form.name}
-              onChangeText={(val) => setForm({ ...form, name: val })}
+              onChangeText={(val) => updateField('name', val)}
               placeholder="Contoh: John Doe"
             />
+            <FieldError message={fieldErrors.name} />
           </View>
 
           <View style={styles.inputGroup}>
@@ -260,10 +278,11 @@ const UserFormScreen = () => {
             <TextInput
               style={styles.input}
               value={form.username}
-              onChangeText={(val) => setForm({ ...form, username: val })}
+              onChangeText={(val) => updateField('username', val)}
               placeholder="Contoh: john-doe"
               autoCapitalize="none"
             />
+            <FieldError message={fieldErrors.username} />
           </View>
 
           <View style={styles.inputGroup}>
@@ -271,11 +290,12 @@ const UserFormScreen = () => {
             <TextInput
               style={styles.input}
               value={form.email}
-              onChangeText={(val) => setForm({ ...form, email: val })}
+              onChangeText={(val) => updateField('email', val)}
               placeholder="johndoe@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
             />
+            <FieldError message={fieldErrors.email} />
           </View>
 
           <View style={styles.inputGroup}>
@@ -283,9 +303,10 @@ const UserFormScreen = () => {
             <TextInput
               style={styles.input}
               value={form.employee_id}
-              onChangeText={(val) => setForm({ ...form, employee_id: val })}
+              onChangeText={(val) => updateField('employee_id', val)}
               placeholder="Contoh: 123456"
             />
+            <FieldError message={fieldErrors.employee_id} />
           </View>
         </Surface>
 
@@ -300,10 +321,11 @@ const UserFormScreen = () => {
             <TextInput
               style={styles.input}
               value={form.phone}
-              onChangeText={(val) => setForm({ ...form, phone: val })}
+              onChangeText={(val) => updateField('phone', val)}
               placeholder="0812..."
               keyboardType="phone-pad"
             />
+            <FieldError message={fieldErrors.phone} />
             <Text style={styles.subLabel}>Akan disimpan dalam format +62 jika diawali 0.</Text>
           </View>
 
@@ -313,9 +335,10 @@ const UserFormScreen = () => {
               label="password user"
               style={styles.input}
               value={form.password}
-              onChangeText={(val) => setForm({ ...form, password: val })}
+              onChangeText={(val) => updateField('password', val)}
               placeholder="Minimal 8 karakter"
             />
+            <FieldError message={fieldErrors.password} />
             <Text style={styles.subLabel}>
               {isEdit ? 'Kosongkan jika hanya memperbarui data lain.' : 'Wajib diisi untuk user baru.'}
             </Text>
@@ -341,12 +364,16 @@ const UserFormScreen = () => {
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={form.role}
-                  onValueChange={(val) => setForm({
-                    ...form,
-                    role: val,
-                    team_id: ['sales', 'spv', 'admin'].includes(val) ? form.team_id : '',
-                    slpCode: val === 'sales' ? form.slpCode : '',
-                  })}
+                  onValueChange={(val) => {
+                    setForm({
+                      ...form,
+                      role: val,
+                      team_id: ['sales', 'spv', 'admin'].includes(val) ? form.team_id : '',
+                      slpCode: val === 'sales' ? form.slpCode : '',
+                    });
+                    setFieldErrors((previous) => ({ ...previous, role: undefined, team_id: undefined }));
+                    setSaveError('');
+                  }}
                 >
                   <Picker.Item label="Sales" value="sales" />
                   <Picker.Item label="Area Manager" value="spv" />
@@ -355,6 +382,7 @@ const UserFormScreen = () => {
                   <Picker.Item label="Super Admin" value="superadmin" />
                 </Picker>
               </View>
+              <FieldError message={fieldErrors.role} />
             </View>
           )}
 
@@ -364,10 +392,11 @@ const UserFormScreen = () => {
               <TextInput
                 style={styles.input}
                 value={form.slpCode}
-                onChangeText={(val) => setForm({ ...form, slpCode: val })}
+                onChangeText={(val) => updateField('slpCode', val)}
                 placeholder="Contoh: 48"
                 autoCapitalize="characters"
               />
+              <FieldError message={fieldErrors.slpCode} />
               <Text style={styles.subLabel}>Dipakai untuk mengambil customer dan outstanding dari SAP.</Text>
             </View>
           )}
@@ -392,7 +421,7 @@ const UserFormScreen = () => {
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={form.team_id}
-                  onValueChange={(val) => setForm({ ...form, team_id: val })}
+                  onValueChange={(val) => updateField('team_id', val)}
                 >
                   <Picker.Item label="Pilih Cabang" value="" />
                   {teams.map((team) => (
@@ -400,6 +429,7 @@ const UserFormScreen = () => {
                   ))}
                 </Picker>
               </View>
+              <FieldError message={fieldErrors.team_id} />
             </View>
           )}
 
@@ -416,10 +446,11 @@ const UserFormScreen = () => {
               </View>
               <Switch
                 value={form.is_active}
-                onValueChange={(val) => setForm({ ...form, is_active: val })}
+                onValueChange={(val) => updateField('is_active', val)}
                 trackColor={{ false: colors.surfaceStrong, true: colors.primarySoft }}
                 thumbColor={form.is_active ? colors.primary : colors.surface}
               />
+              <FieldError message={fieldErrors.is_active} />
             </View>
           )}
         </Surface>
@@ -439,6 +470,11 @@ const UserFormScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  errorBanner: { padding: visitSpacing.card, borderRadius: visitRadii.card, backgroundColor: visitColors.dangerTint },
+  errorBannerText: { ...visitType.body, color: visitColors.danger },
+  fieldError: { ...visitType.caption, color: visitColors.danger, marginTop: visitSpacing.xs, flexBasis: '100%' },
   center: {
     flex: 1,
     justifyContent: 'center',
@@ -449,33 +485,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    minHeight: 38,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.full,
-    backgroundColor: colors.primarySoft,
+    borderRadius: visitRadii.control,
+    backgroundColor: visitColors.primaryTint,
     borderWidth: 1,
-    borderColor: colors.primarySoft,
+    borderColor: visitColors.primaryTint,
   },
   savePillText: {
     fontSize: 12,
-    fontWeight: '900',
-    color: colors.primary,
+    fontWeight: '600',
+    color: visitColors.primary,
   },
   form: {
     flex: 1,
   },
   formContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
+    padding: visitSpacing.page,
+    paddingBottom: visitSpacing.sectionLarge,
+    gap: visitSpacing.md,
   },
   banner: {
     gap: 6,
   },
   bannerTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: colors.text,
+    fontWeight: '600',
+    color: visitColors.ink,
   },
   bannerText: {
     fontSize: 13,
@@ -490,8 +526,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 15,
-    fontWeight: '900',
-    color: colors.text,
+    fontWeight: '600',
+    color: visitColors.ink,
   },
   sectionHint: {
     marginTop: 4,
@@ -546,6 +582,7 @@ const styles = StyleSheet.create({
   },
   switchGroup: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing.lg,

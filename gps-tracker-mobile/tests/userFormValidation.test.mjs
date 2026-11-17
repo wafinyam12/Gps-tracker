@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { formatUserValidationError } = await import('../src/utils/userFormValidation.js').catch(() => ({}));
+const { formatUserValidationError, getUserFieldErrors } = await import('../src/utils/userFormValidation.js').catch(() => ({}));
+
+test('API validation errors remain next to their corresponding form fields', () => {
+  assert.deepEqual(getUserFieldErrors?.({
+    errors: {
+      username: ['Username sudah dipakai.'],
+      team_id: ['Pilih cabang.'],
+      slpCode: ['Kode SAP wajib diisi.'],
+      ignored: ['Tidak ditampilkan.'],
+    },
+  }), {
+    username: 'Username sudah dipakai.',
+    team_id: 'Pilih cabang.',
+    slpCode: 'Kode SAP wajib diisi.',
+  });
+});
 
 test('user creation displays field-specific API validation errors', () => {
   const result = formatUserValidationError?.({

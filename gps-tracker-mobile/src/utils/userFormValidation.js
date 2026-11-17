@@ -11,6 +11,16 @@ const FIELD_LABELS = {
   is_active: 'Status Aktif',
 };
 
+export const getUserFieldErrors = (responseData) => {
+  const errors = responseData?.errors;
+  if (!errors || typeof errors !== 'object' || Array.isArray(errors)) return {};
+  return Object.fromEntries(Object.entries(errors).flatMap(([field, messages]) => {
+    if (!Object.prototype.hasOwnProperty.call(FIELD_LABELS, field)) return [];
+    const message = Array.isArray(messages) ? messages[0] : messages;
+    return typeof message === 'string' && message.trim() ? [[field, message.trim()]] : [];
+  }));
+};
+
 export const formatUserValidationError = (responseData) => {
   const errors = responseData?.errors;
   if (errors && typeof errors === 'object' && !Array.isArray(errors)) {
