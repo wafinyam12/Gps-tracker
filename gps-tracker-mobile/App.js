@@ -185,7 +185,7 @@ const AdminStack = () => (
     <Stack.Screen
       name="Home"
       component={HomeScreen}
-      options={{ title: 'Monitoring Kunjungan' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="StartVisit"
