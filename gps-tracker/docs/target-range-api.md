@@ -64,7 +64,7 @@ Respons sukses (201):
 
 ## Pemindahan ke staging
 
-Pindahkan `routes/api.php` dan `app/Http/Controllers/Api/DailyTargetController.php` dari commit `db7d87d` ke path yang sama di backend staging. Tidak ada migration atau dependency baru; tabel `daily_targets` dari fitur target lama tetap dipakai. `tests/Feature/TargetRangeApiTest.php` boleh ikut untuk CI, tetapi tidak diperlukan untuk melayani API.
+Pindahkan `routes/api.php` dan `app/Http/Controllers/Api/DailyTargetController.php` dari checkout terkini (minimal commit `9bf3e56`) ke path yang sama di backend staging. Tidak ada migration atau dependency baru; tabel `daily_targets` dari fitur target lama tetap dipakai. `tests/Feature/TargetRangeApiTest.php` boleh ikut untuk CI, tetapi tidak diperlukan untuk melayani API.
 
 Jalankan dari folder backend staging:
 

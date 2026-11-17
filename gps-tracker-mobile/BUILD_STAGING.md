@@ -93,7 +93,8 @@ checks are still pending.
 
 ### Area Manager target range (pending staging integration)
 
-Backend target range is in commit `db7d87d`. Copy `routes/api.php` and
+Backend target range starts in commit `db7d87d`, with the final validation fix
+in `9bf3e56`. Copy the current `routes/api.php` and
 `app/Http/Controllers/Api/DailyTargetController.php` to staging, then run
 `php artisan optimize:clear` and `php artisan route:list --path=target` there.
 The existing `daily_targets` table is reused; there is no new migration or
