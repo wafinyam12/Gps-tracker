@@ -151,10 +151,10 @@ const HomeScreen = () => {
         <View style={styles.progressCard}>
           <View style={styles.progressTop}>
             <Text style={styles.progressValue}>{presentation.progressLabel}</Text>
-            <Text style={styles.progressPercent}>{presentation.progressPercent}% selesai</Text>
+            <Text style={styles.progressPercent}>{presentation.progressStatus}</Text>
           </View>
           <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${presentation.progressPercent}%` }]} />
+            <View style={[styles.progressFill, { width: `${presentation.progressFillPercent}%` }]} />
           </View>
           <View style={styles.metrics}>
             <Text style={styles.metric}><Text style={styles.metricNumber}>{presentation.unique}</Text> toko unik</Text>
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
   sectionStandalone: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.sectionLarge, marginBottom: visitSpacing.sm },
   sectionMeta: { ...visitType.caption, color: visitColors.mutedInk },
   progressCard: { backgroundColor: visitColors.surface, borderColor: visitColors.border, borderWidth: 1, borderRadius: visitRadii.card, padding: visitSpacing.card },
-  progressTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: visitSpacing.sm },
+  progressTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: visitSpacing.sm },
   progressValue: { ...visitType.page, color: visitColors.ink },
   progressPercent: { ...visitType.caption, color: visitColors.mutedInk },
   progressTrack: { height: 7, backgroundColor: visitColors.primaryTint, borderRadius: 7, overflow: 'hidden', marginTop: visitSpacing.md, marginBottom: visitSpacing.md },

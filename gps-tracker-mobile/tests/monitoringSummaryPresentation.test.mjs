@@ -4,7 +4,7 @@ import { canChooseMonitoringBranch, getMonitoringSummaryMetrics, getMonitoringSu
 
 test('missing summary remains a truthful zero state', () => {
   assert.deepEqual(getMonitoringSummaryMetrics(null), {
-    overview: { target: 0, unique: 0, duplicate: 0, completion: 0, warnings: 0 },
+    overview: { target: 0, unique: 0, duplicate: 0, completion: 0, fill: 0, excess: 0, warnings: 0 },
     sales: [],
   });
 });
@@ -19,9 +19,22 @@ test('all existing visit and audit counts remain available', () => {
       summary: { target_visits: 5, unique_visits: 3, duplicate_visits: 1, completion_pct: 60, mock_detected: 2, invalid_checkins: 1 },
     }],
   }), {
-    overview: { target: 5, unique: 3, duplicate: 1, completion: 60, warnings: 2 },
-    sales: [{ userId: 9, name: 'Sales Satu', target: 5, unique: 3, duplicate: 1, completion: 60, mockGps: 2, invalidCheckins: 1 }],
+    overview: { target: 5, unique: 3, duplicate: 1, completion: 60, fill: 60, excess: 0, warnings: 2 },
+    sales: [{ userId: 9, name: 'Sales Satu', target: 5, unique: 3, duplicate: 1, completion: 60, fill: 60, excess: 0, mockGps: 2, invalidCheckins: 1 }],
   });
+});
+
+test('a lowered target keeps all completed visits and shows overachievement', () => {
+  const metrics = getMonitoringSummaryMetrics({
+    overview: { target_visits: 5, unique_visits: 7, completion_pct: 140 },
+    sales: [{ user_id: 9, summary: { target_visits: 5, unique_visits: 7, completion_pct: 140 } }],
+  });
+  assert.equal(metrics.overview.completion, 140);
+  assert.equal(metrics.overview.fill, 100);
+  assert.equal(metrics.overview.excess, 2);
+  assert.equal(metrics.sales[0].completion, 140);
+  assert.equal(metrics.sales[0].fill, 100);
+  assert.equal(metrics.sales[0].excess, 2);
 });
 
 test('Area Manager has a fixed branch while admin and manager retain picker', () => {

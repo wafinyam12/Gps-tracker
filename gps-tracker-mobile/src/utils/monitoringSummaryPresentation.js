@@ -3,7 +3,8 @@ const count = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const progress = (value) => Math.max(0, Math.min(100, count(value)));
+const completion = (value) => Math.max(0, count(value));
+const progress = (value) => Math.min(100, completion(value));
 
 export const canChooseMonitoringBranch = (roleName) => ['manager', 'admin', 'superadmin'].includes(roleName);
 
@@ -21,7 +22,9 @@ export const getMonitoringSummaryMetrics = (summaryData) => {
       target: count(overview.target_visits),
       unique: count(overview.unique_visits),
       duplicate: count(overview.duplicate_visits),
-      completion: progress(overview.completion_pct),
+      completion: completion(overview.completion_pct),
+      fill: progress(overview.completion_pct),
+      excess: Math.max(0, count(overview.unique_visits) - count(overview.target_visits)),
       warnings: count(summaryData?.team_summary?.warning_count),
     },
     sales: (Array.isArray(summaryData?.sales) ? summaryData.sales : []).map((item) => {
@@ -32,7 +35,9 @@ export const getMonitoringSummaryMetrics = (summaryData) => {
         target: count(summary.target_visits),
         unique: count(summary.unique_visits),
         duplicate: count(summary.duplicate_visits),
-        completion: progress(summary.completion_pct),
+        completion: completion(summary.completion_pct),
+        fill: progress(summary.completion_pct),
+        excess: Math.max(0, count(summary.unique_visits) - count(summary.target_visits)),
         mockGps: count(summary.mock_detected),
         invalidCheckins: count(summary.invalid_checkins),
       };

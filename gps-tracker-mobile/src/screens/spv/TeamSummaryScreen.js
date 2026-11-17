@@ -152,9 +152,9 @@ const TeamSummaryScreen = () => {
             <View style={styles.progressCard}>
               <View style={styles.progressTop}>
                 <Text style={styles.progressValue}>{metrics.overview.unique} dari {metrics.overview.target}</Text>
-                <Text style={styles.progressPercent}>{metrics.overview.completion}% selesai</Text>
+                <Text style={styles.progressPercent}>{metrics.overview.completion}% {metrics.overview.excess > 0 ? `· melebihi target ${metrics.overview.excess}` : 'selesai'}</Text>
               </View>
-              <View style={styles.progressTrack}><View style={[styles.progressFill, { width: metrics.overview.completion + '%' }]} /></View>
+              <View style={styles.progressTrack}><View style={[styles.progressFill, { width: metrics.overview.fill + '%' }]} /></View>
               <Text style={styles.progressMeta}>{metrics.overview.duplicate} kunjungan duplikat · {metrics.overview.warnings} peringatan audit</Text>
             </View>
 
@@ -191,8 +191,8 @@ const TeamSummaryScreen = () => {
                   <Text style={styles.salesName}>{item.name}</Text>
                   <ArrowRight size={18} color={visitColors.primary} />
                 </View>
-                <Text style={styles.salesProgress}>{item.unique} dari {item.target} toko · {item.completion}% selesai</Text>
-                <View style={styles.salesTrack}><View style={[styles.salesFill, { width: item.completion + '%' }]} /></View>
+                <Text style={styles.salesProgress}>{item.unique} dari {item.target} toko · {item.completion}% {item.excess > 0 ? `· melebihi target ${item.excess}` : 'selesai'}</Text>
+                <View style={styles.salesTrack}><View style={[styles.salesFill, { width: item.fill + '%' }]} /></View>
                 <Text style={styles.salesAudit}>Duplikat {item.duplicate} · Mock GPS {item.mockGps} · Check-in invalid {item.invalidCheckins}</Text>
               </TouchableOpacity>
             ))}
