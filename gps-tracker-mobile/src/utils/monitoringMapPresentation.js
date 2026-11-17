@@ -28,6 +28,11 @@ export const getMonitoringMapDataState = ({ loadError, hasLocations }) => {
 
 export const getSalesOnlineLabel = (isOnline) => (isOnline ? 'Online' : 'Offline');
 
+export const getMonitoringMapOverlayOffsets = (insets) => ({
+  top: Math.max(0, Number(insets?.top) || 0) + 8,
+  bottom: Math.max(0, Number(insets?.bottom) || 0) + 8,
+});
+
 export const findSelectedMonitoringBranch = (branches, teamId) => (
   teamId == null ? undefined : branches.find((branch) => String(branch.id) === String(teamId))
 );

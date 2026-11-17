@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { findSelectedMonitoringBranch, getMonitoringMapDataState, getMonitoringMapScope, getSalesOnlineLabel } from '../src/utils/monitoringMapPresentation.js';
+import { findSelectedMonitoringBranch, getMonitoringMapDataState, getMonitoringMapOverlayOffsets, getMonitoringMapScope, getSalesOnlineLabel } from '../src/utils/monitoringMapPresentation.js';
+
+test('map controls clear the device status and navigation bars', () => {
+  assert.deepEqual(getMonitoringMapOverlayOffsets({ top: 24, bottom: 20 }), { top: 32, bottom: 28 });
+  assert.deepEqual(getMonitoringMapOverlayOffsets({ top: 0, bottom: 0 }), { top: 8, bottom: 8 });
+});
 
 test('scoped Area Manager cannot return to all branches', () => {
   assert.deepEqual(getMonitoringMapScope({

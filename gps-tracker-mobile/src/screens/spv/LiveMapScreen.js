@@ -12,11 +12,11 @@ import {
 import moment from 'moment';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ChevronLeft, RefreshCw } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { locationService } from '../../api/services/locationService';
 import OpenStreetMapView from '../../components/maps/OpenStreetMapView';
 import { logEvent } from '../../utils/diagnosticLogger';
-import { findSelectedMonitoringBranch, getMonitoringMapDataState, getMonitoringMapScope, getSalesOnlineLabel } from '../../utils/monitoringMapPresentation';
+import { findSelectedMonitoringBranch, getMonitoringMapDataState, getMonitoringMapOverlayOffsets, getMonitoringMapScope, getSalesOnlineLabel } from '../../utils/monitoringMapPresentation';
 import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
 const LIVE_REFRESH_MS = 60_000;
@@ -77,6 +77,7 @@ const LiveMapScreen = () => {
   const viewportTimerRef = useRef(null);
   const viewportRef = useRef(null);
   const navigation = useNavigation();
+  const overlayOffsets = getMonitoringMapOverlayOffsets(useSafeAreaInsets());
 
   const activeTeamId = selectedTeamId || scopeTeamId;
   const isGlobalView = canAccessAllBranches && !selectedTeamId;
@@ -356,7 +357,7 @@ const LiveMapScreen = () => {
         onViewportChange={handleViewportChange}
       />
 
-      <View style={styles.overlayTop}>
+      <View style={[styles.overlayTop, { top: overlayOffsets.top }]}>
         <View style={styles.topRow}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Kembali" style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
             <ChevronLeft size={18} color={visitColors.primary} />
@@ -422,7 +423,7 @@ const LiveMapScreen = () => {
         </View>
       </View>
 
-      <View style={styles.overlayBottom}>
+      <View style={[styles.overlayBottom, { bottom: overlayOffsets.bottom }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.userScroll}>
           {locations.filter((item) => item.location).map((item) => (
             <TouchableOpacity
