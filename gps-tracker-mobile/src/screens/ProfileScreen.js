@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Linking, Platform, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Edit3, KeyRound, LogOut, Mail, MapPin, ShieldCheck, User } from 'lucide-react-native';
@@ -10,6 +10,7 @@ import AppScreen from '../components/ui/AppScreen';
 import PageHeader from '../components/ui/PageHeader';
 import Surface from '../components/ui/Surface';
 import AppButton from '../components/ui/AppButton';
+import PasswordInput from '../components/ui/PasswordInput';
 import { colors, radii, shadows, spacing } from '../styles/theme';
 import { logEvent, readDiagnosticLogs } from '../utils/diagnosticLogger';
 import { offlineQueue } from '../utils/offlineQueue';
@@ -41,6 +42,45 @@ const ProfileScreen = () => {
     password: '',
     password_confirmation: '',
   });
+  const scrollRef = useRef(null);
+  const scrollYRef = useRef(0);
+  const profileActionRef = useRef(null);
+  const passwordActionRef = useRef(null);
+  const activeActionRef = useRef(null);
+  const revealTimerRef = useRef(null);
+
+  const revealActionAboveKeyboard = useCallback((actionRef, keyboardTop) => {
+    if (!actionRef?.current || !Number.isFinite(keyboardTop)) return;
+    clearTimeout(revealTimerRef.current);
+    revealTimerRef.current = setTimeout(() => {
+      actionRef.current?.measureInWindow((_x, y, _width, height) => {
+        const windowTop = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+        const overlap = y + windowTop + height + 16 - keyboardTop;
+        if (overlap > 0) {
+          scrollRef.current?.scrollTo({ y: scrollYRef.current + overlap, animated: true });
+        }
+      });
+    }, 80);
+  }, []);
+
+  const handleFormFieldFocus = (actionRef) => {
+    activeActionRef.current = actionRef;
+    revealActionAboveKeyboard(actionRef, Keyboard.metrics()?.screenY);
+  };
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      revealActionAboveKeyboard(activeActionRef.current, event.endCoordinates?.screenY);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      activeActionRef.current = null;
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+      clearTimeout(revealTimerRef.current);
+    };
+  }, [revealActionAboveKeyboard]);
 
   const roleName = getRoleName(user) || 'member';
   const branchName = user?.branch?.name || user?.team?.name || (roleName === 'superadmin' ? 'Semua cabang' : '-');
@@ -271,10 +311,14 @@ const ProfileScreen = () => {
         onBack={() => navigation.goBack()}
       />
 
+      <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        onScroll={(event) => { scrollYRef.current = event.nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={16}
       >
         <Surface style={styles.heroCard}>
           <View style={styles.avatarWrap}>
@@ -336,6 +380,7 @@ const ProfileScreen = () => {
               <Text style={styles.label}>Nama Lengkap</Text>
               <TextInput
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(profileActionRef)}
                 value={profileForm.name}
                 onChangeText={(value) => updateProfileField('name', value)}
                 placeholder="Nama lengkap"
@@ -346,6 +391,7 @@ const ProfileScreen = () => {
               <Text style={styles.label}>Username</Text>
               <TextInput
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(profileActionRef)}
                 value={profileForm.username}
                 onChangeText={(value) => updateProfileField('username', value)}
                 placeholder="username"
@@ -357,6 +403,7 @@ const ProfileScreen = () => {
               <Text style={styles.label}>Email</Text>
               <TextInput
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(profileActionRef)}
                 value={profileForm.email}
                 onChangeText={(value) => updateProfileField('email', value)}
                 placeholder="email@contoh.com"
@@ -369,6 +416,7 @@ const ProfileScreen = () => {
               <Text style={styles.label}>No HP</Text>
               <TextInput
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(profileActionRef)}
                 value={profileForm.phone}
                 onChangeText={(value) => updateProfileField('phone', value)}
                 placeholder="0812..."
@@ -376,12 +424,14 @@ const ProfileScreen = () => {
                 keyboardType="phone-pad"
               />
             </View>
-            <AppButton
-              label="Simpan Profile"
-              onPress={handleSaveProfile}
-              loading={profileSaving}
-              icon={<Edit3 size={16} color="#fff" />}
-            />
+            <View ref={profileActionRef} collapsable={false}>
+              <AppButton
+                label="Simpan Profile"
+                onPress={handleSaveProfile}
+                loading={profileSaving}
+                icon={<Edit3 size={16} color="#fff" />}
+              />
+            </View>
           </Surface>
         )}
 
@@ -390,43 +440,48 @@ const ProfileScreen = () => {
             <Text style={styles.formTitle}>Ubah Password</Text>
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Password Lama</Text>
-              <TextInput
+              <PasswordInput
+                label="password lama"
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(passwordActionRef)}
                 value={passwordForm.current_password}
                 onChangeText={(value) => updatePasswordField('current_password', value)}
                 placeholder="Password saat ini"
                 placeholderTextColor={colors.textSoft}
-                secureTextEntry
               />
             </View>
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Password Baru</Text>
-              <TextInput
+              <PasswordInput
+                label="password baru"
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(passwordActionRef)}
                 value={passwordForm.password}
                 onChangeText={(value) => updatePasswordField('password', value)}
                 placeholder="Minimal 8 karakter"
                 placeholderTextColor={colors.textSoft}
-                secureTextEntry
               />
             </View>
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Konfirmasi Password Baru</Text>
-              <TextInput
+              <PasswordInput
+                label="konfirmasi password baru"
                 style={styles.input}
+                onFocus={() => handleFormFieldFocus(passwordActionRef)}
                 value={passwordForm.password_confirmation}
                 onChangeText={(value) => updatePasswordField('password_confirmation', value)}
                 placeholder="Ulangi password baru"
                 placeholderTextColor={colors.textSoft}
-                secureTextEntry
               />
             </View>
-            <AppButton
-              label="Ubah Password"
-              onPress={handleChangePassword}
-              loading={passwordSaving}
-              icon={<KeyRound size={16} color="#fff" />}
-            />
+            <View ref={passwordActionRef} collapsable={false}>
+              <AppButton
+                label="Ubah Password"
+                onPress={handleChangePassword}
+                loading={passwordSaving}
+                icon={<KeyRound size={16} color="#fff" />}
+              />
+            </View>
           </Surface>
         )}
 
@@ -467,6 +522,7 @@ const ProfileScreen = () => {
           style={styles.logoutBtn}
         />
       </ScrollView>
+      </KeyboardAvoidingView>
     </AppScreen>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,6 +15,7 @@ import { Lock, MapPin, Navigation, ShieldCheck, User } from 'lucide-react-native
 import AppScreen from '../components/ui/AppScreen';
 import Surface from '../components/ui/Surface';
 import AppButton from '../components/ui/AppButton';
+import PasswordInput from '../components/ui/PasswordInput';
 import { colors, radii, shadows } from '../styles/theme';
 
 const LoginScreen = () => {
@@ -22,7 +24,17 @@ const LoginScreen = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const { login } = useAuth();
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const highlights = useMemo(() => ([
     { icon: <ShieldCheck size={16} color="#fff" />, label: 'Akun aman' },
@@ -97,13 +109,13 @@ const LoginScreen = () => {
     <AppScreen>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.hero}>
+          <View style={[styles.hero, keyboardVisible && styles.heroHidden]}>
             <View style={styles.heroBadge}>
               <Navigation size={14} color="#fff" />
               <Text style={styles.heroBadgeText}>Field Sales Companion</Text>
@@ -147,14 +159,13 @@ const LoginScreen = () => {
               <Text style={styles.label}>Password</Text>
               <View style={styles.inputContainer}>
                 <Lock size={18} color={colors.textSoft} style={styles.icon} />
-                <TextInput
+                <PasswordInput
+                  label="password"
+                  containerStyle={styles.passwordContainer}
                   style={styles.input}
                   placeholder="••••••••"
                   value={password}
                   onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
                   placeholderTextColor={colors.textSoft}
                 />
               </View>
@@ -198,6 +209,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     padding: 20,
     ...shadows.card,
+  },
+  heroHidden: {
+    display: 'none',
   },
   heroBadge: {
     alignSelf: 'flex-start',
@@ -293,6 +307,9 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginRight: 10,
+  },
+  passwordContainer: {
+    flex: 1,
   },
   input: {
     flex: 1,

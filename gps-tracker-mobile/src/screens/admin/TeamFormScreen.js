@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
 import { userService } from '../../api/services/userService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Save, Trash2, MapPin } from 'lucide-react-native';
@@ -7,6 +7,7 @@ import * as Location from 'expo-location';
 import AppScreen from '../../components/ui/AppScreen';
 import PageHeader from '../../components/ui/PageHeader';
 import Surface from '../../components/ui/Surface';
+import PasswordInput from '../../components/ui/PasswordInput';
 import { useAuth } from '../../context/AuthContext';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
@@ -207,6 +208,7 @@ const TeamFormScreen = () => {
         )}
       />
 
+      <KeyboardAvoidingView style={styles.form} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={styles.form} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
         <Surface style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
@@ -259,13 +261,12 @@ const TeamFormScreen = () => {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Password UD Portal</Text>
-            <TextInput
+            <PasswordInput
+              label="password UD Portal"
               style={styles.input}
               value={form.udportal_password}
               onChangeText={(val) => setForm({ ...form, udportal_password: val })}
               placeholder={form.has_udportal_password ? 'Password sudah tersimpan' : 'Password akun cabang'}
-              secureTextEntry
-              autoCapitalize="none"
             />
           </View>
 
@@ -338,6 +339,7 @@ const TeamFormScreen = () => {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </AppScreen>
   );
 };

@@ -4,6 +4,8 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   TouchableOpacity,
   TextInput,
   Switch,
@@ -17,6 +19,7 @@ import { Picker } from '@react-native-picker/picker';
 import AppScreen from '../../components/ui/AppScreen';
 import PageHeader from '../../components/ui/PageHeader';
 import Surface from '../../components/ui/Surface';
+import PasswordInput from '../../components/ui/PasswordInput';
 import { useAuth } from '../../context/AuthContext';
 import { normalizePhoneNumber } from '../../utils/phone';
 import { formatUserValidationError } from '../../utils/userFormValidation';
@@ -225,6 +228,7 @@ const UserFormScreen = () => {
         )}
       />
 
+      <KeyboardAvoidingView style={styles.form} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={styles.form} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
         <Surface tone="muted" style={styles.banner}>
           <Text style={styles.bannerTitle}>{isEdit ? 'Edit data user' : 'User baru'}</Text>
@@ -305,12 +309,12 @@ const UserFormScreen = () => {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>{isEdit ? 'Password (Kosongkan jika tidak diubah)' : 'Password *'}</Text>
-            <TextInput
+            <PasswordInput
+              label="password user"
               style={styles.input}
               value={form.password}
               onChangeText={(val) => setForm({ ...form, password: val })}
               placeholder="Minimal 8 karakter"
-              secureTextEntry
             />
             <Text style={styles.subLabel}>
               {isEdit ? 'Kosongkan jika hanya memperbarui data lain.' : 'Wajib diisi untuk user baru.'}
@@ -429,6 +433,7 @@ const UserFormScreen = () => {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </AppScreen>
   );
 };
