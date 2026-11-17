@@ -91,7 +91,7 @@ store search, empty history, location permission denial, and status-bar
 contrast were checked on an Infinix X6525B. Full dummy-visit and offline device
 checks are still pending.
 
-### Area Manager target range (pending staging integration)
+### Area Manager target range (17 November 2026)
 
 Backend target range starts in commit `db7d87d`, with the final validation fix
 in `9bf3e56`. Copy the current `routes/api.php` and
@@ -100,10 +100,17 @@ in `9bf3e56`. Copy the current `routes/api.php` and
 The existing `daily_targets` table is reused; there is no new migration or
 Composer change. See `gps-tracker/docs/target-range-api.md` for the contract.
 
-The Area Manager mobile form is in commit `50a74b7`. It has **not** been
-published by OTA yet. Confirm both new staging routes and the scoped Sales
-response before publishing. This UI-only change fits the installed SDK 54
-runtime `1.1.5` and does not require a new APK.
+The Area Manager mobile form starts in commit `50a74b7`. The current Android
+staging update for runtime `1.1.5` is
+[55a324ce-c90c-4001-9b88-a9d9730b5642](https://expo.dev/accounts/nyma/projects/sales-daily/updates/55a324ce-c90c-4001-9b88-a9d9730b5642).
+The staging routes were confirmed by SSH. On Infinix X6525B, the AM account
+loaded a branch-scoped Sales list, selected a Sales, chose an inclusive
+three-day range, opened the keyboard, and reviewed the confirmation without
+saving. The backend target API passed 8 new and 6 existing relevant tests.
+A write and summary refresh on a dummy Sales account remain to be verified.
+This is a JS-only OTA; no new APK is required. The update also shows visits
+above target as an actual percentage (for example, 7/5 = 140%) while keeping
+the progress bar capped at 100% width.
 
 ## Install APK
 
