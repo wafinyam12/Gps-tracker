@@ -5,6 +5,6 @@ offline visits and queued photos encrypted with SQLCipher. The Android APK is
 version 1.1.5, versionCode 8. See [BUILD_STAGING.md](BUILD_STAGING.md) for the
 exact build and device test steps.
 
-The SDK 58 investigation remains on the original hardening branch. Merge or
-deploy only this branch for the temporary staging APK; do not publish an SDK 58
-OTA update on the staging channel while SDK 54 is installed.
+Keep SDK 58 investigation separate from the SDK 54 staging channel. The Sales
+visit UI is delivered through an Android OTA for runtime 1.1.5; see
+[BUILD_STAGING.md](BUILD_STAGING.md) for the update and verification status.

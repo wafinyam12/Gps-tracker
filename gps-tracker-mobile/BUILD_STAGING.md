@@ -28,9 +28,8 @@ The queue, store cache, KYC drafts, and queued visit photos are encrypted in
 SQLCipher. Queued photos are BLOBs in `offline-visits-encrypted.db`. This needs
 a **new APK**; an OTA update cannot add SQLCipher to an older APK.
 
-This source is in the `staging/sdk54-uat` Git worktree. The original
-`security/mobile-security-hardening-followup` checkout retains SDK 58 for
-investigating its startup crash. Do not mix their `node_modules` or lock files.
+This source is in the `staging/sdk54-main` checkout at `D:\gps tracker`.
+Keep its SDK 54 dependencies and lock file together when building.
 
 ## Check Project
 
@@ -45,7 +44,7 @@ npm run test:offline
 Run EAS from the mobile app folder, not from the repository root:
 
 ```bash
-cd "D:\gps tracker\tmp\sdk54-staging\gps-tracker-mobile"
+cd "D:\gps tracker\gps-tracker-mobile"
 ```
 
 Login once:
@@ -74,11 +73,22 @@ Build and install the staging APK at least once before sending an OTA update.
 Use the staging channel with the matching EAS Environment:
 
 ```bash
-npx eas-cli update --channel staging --environment preview --message "Deskripsi perubahan"
+npx eas-cli update --branch staging --platform android --environment preview --message "Deskripsi perubahan"
 ```
 
 Changes to native dependencies, Android permissions, runtime version, or app
 version require a new APK build; they cannot be delivered through OTA.
+
+### Sales visit UI update (17 November 2026)
+
+The Sales visit screens now use a compact dashboard, a list-first store search,
+consistent form spacing, and updated camera, history, and location screens.
+The Android staging update for runtime `1.1.5` is
+[f3325aa2-8a32-432d-9a31-3f2bc2e8068b](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f3325aa2-8a32-432d-9a31-3f2bc2e8068b).
+No APK rebuild is needed for this UI update on the installed SDK 54 APK.
+Close and reopen the app twice while online to load it. The Sales dashboard and
+store search were checked on an Infinix X6525B; full dummy-visit and offline
+device checks are still pending.
 
 ## Install APK
 
