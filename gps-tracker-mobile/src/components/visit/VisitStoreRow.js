@@ -70,12 +70,12 @@ const styles = StyleSheet.create({
   branch: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.sm },
   distance: { ...visitType.caption, color: visitColors.ink, marginTop: visitSpacing.xs },
   radius: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
-  actions: { borderTopWidth: 1, borderTopColor: visitColors.border, paddingHorizontal: visitSpacing.card, paddingVertical: visitSpacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: visitSpacing.sm },
-  route: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.xs },
+  actions: { borderTopWidth: 1, borderTopColor: visitColors.border, paddingHorizontal: visitSpacing.card, paddingVertical: visitSpacing.sm, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: visitSpacing.sm },
+  route: { minHeight: 44, flexDirection: 'row', flexShrink: 0, alignItems: 'center', gap: visitSpacing.xs },
   routeText: { ...visitType.label, color: visitColors.primary },
   routeSpacer: { flex: 1 },
-  start: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: visitSpacing.xs, borderRadius: visitRadii.control, backgroundColor: visitColors.primary, paddingHorizontal: visitSpacing.md },
-  startText: { ...visitType.label, color: visitColors.surface },
+  start: { minHeight: 48, minWidth: 150, flexGrow: 1, flexShrink: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: visitSpacing.xs, borderRadius: visitRadii.control, backgroundColor: visitColors.primary, paddingHorizontal: visitSpacing.md },
+  startText: { ...visitType.label, color: visitColors.surface, flexShrink: 1, textAlign: 'center' },
   disabled: { opacity: 0.65 },
 });
 

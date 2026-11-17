@@ -477,6 +477,7 @@ const StartVisitScreen = ({ navigation }) => {
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
+            onFocus={() => setViewMode('list')}
             placeholder="Cari nama, kode, alamat, atau cabang"
             placeholderTextColor={visitColors.mutedInk}
             returnKeyType="search"
