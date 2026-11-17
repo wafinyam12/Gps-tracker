@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,12 +18,18 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Picker } from '@react-native-picker/picker';
-import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, ChevronDown, ChevronUp, MapPin, Navigation, Save } from 'lucide-react-native';
+import { AlertTriangle, Camera, ChevronDown, ChevronUp, Save } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { visitService } from '../api/services/visitService';
 import { cashPaymentService } from '../api/services/cashPaymentService';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
+import AppScreen from '../components/ui/AppScreen';
+import VisitHeader from '../components/visit/VisitHeader';
+import VisitLocationAudit from '../components/visit/VisitLocationAudit';
+import VisitStatusBadge from '../components/visit/VisitStatusBadge';
+import VisitStoreSummary from '../components/visit/VisitStoreSummary';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../styles/visitTheme';
 import { normalizePhoneNumber } from '../utils/phone';
 import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
@@ -137,6 +144,7 @@ function VisitFormScreen({ route, navigation }) {
   const [cashPaymentForm, setCashPaymentForm] = useState(EMPTY_CASH_PAYMENT_FORM);
   const [cashPaymentPhoto, setCashPaymentPhoto] = useState(null);
   const [cashPaymentSubmitting, setCashPaymentSubmitting] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isMountedRef = useRef(true);
   const currentUserFullName = user?.full_name || user?.name || '';
 
@@ -211,7 +219,7 @@ function VisitFormScreen({ route, navigation }) {
     || (checkinDistance === null ? 'unknown' : (visit?.checkin_valid ? 'valid' : 'outside_radius'));
   const locationStatusLabel = {
     valid: 'Valid dalam radius',
-    outside_radius: 'Di luar radius · tidak dihitung ke target',
+    outside_radius: 'Di luar radius Â· tidak dihitung ke target',
     unknown: 'Jarak belum dapat divalidasi',
     mock: 'Lokasi GPS tidak valid',
   }[locationStatus] || 'Status lokasi belum tersedia';
@@ -225,6 +233,15 @@ function VisitFormScreen({ route, navigation }) {
       checkinTime ? `Check-in ${checkinTime}` : null,
       checkoutTime ? `Checkout ${checkoutTime}` : null,
     ].filter(Boolean).join(' | ') || formatDateOnly(visit?.visit_date);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => setKeyboardHeight(event.endCoordinates?.height || 0));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const hydrateForm = useCallback((visitData) => {
     const visitFormData = visitData?.form_data || {};
@@ -386,10 +403,7 @@ function VisitFormScreen({ route, navigation }) {
   };
 
   const backToHome = useCallback(() => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+    navigation.popTo('Home');
   }, [navigation]);
 
   const handleBackPress = useCallback(() => {
@@ -786,105 +800,50 @@ function VisitFormScreen({ route, navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0F766E" />
-        <Text style={styles.loadingText}>Memuat data kunjungan...</Text>
-      </View>
+      <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={visitColors.primary} />
+          <Text style={styles.loadingText}>Memuat data kunjungan...</Text>
+        </View>
+      </AppScreen>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topBarBack} onPress={handleBackPress} activeOpacity={0.85}>
-          <ArrowLeft size={18} color="#0F766E" />
-        </TouchableOpacity>
-        <View style={styles.topBarCopy}>
-          <Text style={styles.topBarTitle}>{canEditVisit ? 'Form Visit' : 'Detail Visit'}</Text>
-          <Text style={styles.topBarSubtitle}>
-            {canEditVisit ? 'Lengkapi hasil kunjungan sebelum checkout.' : 'Data kunjungan yang sudah tersimpan.'}
-          </Text>
-        </View>
-      </View>
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <VisitHeader
+        title={canEditVisit ? 'Hasil kunjungan' : 'Detail kunjungan'}
+        subtitle={canEditVisit ? 'Lengkapi hasil sebelum checkout.' : 'Data kunjungan yang sudah tersimpan.'}
+        onBack={handleBackPress}
+        status={isOfflineVisit ? <VisitStatusBadge label="Tersimpan offline" tone="warning" /> : null}
+      />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.storeCard}>
-          <View style={styles.storeHeader}>
-            <View style={styles.storeTextWrap}>
-              <Text style={styles.storeLabel}>Visit</Text>
-              <Text style={styles.storeName}>{storeName}</Text>
-              {!!storeAddress && <Text style={styles.storeAddress}>{storeAddress}</Text>}
-              {!!store.branch && <Text style={styles.storeMeta}>{store.branch}</Text>}
-            </View>
-            <View style={[styles.statusBadge, isCheckedOut ? styles.completedBadge : styles.openBadge]}>
-              <CheckCircle2 size={14} color={isCheckedOut ? '#047857' : '#1D4ED8'} />
-              <Text style={[styles.statusText, isCheckedOut ? styles.completedText : styles.openText]}>
-                {isCheckedOut ? 'Selesai' : 'Aktif'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.metaRow}>
-            <MapPin size={16} color="#64748B" />
-            <Text style={styles.metaText}>
-              {visitTimelineText}
-            </Text>
-          </View>
-
-          {visit && (
-            <View style={[styles.locationAuditCard, locationStatus === 'outside_radius' && styles.locationAuditWarning]}>
-              <Text style={styles.locationAuditTitle}>Validasi Lokasi Check-in</Text>
-              <Text style={styles.locationAuditText}>{locationStatusLabel}</Text>
-              <Text style={styles.locationAuditText}>
-                Jarak: {checkinDistance === null ? 'Belum diketahui' : `${Math.round(checkinDistance)} m`}
-                {checkinRadius !== null ? ` · Radius: ${checkinRadius} m` : ''}
-              </Text>
-              {Number.isFinite(Number(visit?.checkin_accuracy)) && visit?.checkin_accuracy !== null && (
-                <Text style={styles.locationAuditText}>
-                  Akurasi GPS: ±{Math.round(Number(visit.checkin_accuracy))} m
-                </Text>
-              )}
-              {visit?.checkin_latitude !== null
-                && visit?.checkin_latitude !== undefined
-                && visit?.checkin_longitude !== null
-                && visit?.checkin_longitude !== undefined
-                && Number.isFinite(Number(visit.checkin_latitude))
-                && Number.isFinite(Number(visit.checkin_longitude)) && (
-                <Text style={styles.locationAuditText}>
-                  Titik check-in: {Number(visit.checkin_latitude).toFixed(6)}, {Number(visit.checkin_longitude).toFixed(6)}
-                </Text>
-              )}
-              {store?.latitude !== null
-                && store?.latitude !== undefined
-                && store?.longitude !== null
-                && store?.longitude !== undefined
-                && Number.isFinite(Number(store.latitude))
-                && Number.isFinite(Number(store.longitude)) && (
-                <Text style={styles.locationAuditText}>
-                  Koordinat toko tersimpan: {Number(store.latitude).toFixed(6)}, {Number(store.longitude).toFixed(6)}
-                </Text>
-              )}
-              <Text style={styles.locationAuditText}>
-                Dihitung ke target: {visit?.counted_as_target ? 'Ya' : 'Tidak'}
-              </Text>
-              {locationStatus === 'unknown' && !store?.has_location && (
-                <Text style={styles.locationAuditHint}>
-                  Koordinat toko belum tersedia. Jika check-in memenuhi syarat akurasi, titik ini dapat menjadi observasi awal setelah checkout.
-                </Text>
-              )}
-            </View>
-          )}
-
-          {hasStoreRoute && (
-            <TouchableOpacity style={styles.routeButton} onPress={handleOpenRoute} activeOpacity={0.85}>
-              <Navigation size={15} color="#0F766E" />
-              <Text style={styles.routeButtonText}>Buka Rute Google Maps</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+      <ScrollView
+        contentContainerStyle={[styles.content, keyboardHeight > 0 && { paddingBottom: keyboardHeight + visitSpacing.sectionLarge }]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        <VisitStoreSummary
+          storeName={storeName}
+          storeAddress={storeAddress}
+          branch={store.branch}
+          timeline={checkinTime ? `Check-in ${checkinTime}${checkoutTime ? ` Â· Checkout ${checkoutTime}` : ''}` : visitTimelineText}
+          status={isCheckedOut ? 'Selesai' : 'Aktif'}
+          onRoute={hasStoreRoute ? handleOpenRoute : undefined}
+        />
+        <VisitLocationAudit
+          visit={visit}
+          locationStatus={locationStatus}
+          locationStatusLabel={locationStatusLabel}
+          checkinDistance={checkinDistance}
+          checkinRadius={checkinRadius}
+          store={store}
+        />
+        {canEditVisit ? <Text style={styles.progressHint}>Isi hasil kunjungan, tambahkan foto, lalu checkout.</Text> : null}
 
         {SHOW_MOBILE_RECEIVABLES && !!sapOutstanding && (
           <View style={styles.sapCard}>
@@ -1187,16 +1146,8 @@ function VisitFormScreen({ route, navigation }) {
           </View>
         )}
 
-        {canEditVisit && (
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionBtn, styles.photoBtn]} onPress={handleTakePhoto}>
-              <Camera size={20} color="#fff" />
-              <Text style={styles.actionBtnText}>Foto Wajib</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         <View style={styles.formCard}>
+          <Text style={styles.formTitle}>Hasil kunjungan</Text>
           <Text style={styles.fieldLabel}>PIC Toko / Customer</Text>
           <TextInput
             style={styles.input}
@@ -1239,7 +1190,7 @@ function VisitFormScreen({ route, navigation }) {
             </Picker>
           </View>
 
-          <Text style={styles.fieldLabel}>Hasil Visit</Text>
+          <Text style={styles.fieldLabel}>Hasil kunjungan</Text>
           <View style={styles.pickerWrap}>
             <Picker
               selectedValue={form.visitResult}
@@ -1261,7 +1212,7 @@ function VisitFormScreen({ route, navigation }) {
             </Picker>
           </View>
 
-          <Text style={styles.fieldLabel}>Respon Customer (optional)</Text>
+          <Text style={styles.fieldLabel}>Respon pelanggan (opsional)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={form.customerResponse}
@@ -1284,6 +1235,16 @@ function VisitFormScreen({ route, navigation }) {
           />
         </View>
 
+        {canEditVisit ? (
+          <View style={styles.actionRow}>
+            <Text style={styles.sectionTitle}>Foto kunjungan</Text>
+            <TouchableOpacity style={[styles.actionBtn, styles.photoBtn]} onPress={handleTakePhoto} accessibilityRole="button">
+              <Camera size={20} color={visitColors.surface} />
+              <Text style={styles.actionBtnText}>Ambil foto wajib</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.auditCard}>
           <Text style={styles.auditTitle}>Audit</Text>
           <Text style={styles.auditText}>User: {user?.name || '-'}</Text>
@@ -1293,7 +1254,7 @@ function VisitFormScreen({ route, navigation }) {
         {photoCount > 0 && (
           <View style={styles.photoCard}>
             <View style={styles.photoHeader}>
-              <Text style={styles.photoTitle}>Foto Terkirim</Text>
+              <Text style={styles.photoTitle}>Foto kunjungan</Text>
               <Text style={styles.photoCount}>{photoCount} foto</Text>
             </View>
 
@@ -1332,7 +1293,7 @@ function VisitFormScreen({ route, navigation }) {
             disabled={saving}
           >
             {saving ? <ActivityIndicator color="#fff" /> : <Save size={20} color="#fff" />}
-            <Text style={styles.saveBtnText}>Simpan Visit</Text>
+            <Text style={styles.saveBtnText}>Simpan dan checkout</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -1364,31 +1325,36 @@ function VisitFormScreen({ route, navigation }) {
         title="Foto Kunjungan"
         onClose={closePhotoPreview}
       />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
   container: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: visitColors.canvas,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: visitColors.canvas,
   },
   loadingText: {
     marginTop: 12,
-    color: '#64748B',
-    fontSize: 14,
+    ...visitType.body,
+    color: visitColors.mutedInk,
   },
   content: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'android' ? 84 : 60,
+    padding: visitSpacing.page,
+    paddingBottom: visitSpacing.sectionLarge,
   },
+  progressHint: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.md },
+  sectionTitle: { ...visitType.section, color: visitColors.ink, marginBottom: visitSpacing.sm },
+  formTitle: { ...visitType.section, color: visitColors.ink, marginBottom: visitSpacing.sm },
   topBar: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -1808,101 +1774,102 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   actionRow: {
-    marginBottom: 16,
+    marginTop: visitSpacing.section,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    minHeight: 46,
-    borderRadius: 14,
+    minHeight: 48,
+    borderRadius: visitRadii.control,
   },
   photoBtn: {
-    backgroundColor: '#0F766E',
+    backgroundColor: visitColors.primary,
   },
   actionBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
+    ...visitType.label,
+    color: visitColors.surface,
   },
   formCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: visitColors.surface,
+    borderRadius: visitRadii.card,
+    borderWidth: 1,
+    borderColor: visitColors.border,
+    padding: visitSpacing.card,
+    marginTop: visitSpacing.section,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 8,
-    marginTop: 12,
+    ...visitType.label,
+    color: visitColors.ink,
+    marginBottom: visitSpacing.sm,
+    marginTop: visitSpacing.md,
   },
   fieldHint: {
     marginTop: 6,
     fontSize: 12,
     lineHeight: 16,
-    color: '#64748B',
+    color: visitColors.mutedInk,
   },
   pickerWrap: {
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
+    borderColor: visitColors.border,
+    borderRadius: visitRadii.control,
     overflow: 'hidden',
-    backgroundColor: '#004181',
+    backgroundColor: visitColors.primary,
   },
   picker: {
     minHeight: 48,
-    color: Platform.OS === 'android' ? '#FFFFFF' : '#ffffff',
-    backgroundColor: Platform.OS === 'android' ? '#004181' : '#7a96b1',
+    color: visitColors.surface,
+    backgroundColor: visitColors.primary,
   },
   pickerItem: {
     fontSize: 15,
   },
   input: {
-    backgroundColor: '#F8FAFC',
+    minHeight: 48,
+    backgroundColor: visitColors.surface,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    color: '#1E293B',
+    borderColor: visitColors.border,
+    borderRadius: visitRadii.control,
+    padding: visitSpacing.md,
+    ...visitType.body,
+    color: visitColors.ink,
   },
   readonlyField: {
     minHeight: 48,
     justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: visitColors.canvas,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderColor: visitColors.border,
+    borderRadius: visitRadii.control,
+    paddingHorizontal: visitSpacing.md,
   },
   readonlyFieldText: {
     fontSize: 15,
-    color: '#1E293B',
+    color: visitColors.ink,
   },
   textArea: {
     minHeight: 96,
     textAlignVertical: 'top',
   },
   auditCard: {
-    backgroundColor: '#FFF7ED',
+    backgroundColor: visitColors.primaryTint,
     borderWidth: 1,
-    borderColor: '#FED7AA',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 16,
+    borderColor: visitColors.border,
+    borderRadius: visitRadii.card,
+    padding: visitSpacing.card,
+    marginTop: visitSpacing.section,
   },
   auditTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#C2410C',
-    marginBottom: 6,
+    ...visitType.label,
+    color: visitColors.ink,
+    marginBottom: visitSpacing.xs,
   },
   auditText: {
-    fontSize: 12,
-    color: '#9A3412',
-    marginTop: 3,
+    ...visitType.caption,
+    color: visitColors.mutedInk,
+    marginTop: visitSpacing.xs,
   },
   locationAuditCard: {
     marginTop: 14,
@@ -1935,12 +1902,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   photoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 16,
+    backgroundColor: visitColors.surface,
+    borderRadius: visitRadii.card,
+    padding: visitSpacing.card,
+    marginTop: visitSpacing.section,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: visitColors.border,
   },
   photoHeader: {
     flexDirection: 'row',
@@ -1949,14 +1916,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   photoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
+    ...visitType.section,
+    color: visitColors.ink,
   },
   photoCount: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '700',
+    ...visitType.caption,
+    color: visitColors.mutedInk,
   },
   photoGrid: {
     flexDirection: 'row',
@@ -1979,19 +1944,18 @@ const styles = StyleSheet.create({
     color: '#1E293B',
   },
   saveBtn: {
-    marginTop: 16,
-    backgroundColor: '#0F766E',
-    borderRadius: 14,
-    minHeight: 48,
+    marginTop: visitSpacing.section,
+    backgroundColor: visitColors.primary,
+    borderRadius: visitRadii.control,
+    minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
   },
   saveBtnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '800',
+    ...visitType.section,
+    color: visitColors.surface,
   },
   backDetailBtn: {
     marginTop: 16,
