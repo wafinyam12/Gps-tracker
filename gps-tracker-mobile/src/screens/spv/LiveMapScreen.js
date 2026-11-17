@@ -2,9 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AppState,
   ActivityIndicator,
-  Dimensions,
-  Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,9 +12,12 @@ import {
 import moment from 'moment';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ChevronLeft, RefreshCw } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { locationService } from '../../api/services/locationService';
 import OpenStreetMapView from '../../components/maps/OpenStreetMapView';
 import { logEvent } from '../../utils/diagnosticLogger';
+import { findSelectedMonitoringBranch, getMonitoringMapDataState, getMonitoringMapScope, getSalesOnlineLabel } from '../../utils/monitoringMapPresentation';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
 const LIVE_REFRESH_MS = 60_000;
 const VIEWPORT_DEBOUNCE_MS = 450;
@@ -58,10 +60,13 @@ const LiveMapScreen = () => {
   const [customerLayer, setCustomerLayer] = useState({ mode: 'clusters', items: [], meta: null });
   const [scopeTeamId, setScopeTeamId] = useState(null);
   const [selectedTeamId, setSelectedTeamId] = useState(null);
+  const [canAccessAllBranches, setCanAccessAllBranches] = useState(false);
   const [showCustomers, setShowCustomers] = useState(true);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [customerLoading, setCustomerLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [customerError, setCustomerError] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [region, setRegion] = useState(DEFAULT_REGION);
   const [mapZoom, setMapZoom] = useState(12);
@@ -74,8 +79,7 @@ const LiveMapScreen = () => {
   const navigation = useNavigation();
 
   const activeTeamId = selectedTeamId || scopeTeamId;
-  const isGlobalView = !scopeTeamId && !selectedTeamId;
-  const canReturnToGlobal = !scopeTeamId && !!selectedTeamId;
+  const isGlobalView = canAccessAllBranches && !selectedTeamId;
 
   const focusMap = useCallback((latitude, longitude, zoom = 15) => {
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -95,6 +99,7 @@ const LiveMapScreen = () => {
     const requestSequence = customerRequestSequenceRef.current + 1;
     customerRequestSequenceRef.current = requestSequence;
     setCustomerLoading(true);
+    setCustomerError(false);
 
     try {
       const response = await locationService.getCustomerMarkers({
@@ -120,6 +125,7 @@ const LiveMapScreen = () => {
       if (requestSequence === customerRequestSequenceRef.current) {
         logEvent('monitoring.customer_markers_fetch_failed', { status: error.response?.status, error_code: error.code });
         setCustomerLayer({ mode: 'clusters', items: [], meta: null });
+        setCustomerError(true);
       }
     } finally {
       if (requestSequence === customerRequestSequenceRef.current) {
@@ -145,6 +151,7 @@ const LiveMapScreen = () => {
   const fetchLocations = useCallback(async () => {
     const requestSequence = liveRequestSequenceRef.current + 1;
     liveRequestSequenceRef.current = requestSequence;
+    setLoadError(false);
     try {
       const response = await locationService.getLiveLocations(
         selectedTeamId ? { team_id: selectedTeamId, limit: 50 } : { limit: 50 }
@@ -165,10 +172,11 @@ const LiveMapScreen = () => {
       setLocations(users);
       setBranchLocations(branches);
       setScopeTeamId(nextScopeTeamId);
+      setCanAccessAllBranches(Boolean(payload.scope?.can_access_all_branches));
       setLastUpdatedAt(new Date());
 
       if (!hasCenteredRef.current) {
-        const selectedBranch = branches.find((branch) => branch.id === (selectedTeamId || nextScopeTeamId));
+        const selectedBranch = findSelectedMonitoringBranch(branches, selectedTeamId || nextScopeTeamId);
         const firstUser = users.find((user) => user.location);
         const anchor = selectedBranch || firstUser?.location || branches[0];
 
@@ -180,6 +188,7 @@ const LiveMapScreen = () => {
     } catch (error) {
       if (requestSequence === liveRequestSequenceRef.current) {
         logEvent('monitoring.live_locations_fetch_failed', { status: error.response?.status, error_code: error.code });
+        setLoadError(true);
       }
     } finally {
       if (requestSequence === liveRequestSequenceRef.current) {
@@ -219,6 +228,7 @@ const LiveMapScreen = () => {
       customerRequestSequenceRef.current += 1;
       setCustomerLayer({ mode: 'clusters', items: [], meta: null });
       setCustomerLoading(false);
+      setCustomerError(false);
       return;
     }
 
@@ -308,22 +318,34 @@ const LiveMapScreen = () => {
     }
   };
 
-  const selectedBranch = branchLocations.find((branch) => branch.id === activeTeamId);
+  const selectedBranch = findSelectedMonitoringBranch(branchLocations, activeTeamId);
+  const mapScope = getMonitoringMapScope({
+    scopeTeamId,
+    selectedTeamId,
+    selectedBranchName: selectedBranch?.name,
+    canAccessAllBranches,
+  });
+  const mapDataState = getMonitoringMapDataState({
+    loadError,
+    hasLocations: locations.some((item) => item.location),
+  });
   const customerMetaText = customerLayer.meta
-    ? `${customerLayer.meta.visible_customers || 0} customer ${customerLayer.mode === 'markers' ? 'di peta' : 'dikelompokkan'}`
+    ? `${customerLayer.meta.visible_customers || 0} pelanggan ${customerLayer.mode === 'markers' ? 'di peta' : 'dikelompokkan'}`
     : null;
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.center}>
+        <StatusBar barStyle="dark-content" />
         <ActivityIndicator size="large" color="#0F766E" />
         <Text style={styles.loadingText}>Memuat peta monitoring...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.container}>
+      <StatusBar barStyle="dark-content" />
       <OpenStreetMapView
         style={styles.map}
         center={region}
@@ -334,12 +356,17 @@ const LiveMapScreen = () => {
         onViewportChange={handleViewportChange}
       />
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
-        <ChevronLeft size={18} color="#0F766E" />
-        <Text style={styles.backBtnText}>Kembali</Text>
-      </TouchableOpacity>
-
-      <View style={styles.overlayHeader}>
+      <View style={styles.overlayTop}>
+        <View style={styles.topRow}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Kembali" style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
+            <ChevronLeft size={18} color={visitColors.primary} />
+            <Text style={styles.backBtnText}>Kembali</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Perbarui posisi Sales" style={styles.refreshBtn} onPress={onManualRefresh} disabled={refreshing}>
+            {refreshing ? <ActivityIndicator size="small" color={visitColors.primary} /> : <RefreshCw size={20} color={visitColors.primary} />}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.filterRow}>
         <View style={styles.legend}>
           <View style={styles.legendItem}>
             <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
@@ -357,29 +384,21 @@ const LiveMapScreen = () => {
           )}
         </View>
 
-        <View style={styles.actionStack}>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={showCustomers ? 'Sembunyikan pelanggan di peta' : 'Tampilkan pelanggan di peta'}
             style={[styles.customerToggle, showCustomers && styles.customerToggleActive]}
             onPress={() => setShowCustomers((current) => !current)}
             activeOpacity={0.85}
           >
             <Text style={[styles.customerToggleText, showCustomers && styles.customerToggleTextActive]}>
-              {showCustomers ? 'Customer On' : 'Customer Off'}
+              {showCustomers ? 'Pelanggan tampil' : 'Pelanggan tersembunyi'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshBtn} onPress={onManualRefresh} disabled={refreshing}>
-            {refreshing ? (
-              <ActivityIndicator size="small" color="#0F766E" />
-            ) : (
-              <RefreshCw size={20} color="#0F766E" />
-            )}
-          </TouchableOpacity>
         </View>
-      </View>
-
-      <View style={styles.mapStatus}>
+        <View style={styles.mapStatus}>
         <Text style={styles.mapStatusTitle}>
-          {selectedBranch?.name || (isGlobalView ? 'Pilih marker cabang untuk melihat customer' : 'Monitoring Cabang')}
+          {mapScope.label}
         </Text>
         {!!lastUpdatedAt && (
           <Text style={styles.mapStatusMeta}>
@@ -388,14 +407,19 @@ const LiveMapScreen = () => {
         )}
         {showCustomers && activeTeamId && (
           <Text style={styles.mapStatusMeta}>
-            {customerLoading ? 'Memuat customer di area peta...' : customerMetaText || 'Geser atau perbesar peta untuk memuat customer.'}
+            {customerLoading ? 'Memuat pelanggan di area peta...' : customerError ? 'Pelanggan gagal dimuat. Ketuk perbarui.' : customerMetaText || 'Geser atau perbesar peta untuk memuat pelanggan.'}
           </Text>
         )}
-        {canReturnToGlobal && (
-          <TouchableOpacity style={styles.allBranchesButton} onPress={() => setSelectedTeamId(null)}>
+        {mapDataState === 'error' ? <Text style={styles.errorText}>Posisi terbaru gagal dimuat. Data terakhir tetap ditampilkan.</Text> : null}
+        {mapDataState === 'empty' ? (
+          <Text style={styles.mapStatusMeta}>Belum ada posisi Sales yang tersedia. Ketuk perbarui untuk mencoba lagi.</Text>
+        ) : null}
+        {mapScope.canReturnToGlobal ? (
+          <TouchableOpacity accessibilityRole="button" style={styles.allBranchesButton} onPress={() => setSelectedTeamId(null)}>
             <Text style={styles.allBranchesText}>Semua cabang</Text>
           </TouchableOpacity>
-        )}
+        ) : null}
+        </View>
       </View>
 
       <View style={styles.overlayBottom}>
@@ -408,86 +432,88 @@ const LiveMapScreen = () => {
             >
               <View style={[styles.statusIndicator, { backgroundColor: item.is_online ? '#10B981' : '#EF4444' }]} />
               <Text style={styles.userCardName}>{item.name}</Text>
+              <Text style={styles.userCardStatus}>{getSalesOnlineLabel(item.is_online)}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: visitColors.canvas,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: visitColors.canvas,
   },
   loadingText: {
     marginTop: 12,
-    color: '#64748B',
+    color: visitColors.mutedInk,
     fontSize: 14,
   },
   map: {
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
+    ...StyleSheet.absoluteFillObject,
   },
-  overlayHeader: {
+  overlayTop: {
     position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
+    top: visitSpacing.sm,
+    left: visitSpacing.page,
+    right: visitSpacing.page,
+    gap: visitSpacing.sm,
+  },
+  topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  backBtn: {
-    position: 'absolute',
-    top: 18,
-    left: 20,
-    zIndex: 20,
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    gap: visitSpacing.sm,
   },
-  backBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F766E',
-  },
-  legend: {
-    flex: 1,
-    maxWidth: '68%',
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 16,
+  filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    alignItems: 'flex-start',
+    gap: visitSpacing.sm,
+  },
+  backBtn: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: visitSpacing.xs,
+    backgroundColor: visitColors.surface,
+    paddingHorizontal: visitSpacing.md,
+    borderRadius: visitRadii.control,
+    borderWidth: 1,
+    borderColor: visitColors.border,
+  },
+  backBtnText: {
+    ...visitType.label,
+    color: visitColors.primary,
+  },
+  legend: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 150,
+    minHeight: 44,
+    backgroundColor: visitColors.surface,
+    paddingHorizontal: visitSpacing.sm,
+    paddingVertical: visitSpacing.sm,
+    borderRadius: visitRadii.control,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: visitSpacing.sm,
+    borderWidth: 1,
+    borderColor: visitColors.border,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: visitSpacing.xs,
   },
   dot: {
     width: 8,
@@ -495,96 +521,91 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   legendText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  actionStack: {
-    alignItems: 'flex-end',
-    gap: 8,
+    ...visitType.caption,
+    color: visitColors.ink,
   },
   customerToggle: {
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
-    elevation: 4,
+    minWidth: 120,
+    minHeight: 44,
+    flexShrink: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: visitColors.surface,
+    paddingHorizontal: visitSpacing.sm,
+    borderRadius: visitRadii.control,
+    borderWidth: 1,
+    borderColor: visitColors.border,
   },
   customerToggleActive: {
-    backgroundColor: '#B45309',
+    backgroundColor: visitColors.primary,
+    borderColor: visitColors.primary,
   },
   customerToggleText: {
-    color: '#B45309',
-    fontSize: 10,
-    fontWeight: '900',
+    ...visitType.caption,
+    color: visitColors.primary,
+    textAlign: 'center',
   },
   customerToggleTextActive: {
-    color: '#fff',
+    color: visitColors.surface,
   },
   refreshBtn: {
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: visitColors.surface,
+    borderRadius: visitRadii.control,
+    borderWidth: 1,
+    borderColor: visitColors.border,
   },
   mapStatus: {
-    position: 'absolute',
-    top: 132,
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 3,
+    backgroundColor: visitColors.surface,
+    borderRadius: visitRadii.card,
+    padding: visitSpacing.md,
+    gap: visitSpacing.xs,
+    borderWidth: 1,
+    borderColor: visitColors.border,
   },
   mapStatusTitle: {
-    color: '#1E293B',
-    fontSize: 12,
-    fontWeight: '900',
+    ...visitType.label,
+    color: visitColors.ink,
   },
   mapStatusMeta: {
-    color: '#64748B',
-    fontSize: 11,
-    lineHeight: 15,
+    ...visitType.caption,
+    color: visitColors.mutedInk,
   },
+  errorText: { ...visitType.caption, color: visitColors.danger },
   allBranchesButton: {
     alignSelf: 'flex-start',
-    marginTop: 4,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: visitSpacing.sm,
   },
   allBranchesText: {
-    color: '#0F766E',
-    fontSize: 11,
-    fontWeight: '900',
+    ...visitType.label,
+    color: visitColors.primary,
   },
   overlayBottom: {
     position: 'absolute',
-    bottom: Platform.OS === 'android' ? 64 : 40,
+    bottom: visitSpacing.sm,
     left: 0,
     right: 0,
   },
   userScroll: {
-    paddingHorizontal: 20,
-    gap: 12,
+    paddingHorizontal: visitSpacing.page,
+    gap: visitSpacing.sm,
   },
   userCard: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
+    minHeight: 44,
+    backgroundColor: visitColors.surface,
+    paddingHorizontal: visitSpacing.card,
+    borderRadius: visitRadii.control,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: visitSpacing.sm,
     minWidth: 120,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: visitColors.border,
   },
   statusIndicator: {
     width: 8,
@@ -592,10 +613,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   userCardName: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#1E293B',
+    ...visitType.label,
+    color: visitColors.ink,
   },
+  userCardStatus: { ...visitType.caption, color: visitColors.mutedInk },
 });
 
 export default LiveMapScreen;
