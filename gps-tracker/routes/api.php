@@ -93,6 +93,11 @@ Route::prefix('v1')->middleware(ApiRequestLog::class)->group(function () {
             Route::post('target/set', [DailyTargetController::class, 'set'])
                 ->middleware('role:spv|admin|superadmin');
 
+            Route::middleware('role:spv')->group(function () {
+                Route::get('target/eligible-sales', [DailyTargetController::class, 'eligibleSales']);
+                Route::post('target/range-set', [DailyTargetController::class, 'rangeSet']);
+            });
+
             Route::get('reports/per-sales', [ReportController::class, 'perSales']);
             Route::get('reports/per-store', [ReportController::class, 'perStore']);
 

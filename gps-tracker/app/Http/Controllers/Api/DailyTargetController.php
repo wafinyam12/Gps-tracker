@@ -9,8 +9,11 @@ use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Services\Visits\VisitAnalyticsService;
 use App\Services\Visits\VisitPhotoUrlService;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class DailyTargetController extends Controller
 {
@@ -133,6 +136,90 @@ class DailyTargetController extends Controller
         ], 'Target harian berhasil disimpan.', 201);
     }
 
+    public function eligibleSales(Request $request)
+    {
+        $viewer = $request->user();
+        if (! $viewer->team_id) {
+            return response()->error('Cabang Area Manager belum ditentukan.', 403);
+        }
+
+        return response()->success([
+            'sales' => $this->eligibleSalesQuery($viewer)
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name])
+                ->values(),
+        ]);
+    }
+
+    public function rangeSet(Request $request)
+    {
+        $viewer = $request->user();
+        if (! $viewer->team_id) {
+            return response()->error('Cabang Area Manager belum ditentukan.', 403);
+        }
+
+        $validated = $request->validate([
+            'selection' => 'required|in:all,selected',
+            'user_ids' => 'required_if:selection,selected|array|min:1|max:100',
+            'user_ids.*' => 'integer|distinct|min:1',
+            'date_from' => 'required|date_format:Y-m-d',
+            'date_to' => 'required|date_format:Y-m-d|after_or_equal:date_from',
+            'target_visits' => 'required|integer|min:1|max:100',
+        ]);
+
+        $start = CarbonImmutable::parse($validated['date_from'], self::LOCAL_TIMEZONE);
+        $end = CarbonImmutable::parse($validated['date_to'], self::LOCAL_TIMEZONE);
+        $daysCount = (int) $start->diffInDays($end) + 1;
+        if ($daysCount > 31) {
+            throw ValidationException::withMessages(['date_to' => 'Rentang tanggal maksimal 31 hari.']);
+        }
+
+        $salesQuery = $this->eligibleSalesQuery($viewer);
+        if ($validated['selection'] === 'selected') {
+            $sales = $salesQuery->whereIn('id', $validated['user_ids'])->get(['id', 'name']);
+            if ($sales->count() !== count($validated['user_ids'])) {
+                return response()->error('Anda hanya dapat mengatur target Sales aktif di cabang sendiri.', 403);
+            }
+        } else {
+            $sales = $salesQuery->get(['id', 'name']);
+        }
+
+        if ($sales->isEmpty()) {
+            throw ValidationException::withMessages(['user_ids' => 'Belum ada Sales aktif yang dapat dipilih.']);
+        }
+
+        $now = now();
+        DB::transaction(function () use ($sales, $start, $end, $validated, $viewer, $now) {
+            $rows = [];
+            for ($date = $start; $date->lte($end); $date = $date->addDay()) {
+                foreach ($sales as $user) {
+                    $rows[] = [
+                        'user_id' => $user->id,
+                        'target_date' => $date->toDateString(),
+                        'target_visits' => (int) $validated['target_visits'],
+                        'set_by' => $viewer->id,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                    if (count($rows) === 100) {
+                        DailyTarget::upsert($rows, ['user_id', 'target_date'], ['target_visits', 'set_by', 'updated_at']);
+                        $rows = [];
+                    }
+                }
+            }
+            if ($rows !== []) {
+                DailyTarget::upsert($rows, ['user_id', 'target_date'], ['target_visits', 'set_by', 'updated_at']);
+            }
+        });
+
+        return response()->success([
+            'sales_count' => $sales->count(),
+            'days_count' => $daysCount,
+            'targets_written' => $sales->count() * $daysCount,
+        ], 'Target harian berhasil disimpan.', 201);
+    }
+
     public function bulkSet(Request $request)
     {
         $request->validate([
@@ -169,7 +256,15 @@ class DailyTargetController extends Controller
 
     private function canManageTargetUser(User $viewer, User $target): bool
     {
-        return $viewer->canAccessUserRecord($target);
+        return $target->hasRole('sales') && $viewer->canAccessUserRecord($target);
+    }
+
+    private function eligibleSalesQuery(User $viewer): Builder
+    {
+        return User::query()
+            ->where('team_id', $viewer->team_id)
+            ->where('is_active', true)
+            ->whereHas('roles', fn (Builder $query) => $query->where('name', 'sales'));
     }
 
     private function formatTarget(DailyTarget $target): array
