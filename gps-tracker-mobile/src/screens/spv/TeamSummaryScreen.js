@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { AlertTriangle, ArrowRight, Calendar, RefreshCw } from 'lucide-react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { AlertTriangle, ArrowRight, Calendar, RefreshCw, SlidersHorizontal } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import moment from 'moment';
@@ -39,10 +39,6 @@ const TeamSummaryScreen = () => {
     }
   }, [isSpv, user]);
 
-  useEffect(() => {
-    fetchSummary();
-  }, [selectedDate, selectedTeamId, isSpv, user]);
-
   const fetchTeams = async () => {
     try {
       const response = await teamService.getTeams();
@@ -72,6 +68,10 @@ const TeamSummaryScreen = () => {
       setLoading(false);
     }
   };
+
+  useFocusEffect(React.useCallback(() => {
+    fetchSummary();
+  }, [selectedDate, selectedTeamId, canChooseBranch, user?.branch?.id, user?.team?.id]));
 
   const onDateChange = (_event, nextDate) => {
     setShowDatePicker(false);
@@ -109,6 +109,23 @@ const TeamSummaryScreen = () => {
             </View>
           ) : <Text style={styles.fixedBranch}>Hanya data {fixedBranchName}</Text>}
         </View>
+
+        {isSpv ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Atur target harian Sales"
+            onPress={() => navigation.navigate('TargetRange', { initialDate: moment(selectedDate).format('YYYY-MM-DD') })}
+            style={styles.targetAction}
+            activeOpacity={0.85}
+          >
+            <View style={styles.targetActionIcon}><SlidersHorizontal size={20} color={visitColors.primary} /></View>
+            <View style={styles.targetActionCopy}>
+              <Text style={styles.targetActionTitle}>Atur target harian</Text>
+              <Text style={styles.targetActionText}>Untuk semua atau beberapa Sales di cabang ini</Text>
+            </View>
+            <ArrowRight size={18} color={visitColors.primary} />
+          </TouchableOpacity>
+        ) : null}
 
         {summaryState === 'loading' ? (
           <View style={styles.stateCard}>
@@ -197,6 +214,11 @@ const styles = StyleSheet.create({
   pickerWrap: { minHeight: 48, justifyContent: 'center', backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.control },
   picker: { color: visitColors.ink },
   fixedBranch: { ...visitType.caption, color: visitColors.mutedInk, paddingVertical: visitSpacing.sm },
+  targetAction: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.md, padding: visitSpacing.card, marginTop: visitSpacing.section, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card },
+  targetActionIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', backgroundColor: visitColors.primaryTint, borderRadius: visitRadii.control },
+  targetActionCopy: { flex: 1, minWidth: 0 },
+  targetActionTitle: { ...visitType.section, color: visitColors.ink },
+  targetActionText: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
   sectionTitle: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.sectionLarge, marginBottom: visitSpacing.sm },
   progressCard: { padding: visitSpacing.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card },
   progressTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: visitSpacing.sm },

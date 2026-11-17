@@ -34,6 +34,7 @@ import StoreListScreen from './src/screens/admin/StoreListScreen';
 import LiveMapScreen from './src/screens/spv/LiveMapScreen';
 import SalesDetailScreen from './src/screens/spv/SalesDetailScreen';
 import TeamSummaryScreen from './src/screens/spv/TeamSummaryScreen';
+import TargetRangeScreen from './src/screens/spv/TargetRangeScreen';
 import AlertListScreen from './src/screens/spv/AlertListScreen';
 import MySummaryScreen from './src/screens/MySummaryScreen';
 
@@ -174,6 +175,11 @@ const AdminStack = () => (
     <Stack.Screen
       name="TeamSummary"
       component={TeamSummaryScreen}
+      options={{ headerShown: false }}
+    />
+    <Stack.Screen
+      name="TargetRange"
+      component={TargetRangeScreen}
       options={{ headerShown: false }}
     />
     <Stack.Screen
