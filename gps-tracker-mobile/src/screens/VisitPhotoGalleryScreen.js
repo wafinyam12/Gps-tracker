@@ -1,54 +1,45 @@
-import React, { useState, useEffect } from 'react';
-import { Platform, View, Text, StyleSheet, FlatList, Image, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { visitService } from '../api/services/visitService';
-import { ChevronLeft, Trash2, MapPin } from 'lucide-react-native';
+import { MapPin, Trash2 } from 'lucide-react-native';
 import moment from 'moment';
+import { visitService } from '../api/services/visitService';
 import PhotoPreviewModal from '../components/PhotoPreviewModal';
+import AppScreen from '../components/ui/AppScreen';
+import VisitHeader from '../components/visit/VisitHeader';
+import { formatVisitPhotoLocation } from '../utils/visitPhotoPresentation';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../styles/visitTheme';
 
 const VisitPhotoGalleryScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { visitLogId, canDelete } = route.params || {};
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [photoPreviewIndex, setPhotoPreviewIndex] = useState(0);
 
   useEffect(() => {
     if (!visitLogId) {
       Alert.alert('Error', 'ID kunjungan tidak ditemukan.');
       navigation.goBack();
     }
-  }, [visitLogId]);
-
-  const [photos, setPhotos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
-  const [photoPreviewIndex, setPhotoPreviewIndex] = useState(0);
-
-  const openPhotoPreview = (index = 0) => {
-    if (photos.length === 0) {
-      return;
-    }
-
-    setPhotoPreviewIndex(index);
-    setPhotoPreviewVisible(true);
-  };
-
-  const closePhotoPreview = () => {
-    setPhotoPreviewVisible(false);
-  };
+  }, [visitLogId, navigation]);
 
   useEffect(() => {
-    fetchPhotos();
-  }, []);
+    if (visitLogId) fetchPhotos();
+  }, [visitLogId]);
 
   const fetchPhotos = async () => {
     setLoading(true);
+    setErrorMessage('');
     try {
       const response = await visitService.getVisitPhotos(visitLogId);
       setPhotos(response.data?.photos || []);
     } catch (error) {
-      Alert.alert('Error', 'Gagal mengambil foto kunjungan.');
-      navigation.goBack();
+      setErrorMessage('Foto kunjungan belum dapat dimuat. Periksa koneksi lalu coba lagi.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -60,185 +51,124 @@ const VisitPhotoGalleryScreen = () => {
     fetchPhotos();
   };
 
-  const handleDeletePhoto = async (photoId) => {
-    Alert.alert(
-      'Hapus Foto',
-      'Anda yakin ingin menghapus foto ini?',
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Hapus',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await visitService.deletePhoto(photoId);
-              Alert.alert('Berhasil', 'Foto berhasil dihapus.');
-              fetchPhotos(); // Refresh list
-            } catch (error) {
-              Alert.alert('Error', error.response?.data?.message || 'Gagal menghapus foto.');
-            }
-          },
+  const handleDeletePhoto = (photoId) => {
+    Alert.alert('Hapus foto', 'Yakin ingin menghapus foto ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await visitService.deletePhoto(photoId);
+            Alert.alert('Berhasil', 'Foto berhasil dihapus.');
+            fetchPhotos();
+          } catch (error) {
+            Alert.alert('Gagal', error.response?.data?.message || 'Foto belum dapat dihapus.');
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
-  const renderPhotoItem = ({ item }) => (
+  const renderPhotoItem = ({ item, index }) => (
     <View style={styles.photoCard}>
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Lihat foto ${index + 1}`}
         activeOpacity={0.9}
-        onPress={() => openPhotoPreview(photos.findIndex((photo) => photo.id === item.id))}
+        onPress={() => {
+          setPhotoPreviewIndex(index);
+          setPhotoPreviewVisible(true);
+        }}
       >
         <Image source={{ uri: item.url }} style={styles.photoImage} />
       </TouchableOpacity>
-      <View style={styles.photoDetails}>
-        <Text style={styles.photoType}>Tipe: {item.type}</Text>
-        <View style={styles.locationInfo}>
-          <MapPin size={14} color="#64748B" />
-          <Text style={styles.locationText}>
-            {item.location ? `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}` : 'N/A'}
-          </Text>
-        </View>
-        <Text style={styles.takenAt}>Diambil: {moment(item.taken_at).format('DD MMM YYYY, HH:mm')}</Text>
-      </View>
-      {canDelete && (
-        <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeletePhoto(item.id)}>
-          <Trash2 size={20} color="#EF4444" />
+      {canDelete ? (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Hapus foto ${index + 1}`}
+          style={styles.deleteBtn}
+          onPress={() => handleDeletePhoto(item.id)}
+        >
+          <Trash2 size={19} color={visitColors.danger} />
         </TouchableOpacity>
-      )}
+      ) : null}
+      <View style={styles.photoDetails}>
+        <Text style={styles.photoType}>{item.type || 'Foto kunjungan'}</Text>
+        <View style={styles.locationRow}>
+          <MapPin size={14} color={visitColors.mutedInk} />
+          <Text style={styles.locationText}>{formatVisitPhotoLocation(item.location)}</Text>
+        </View>
+        <Text style={styles.takenAt}>{moment(item.taken_at).format('DD MMM YYYY, HH:mm')}</Text>
+      </View>
     </View>
   );
 
-  if (loading && !refreshing) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0F766E" />
-        <Text style={styles.loadingText}>Memuat galeri foto...</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <ChevronLeft size={24} color="#1E293B" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Galeri Foto Kunjungan</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <FlatList
-        data={photos}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderPhotoItem}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Tidak ada foto untuk kunjungan ini.</Text>
-        }
-        onRefresh={onRefresh}
-        refreshing={refreshing}
-      />
-
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader title="Foto kunjungan" subtitle={`${photos.length} foto tersimpan`} onBack={() => navigation.goBack()} />
+      {loading && !refreshing ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={visitColors.primary} />
+          <Text style={styles.stateText}>Memuat galeri foto...</Text>
+        </View>
+      ) : errorMessage ? (
+        <View style={styles.stateCard}>
+          <Text style={styles.stateTitle}>Foto belum dapat dimuat</Text>
+          <Text style={styles.stateText}>{errorMessage}</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={fetchPhotos} style={styles.retryButton}>
+            <Text style={styles.retryText}>Coba lagi</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={photos}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderPhotoItem}
+          numColumns={2}
+          columnWrapperStyle={styles.photoRow}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={(
+            <View style={styles.emptyCard}>
+              <Text style={styles.stateTitle}>Belum ada foto</Text>
+              <Text style={styles.stateText}>Foto yang diambil saat kunjungan akan tampil di sini.</Text>
+            </View>
+          )}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+        />
+      )}
       <PhotoPreviewModal
         visible={photoPreviewVisible}
         photos={photos}
         initialIndex={photoPreviewIndex}
-        title="Foto Kunjungan"
-        onClose={closePhotoPreview}
+        title="Foto kunjungan"
+        onClose={() => setPhotoPreviewVisible(false)}
       />
-    </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    color: '#64748B',
-    fontSize: 14,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
-    paddingBottom: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  list: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'android' ? 64 : 40,
-  },
-  photoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  photoImage: {
-    width: '100%',
-    height: 250,
-    resizeMode: 'cover',
-  },
-  photoDetails: {
-    padding: 12,
-  },
-  photoType: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#0F766E',
-    marginBottom: 4,
-  },
-  locationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  locationText: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  takenAt: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  deleteBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 20,
-    padding: 8,
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 60,
-    color: '#94a3b8',
-    fontSize: 14,
-  },
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: visitSpacing.md },
+  list: { padding: visitSpacing.page, paddingBottom: visitSpacing.sectionLarge },
+  photoRow: { justifyContent: 'space-between', gap: visitSpacing.sm },
+  photoCard: { width: '48.5%', backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card, marginBottom: visitSpacing.sm, overflow: 'hidden' },
+  photoImage: { width: '100%', height: 132, resizeMode: 'cover' },
+  photoDetails: { padding: visitSpacing.sm },
+  photoType: { ...visitType.label, color: visitColors.ink, marginBottom: visitSpacing.xs },
+  locationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: visitSpacing.xs },
+  locationText: { ...visitType.caption, color: visitColors.mutedInk, flex: 1 },
+  takenAt: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
+  deleteBtn: { position: 'absolute', top: visitSpacing.sm, right: visitSpacing.sm, width: 44, height: 44, borderRadius: 22, backgroundColor: visitColors.surface, alignItems: 'center', justifyContent: 'center' },
+  stateCard: { backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card, padding: visitSpacing.card, margin: visitSpacing.page },
+  emptyCard: { backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card, padding: visitSpacing.card },
+  stateTitle: { ...visitType.section, color: visitColors.ink },
+  stateText: { ...visitType.body, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
+  retryButton: { minHeight: 48, backgroundColor: visitColors.primary, borderRadius: visitRadii.control, marginTop: visitSpacing.md, alignItems: 'center', justifyContent: 'center' },
+  retryText: { ...visitType.label, color: visitColors.surface },
 });
 
 export default VisitPhotoGalleryScreen;

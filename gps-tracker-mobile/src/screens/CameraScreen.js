@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Platform, View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, FlatList } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Camera as CameraIcon, RefreshCcw, X, Check } from 'lucide-react-native';
+import { RefreshCcw, X, Check } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { visitService } from '../api/services/visitService';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { offlineQueue } from '../utils/offlineQueue';
@@ -11,6 +12,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
 import { logEvent } from '../utils/diagnosticLogger';
 import { createPhotoSaveCoordinator } from '../utils/photoSaveCoordinator';
+import { canCaptureVisitPhoto } from '../utils/visitPhotoPresentation';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../styles/visitTheme';
 
 const PhotoUploadScreen = () => {
   const navigation = useNavigation();
@@ -33,6 +36,7 @@ const PhotoUploadScreen = () => {
   const saveCoordinator = saveCoordinatorRef.current;
   const allowedPhotoTypes = new Set(['checkin', 'checkout', 'product', 'other']);
   const resolvedType = allowedPhotoTypes.has(type) ? type : 'other';
+  const photoTypeLabel = { checkin: 'Check-in', checkout: 'Checkout', product: 'Produk', other: 'Kunjungan' }[resolvedType];
 
   useEffect(() => {
     if (!permission) {
@@ -62,7 +66,7 @@ const PhotoUploadScreen = () => {
       return;
     }
 
-    if (photos.length >= 5) {
+    if (!canCaptureVisitPhoto(photos.length)) {
       Alert.alert('Limit', 'Anda hanya bisa mengambil maksimal 5 foto.');
       return;
     }
@@ -191,23 +195,24 @@ const PhotoUploadScreen = () => {
   };
 
   if (!permission) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#0F766E" /></View>;
+    return <SafeAreaView style={styles.center}><ActivityIndicator size="large" color={visitColors.primary} /></SafeAreaView>;
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.center}>
+      <SafeAreaView style={styles.center}>
         <Text style={styles.text}>Aplikasi butuh izin kamera untuk mengambil foto kunjungan.</Text>
-        <TouchableOpacity style={styles.btn} onPress={requestPermission}><Text style={styles.btnText}>Beri Izin</Text></TouchableOpacity>
-      </View>
+        <TouchableOpacity style={styles.btn} onPress={requestPermission} accessibilityRole="button"><Text style={styles.btnText}>Beri izin kamera</Text></TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
   if (showPreview) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         <View style={styles.previewContainer}>
-          <Text style={styles.previewTitle}>Pratinjau Foto ({photos.length}/5)</Text>
+          <Text style={styles.previewTitle}>Periksa foto kunjungan</Text>
+          <Text style={styles.previewCount}>{photos.length} dari 5 foto</Text>
           <FlatList
             data={photos}
             keyExtractor={(item) => item.uri}
@@ -217,7 +222,7 @@ const PhotoUploadScreen = () => {
             renderItem={({ item }) => (
               <View style={styles.previewItem}>
                 <Image source={{ uri: item.uri }} style={styles.previewImage} />
-                <TouchableOpacity style={styles.removeBtn} onPress={() => removePhoto(item.uri)} disabled={isProcessing}>
+                <TouchableOpacity style={styles.removeBtn} onPress={() => removePhoto(item.uri)} disabled={isProcessing} accessibilityRole="button" accessibilityLabel="Hapus foto ini">
                   <X size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -226,103 +231,107 @@ const PhotoUploadScreen = () => {
         </View>
 
         <View style={styles.controls}>
-          <TouchableOpacity style={[styles.controlBtn, styles.btnCancel]} onPress={() => setShowPreview(false)} disabled={isProcessing}>
-            <RefreshCcw size={28} color="#fff" />
-            <Text style={styles.controlText}>Tambah Lagi</Text>
+          <TouchableOpacity style={[styles.controlBtn, styles.btnCancel]} onPress={() => setShowPreview(false)} disabled={isProcessing || !canCaptureVisitPhoto(photos.length)} accessibilityRole="button">
+            <RefreshCcw size={24} color="#fff" />
+            <Text style={styles.controlText}>{canCaptureVisitPhoto(photos.length) ? 'Tambah foto' : 'Maksimal 5 foto'}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.controlBtn, styles.btnConfirm]}
             onPress={uploadPhotos}
             disabled={isProcessing}
+            accessibilityRole="button"
           >
-            {isProcessing ? <ActivityIndicator color="#fff" /> : <Check size={28} color="#fff" />}
-            <Text style={styles.controlText}>Simpan Semua</Text>
+            {isProcessing ? <ActivityIndicator color="#fff" /> : <Check size={24} color="#fff" />}
+            <Text style={styles.controlText}>{isProcessing ? 'Menyimpan...' : 'Simpan foto'}</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <CameraView
         ref={cameraRef}
         style={styles.camera}
         facing="back"
       >
-        <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
-          <X size={30} color="#fff" />
+        <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Tutup kamera">
+          <X size={24} color="#fff" />
         </TouchableOpacity>
 
         <View style={styles.cameraOverlay}>
-          <Text style={styles.overlayText}>Ambil Foto ({type})</Text>
-          <Text style={styles.overlaySubText}>{photos.length} foto diambil</Text>
+          <Text style={styles.overlayText}>Foto {photoTypeLabel}</Text>
+          <Text style={styles.overlaySubText}>{photos.length} dari 5 foto</Text>
         </View>
 
         <View style={styles.captureContainer}>
-          <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
+          <TouchableOpacity style={[styles.captureBtn, !canCaptureVisitPhoto(photos.length) && styles.captureDisabled]} onPress={takePicture} disabled={!canCaptureVisitPhoto(photos.length) || isProcessing} accessibilityRole="button" accessibilityLabel="Ambil foto">
             <View style={styles.captureInner} />
           </TouchableOpacity>
           {photos.length > 0 && (
-            <TouchableOpacity style={styles.doneFab} onPress={() => setShowPreview(true)}>
+            <TouchableOpacity style={styles.doneFab} onPress={() => setShowPreview(true)} accessibilityRole="button" accessibilityLabel="Periksa foto yang diambil">
               <Check size={24} color="#fff" />
             </TouchableOpacity>
           )}
         </View>
       </CameraView>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  container: { flex: 1, backgroundColor: '#101B1D' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: visitSpacing.page, backgroundColor: '#101B1D' },
   camera: { flex: 1 },
   previewContainer: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#101B1D',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
+    paddingTop: visitSpacing.sectionLarge,
   },
   previewTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 20,
+    ...visitType.section,
+    color: visitColors.surface,
+    marginBottom: visitSpacing.xs,
   },
+  previewCount: { ...visitType.caption, color: '#CAD8D8', marginBottom: visitSpacing.section },
   previewList: {
-    paddingHorizontal: 20,
+    paddingHorizontal: visitSpacing.page,
     alignItems: 'center',
   },
   previewItem: {
-    marginRight: 15,
+    marginRight: visitSpacing.md,
     position: 'relative',
   },
   previewImage: {
     width: 250,
     height: 350,
-    borderRadius: 16,
+    borderRadius: visitRadii.card,
   },
   removeBtn: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 20,
-    padding: 8,
+    top: visitSpacing.sm,
+    right: visitSpacing.sm,
+    width: 44,
+    height: 44,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  text: { color: '#fff', textAlign: 'center' },
-  btn: { backgroundColor: '#0F766E', padding: 15, borderRadius: 8, marginTop: 10 },
-  btnText: { color: '#fff', fontWeight: 'bold' },
-  closeBtn: { position: 'absolute', top: 50, left: 20, padding: 10 },
-  cameraOverlay: { position: 'absolute', top: 100, width: '100%', alignItems: 'center' },
-  overlayText: { color: '#fff', fontSize: 16, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
-  overlaySubText: { color: '#fff', fontSize: 12, marginTop: 10 },
+  text: { ...visitType.body, color: visitColors.surface, textAlign: 'center' },
+  btn: { backgroundColor: visitColors.primary, minHeight: 48, paddingHorizontal: visitSpacing.card, justifyContent: 'center', borderRadius: visitRadii.control, marginTop: visitSpacing.md },
+  btnText: { ...visitType.label, color: visitColors.surface },
+  closeBtn: { position: 'absolute', top: visitSpacing.page, left: visitSpacing.page, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  cameraOverlay: { position: 'absolute', top: 76, width: '100%', alignItems: 'center' },
+  overlayText: { ...visitType.section, color: visitColors.surface, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: visitSpacing.card, paddingVertical: visitSpacing.sm, borderRadius: visitRadii.pill },
+  overlaySubText: { ...visitType.caption, color: visitColors.surface, marginTop: visitSpacing.sm, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: visitSpacing.md, paddingVertical: visitSpacing.xs, borderRadius: visitRadii.pill },
   captureContainer: {
     position: 'absolute',
-    bottom: Platform.OS === 'android' ? 64 : 40,
+    bottom: visitSpacing.sectionLarge,
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'center',
@@ -330,18 +339,21 @@ const styles = StyleSheet.create({
   },
   captureBtn: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   captureInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff' },
-  doneFab: { position: 'absolute', right: 40, width: 50, height: 50, borderRadius: 25, backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center' },
+  captureDisabled: { opacity: 0.45 },
+  doneFab: { position: 'absolute', right: visitSpacing.sectionLarge, width: 50, height: 50, borderRadius: 25, backgroundColor: visitColors.primary, justifyContent: 'center', alignItems: 'center' },
   controls: {
     flexDirection: 'row',
-    paddingBottom: Platform.OS === 'android' ? 64 : 40,
+    paddingHorizontal: visitSpacing.page,
+    paddingTop: visitSpacing.sm,
+    paddingBottom: visitSpacing.card,
     width: '100%',
-    justifyContent: 'space-evenly',
-    backgroundColor: '#000',
+    gap: visitSpacing.sm,
+    backgroundColor: '#101B1D',
   },
-  controlBtn: { alignItems: 'center', gap: 8, padding: 15, borderRadius: 12, minWidth: 140 },
-  btnCancel: { backgroundColor: '#4B5563' },
-  btnConfirm: { backgroundColor: '#10B981' },
-  controlText: { color: '#fff', fontWeight: 'bold' }
+  controlBtn: { flex: 1, minWidth: 0, minHeight: 66, alignItems: 'center', justifyContent: 'center', gap: visitSpacing.xs, padding: visitSpacing.sm, borderRadius: visitRadii.control },
+  btnCancel: { backgroundColor: '#3B5153' },
+  btnConfirm: { backgroundColor: visitColors.primary },
+  controlText: { ...visitType.label, color: visitColors.surface, textAlign: 'center' }
 });
 
 export default PhotoUploadScreen;
