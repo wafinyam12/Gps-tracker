@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { ChevronDown, ChevronRight, ChevronUp, Filter, User, UserCheck, UserPlus, UserX } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, ChevronUp, Filter, RefreshCw, User, UserCheck, UserPlus, UserX } from 'lucide-react-native';
 import { Picker } from '@react-native-picker/picker';
 import { userService } from '../../api/services/userService';
 import AppScreen from '../../components/ui/AppScreen';
-import PageHeader from '../../components/ui/PageHeader';
+import VisitHeader from '../../components/visit/VisitHeader';
 import SearchBar from '../../components/ui/SearchBar';
 import Surface from '../../components/ui/Surface';
 import EmptyState from '../../components/ui/EmptyState';
 import { useAuth } from '../../context/AuthContext';
 import { colors, radii, shadows, spacing } from '../../styles/theme';
 import { getRoleDisplayName, getRoleName } from '../../utils/roles';
+import { getAdminUserListPresentation } from '../../utils/adminUserListPresentation';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
 const STATUS_OPTIONS = [
   { label: 'Semua Status', value: 'all' },
@@ -81,6 +83,7 @@ const UserListScreen = () => {
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -173,8 +176,9 @@ const UserListScreen = () => {
 
       setUsers(list);
       setTotalCount(Number.isFinite(total) ? total : list.length);
+      setLoadError(false);
     } catch (error) {
-      Alert.alert('Error', 'Gagal mengambil data user');
+      setLoadError(true);
     } finally {
       if (showLoader) {
         setLoading(false);
@@ -228,6 +232,7 @@ const UserListScreen = () => {
   const activeCount = useMemo(() => users.filter((item) => item.is_active).length, [users]);
   const inactiveCount = useMemo(() => users.length - activeCount, [users, activeCount]);
   const isTruncated = totalCount > users.length;
+  const listPresentation = getAdminUserListPresentation({ loading, error: loadError, shown: users.length, total: totalCount });
 
   const summaryHint = useMemo(() => {
     if (isTruncated) {
@@ -314,7 +319,7 @@ const UserListScreen = () => {
 
           <View style={styles.userInfo}>
             <View style={styles.userTitleRow}>
-              <Text style={styles.userName} numberOfLines={1}>
+              <Text style={styles.userName}>
                 {item.name}
               </Text>
               <View style={[styles.roleBadge, { backgroundColor: roleTone.background }]}>
@@ -322,17 +327,17 @@ const UserListScreen = () => {
               </View>
             </View>
 
-            <Text style={styles.userDetails} numberOfLines={1}>
+            <Text style={styles.userDetails}>
               {branchName}
             </Text>
 
-            <Text style={styles.userMeta} numberOfLines={1}>
+            <Text style={styles.userMeta} numberOfLines={2}>
               @{item.username || '-'}
               {item.employee_id ? ` - ${item.employee_id}` : ''}
               {item.email ? ` - ${item.email}` : ''}
             </Text>
 
-            <Text style={styles.userSeen} numberOfLines={1}>
+            <Text style={styles.userSeen}>
               {item.last_seen_at ? `Aktif terakhir ${lastSeenText}` : 'Belum ada riwayat login'}
             </Text>
           </View>
@@ -402,16 +407,16 @@ const UserListScreen = () => {
       };
 
   return (
-    <AppScreen>
-      <PageHeader
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader
         title="Manajemen User"
         subtitle={isSuperAdmin
-          ? 'Cari, filter per cabang, tambah, dan edit akun sales, area manager, maupun admin cabang.'
-          : 'Kelola akun sales di cabang Anda.'}
+          ? 'Siapkan akun untuk kunjungan'
+          : 'Akun Sales di cabang Anda'}
         onBack={() => navigation.goBack()}
         right={(
-          <TouchableOpacity style={styles.fabMini} onPress={() => navigation.navigate('UserForm')} activeOpacity={0.85}>
-            <UserPlus size={18} color="#fff" />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Tambah user" style={styles.fabMini} onPress={() => navigation.navigate('UserForm')} activeOpacity={0.85}>
+            <UserPlus size={20} color={visitColors.primary} />
           </TouchableOpacity>
         )}
       />
@@ -430,6 +435,21 @@ const UserListScreen = () => {
                 placeholder="Cari nama, username, email, atau NIK..."
                 onSubmitEditing={() => loadUsers()}
               />
+
+              <View style={styles.resultRow}>
+                <Text style={styles.resultText}>{listPresentation.result}</Text>
+                {activeFilterCount > 0 ? <Text style={styles.activeFilterText}>{activeFilterCount} filter aktif</Text> : null}
+              </View>
+
+              {loadError ? (
+                <View style={styles.errorCard}>
+                  <Text style={styles.errorText}>Data user belum bisa diperbarui. Periksa koneksi.</Text>
+                  <TouchableOpacity accessibilityRole="button" onPress={() => loadUsers({ showLoader: users.length === 0 })} style={styles.retryButton}>
+                    <RefreshCw size={16} color={visitColors.primary} />
+                    <Text style={styles.retryText}>Coba lagi</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
 
               <Surface style={styles.toolbarCard}>
                 <View style={styles.toolbarHeader}>
@@ -571,7 +591,7 @@ const UserListScreen = () => {
               onRefresh={onRefresh}
               refreshing={refreshing}
               contentContainerStyle={styles.list}
-              ListEmptyComponent={(
+              ListEmptyComponent={loadError ? null : (
                 <EmptyState
                   title={emptyState.title}
                   description={emptyState.description}
@@ -589,6 +609,15 @@ const UserListScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  resultRow: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: visitSpacing.sm },
+  resultText: { ...visitType.label, color: visitColors.ink },
+  activeFilterText: { ...visitType.caption, color: visitColors.primary },
+  errorCard: { padding: visitSpacing.md, backgroundColor: visitColors.dangerTint, borderRadius: visitRadii.card, gap: visitSpacing.sm },
+  errorText: { ...visitType.body, color: visitColors.danger },
+  retryButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm },
+  retryText: { ...visitType.label, color: visitColors.primary },
   container: {
     flex: 1,
   },
@@ -598,7 +627,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   topSection: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: visitSpacing.page,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
@@ -807,11 +836,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    flexWrap: 'wrap',
   },
   userName: {
-    flex: 1,
+    flexGrow: 1,
+    minWidth: 90,
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '600',
     color: colors.text,
   },
   roleBadge: {
@@ -819,7 +850,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: radii.full,
     alignSelf: 'flex-start',
-    flexShrink: 0,
+    flexShrink: 1,
   },
   roleBadgeText: {
     fontSize: 10,
@@ -901,10 +932,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   fabMini: {
-    width: 38,
-    height: 38,
-    borderRadius: radii.full,
-    backgroundColor: colors.primary,
+    width: 44,
+    height: 44,
+    borderRadius: visitRadii.control,
+    backgroundColor: visitColors.primaryTint,
     alignItems: 'center',
     justifyContent: 'center',
   },
