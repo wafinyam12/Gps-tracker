@@ -42,15 +42,16 @@ const VisitHistoryRow = ({ visit, onOpen, onRoute, onPhotoPress }) => {
         </View>
         <Text style={styles.meta}>{timeLabel(visit)} · {visit?.checkout_at ? 'Selesai' : 'Aktif'}</Text>
         <Text style={styles.result}>Hasil: {getVisitResultLabel(visit?.visit_result)}</Text>
+        {visit?.notes ? <Text style={styles.notes} numberOfLines={2}>{visit.notes}</Text> : null}
         <View style={styles.detail}>
           <Text style={styles.detailText}>Lihat detail</Text>
           <ArrowRight size={16} color={visitColors.primary} />
         </View>
       </TouchableOpacity>
 
-      {(canOpenRoute(visit?.store) || photoCount > 0) ? (
+      {((onRoute && canOpenRoute(visit?.store)) || photoCount > 0) ? (
         <View style={styles.extra}>
-          {canOpenRoute(visit?.store) ? (
+          {onRoute && canOpenRoute(visit?.store) ? (
             <TouchableOpacity accessibilityRole="button" onPress={() => onRoute?.(visit.store)} style={styles.route}>
               <Navigation size={16} color={visitColors.primary} />
               <Text style={styles.routeText}>Rute</Text>
@@ -95,6 +96,7 @@ const styles = StyleSheet.create({
   address: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
   meta: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.sm },
   result: { ...visitType.body, color: visitColors.ink, marginTop: visitSpacing.xs },
+  notes: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
   detail: { flexDirection: 'row', alignItems: 'center', gap: visitSpacing.xs, marginTop: visitSpacing.sm },
   detailText: { ...visitType.label, color: visitColors.primary },
   extra: {

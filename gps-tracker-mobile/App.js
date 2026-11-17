@@ -119,7 +119,7 @@ const AppStack = () => (
     <Stack.Screen
       name="MyLocation"
       component={MyLocationScreen}
-      options={{ title: 'Lokasi Saya' }}
+      options={{ headerShown: false }}
     />
     <Stack.Screen
       name="Profile"

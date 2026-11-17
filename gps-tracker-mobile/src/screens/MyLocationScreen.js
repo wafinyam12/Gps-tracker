@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Location from 'expo-location';
-import { Crosshair, RefreshCw, MapPin } from 'lucide-react-native';
+import { Crosshair, RefreshCw } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 import { storeService } from '../api/services/storeService';
 import AppScreen from '../components/ui/AppScreen';
-import Surface from '../components/ui/Surface';
-import { colors, radii, shadows, spacing } from '../styles/theme';
+import VisitHeader from '../components/visit/VisitHeader';
+import VisitStatusBadge from '../components/visit/VisitStatusBadge';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../styles/visitTheme';
 import OpenStreetMapView from '../components/maps/OpenStreetMapView';
 import { logEvent } from '../utils/diagnosticLogger';
 import { confirmLocationDisclosure } from '../utils/locationDisclosure';
+import { getLocationPresentation } from '../utils/visitLocationPresentation';
+import { useAuth } from '../context/AuthContext';
 
 const toRegion = (location) => ({
   latitude: location.coords.latitude,
@@ -35,6 +39,8 @@ const normalizeViewport = (viewport) => {
 const VIEWPORT_DEBOUNCE_MS = 450;
 
 const MyLocationScreen = () => {
+  const navigation = useNavigation();
+  const { backgroundTrackingEnabled, locationConsentGranted } = useAuth();
   const subscriptionRef = useRef(null);
   const mountedRef = useRef(true);
   const locationRef = useRef(null);
@@ -302,7 +308,7 @@ const MyLocationScreen = () => {
         longitude: location.coords.longitude,
         title: 'Lokasi Saya',
         description: `Akurasi ${Math.round(location.coords.accuracy || 0)} m`,
-        color: colors.primary,
+        color: visitColors.primary,
       });
     }
 
@@ -324,8 +330,11 @@ const MyLocationScreen = () => {
     }];
   }, [location]);
 
+  const locationPresentation = getLocationPresentation({ location, loading, errorMsg });
+
   return (
-    <AppScreen>
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader title="Lokasi saya" subtitle="Posisi saat ini dan toko di peta" onBack={() => navigation.goBack()} />
       <View style={styles.container}>
         {location?.coords ? (
           <OpenStreetMapView
@@ -338,77 +347,68 @@ const MyLocationScreen = () => {
             onMarkerPress={handleMarkerPress}
             onViewportChange={handleViewportChange}
           />
-        ) : (
-          <View style={styles.mapPlaceholder} />
-        )}
+        ) : <View style={styles.mapPlaceholder} />}
 
         <View style={styles.overlay} pointerEvents="box-none">
-          <Surface style={styles.statusCard}>
+          <View style={styles.statusCard}>
             <View style={styles.statusHeader}>
-              <View style={styles.badge}>
-                <MapPin size={14} color={colors.primary} />
-                <Text style={styles.badgeText}>Lokasi Saya</Text>
-              </View>
-              <Text style={styles.badgeMeta}>
-                {visibleStoreCount}{storeCandidateLimitReached ? '+' : ''} toko di peta
-              </Text>
+              <VisitStatusBadge label={locationPresentation.statusLabel} tone={locationPresentation.tone} />
+              <Text style={styles.badgeMeta}>{visibleStoreCount}{storeCandidateLimitReached ? '+' : ''} toko di peta</Text>
             </View>
 
             {loading ? (
               <View style={styles.row}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.statusText}>Mencari GPS...</Text>
+                <ActivityIndicator size="small" color={visitColors.primary} />
+                <Text style={styles.statusText}>Mencari posisi perangkat...</Text>
               </View>
-            ) : errorMsg ? (
-              <Text style={styles.errorText}>{errorMsg}</Text>
+            ) : errorMsg || !location?.coords ? (
+              <Text style={styles.errorText}>{errorMsg || 'Lokasi belum tersedia. Tekan Perbarui GPS untuk mencoba lagi.'}</Text>
             ) : (
               <>
                 <Text style={styles.coordinateText}>
                   {location.coords.latitude.toFixed(6)}, {location.coords.longitude.toFixed(6)}
                 </Text>
+                <Text style={styles.statusText}>{locationPresentation.accuracyLabel} Â· {locationPresentation.updatedLabel}</Text>
                 <Text style={styles.statusText}>
-                  Akurasi {Math.round(location.coords.accuracy || 0)} m
+                  Pelacakan latar: {backgroundTrackingEnabled && locationConsentGranted ? 'aktif' : 'tidak aktif'}
                 </Text>
                 {storeMarkersLoading ? (
                   <Text style={styles.statusText}>Memuat toko di area peta...</Text>
                 ) : storeMarkersError ? (
-                  <Text style={styles.errorText}>Marker toko gagal dimuat. Periksa koneksi.</Text>
+                  <Text style={styles.errorText}>Toko di peta belum dapat dimuat. Periksa koneksi.</Text>
                 ) : (
                   <Text style={styles.statusText}>
                     {storeCandidateLimitReached
-                      ? 'Area padat. Perbesar peta untuk memuat marker lebih lengkap.'
+                      ? 'Area padat. Perbesar peta untuk melihat lebih banyak toko.'
                       : visibleStoreCount > 0
                         ? `${visibleStoreCount} toko berkoordinat di area peta`
-                        : 'Tidak ada toko berkoordinat di area peta'}
+                        : 'Belum ada toko berkoordinat di area peta'}
                   </Text>
                 )}
               </>
             )}
-          </Surface>
+          </View>
 
           <View style={styles.controls}>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Pusatkan peta ke lokasi saya"
               style={[styles.controlBtn, !location && styles.controlBtnDisabled]}
               onPress={() => centerToLocation()}
               disabled={!location}
               activeOpacity={0.9}
             >
-              <Crosshair size={20} color={colors.primary} />
+              <Crosshair size={20} color={visitColors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.controlBtn,
-                (refreshingLocation || (loading && !location)) && styles.controlBtnDisabled,
-              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Perbarui lokasi GPS"
+              style={[styles.controlBtn, (refreshingLocation || (loading && !location)) && styles.controlBtnDisabled]}
               onPress={refreshLocation}
               disabled={refreshingLocation || (loading && !location)}
               activeOpacity={0.9}
             >
-              {refreshingLocation ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <RefreshCw size={20} color={colors.primary} />
-              )}
+              {refreshingLocation ? <ActivityIndicator size="small" color={visitColors.primary} /> : <RefreshCw size={20} color={visitColors.primary} />}
             </TouchableOpacity>
           </View>
         </View>
@@ -418,95 +418,22 @@ const MyLocationScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  map: {
-    flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    backgroundColor: '#dbe7e3',
-  },
-  overlay: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    top: 16,
-    gap: 12,
-    zIndex: 2,
-    elevation: 2,
-  },
-  statusCard: {
-    gap: 10,
-  },
-  statusHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primarySoft,
-    borderRadius: radii.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  badgeText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  badgeMeta: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.textMuted,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  coordinateText: {
-    fontSize: 16,
-    lineHeight: 22,
-    color: colors.text,
-    fontWeight: '900',
-    fontFamily: 'monospace',
-  },
-  statusText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    lineHeight: 18,
-  },
-  errorText: {
-    fontSize: 13,
-    color: colors.danger,
-    fontWeight: '700',
-  },
-  controls: {
-    flexDirection: 'row',
-    gap: 10,
-    zIndex: 3,
-    elevation: 3,
-  },
-  controlBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.soft,
-  },
-  controlBtnDisabled: {
-    opacity: 0.5,
-  },
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  container: { flex: 1 },
+  map: { flex: 1 },
+  mapPlaceholder: { flex: 1, backgroundColor: visitColors.primaryTint },
+  overlay: { position: 'absolute', left: visitSpacing.page, right: visitSpacing.page, top: visitSpacing.page, gap: visitSpacing.sm, zIndex: 2, elevation: 2 },
+  statusCard: { backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card, padding: visitSpacing.card, gap: visitSpacing.sm },
+  statusHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: visitSpacing.sm },
+  badgeMeta: { ...visitType.caption, color: visitColors.mutedInk, flexShrink: 1, textAlign: 'right' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm },
+  coordinateText: { ...visitType.section, color: visitColors.ink, fontFamily: 'monospace' },
+  statusText: { ...visitType.caption, color: visitColors.mutedInk },
+  errorText: { ...visitType.body, color: visitColors.danger },
+  controls: { flexDirection: 'row', gap: visitSpacing.sm, zIndex: 3, elevation: 3 },
+  controlBtn: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border },
+  controlBtnDisabled: { opacity: 0.5 },
 });
 
 export default MyLocationScreen;
