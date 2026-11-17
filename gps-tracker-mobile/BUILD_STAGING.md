@@ -107,7 +107,9 @@ The staging routes were confirmed by SSH. On Infinix X6525B, the AM account
 loaded a branch-scoped Sales list, selected a Sales, chose an inclusive
 three-day range, opened the keyboard, and reviewed the confirmation without
 saving. The backend target API passed 8 new and 6 existing relevant tests.
-A write and summary refresh on a dummy Sales account remain to be verified.
+A write and summary refresh on staging were not attempted because the visible
+Sales account is real UAT data and no dummy Sales exists in the AM branch.
+Only the isolated local test database was used to verify writes and rollback.
 This is a JS-only OTA; no new APK is required. The update also shows visits
 above target as an actual percentage (for example, 7/5 = 140%) while keeping
 the progress bar capped at 100% width.
