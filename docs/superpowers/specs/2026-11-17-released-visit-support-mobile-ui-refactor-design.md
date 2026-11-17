@@ -1,7 +1,7 @@
 # Released visit support: mobile UI refactor
 
 **Date:** 17 November 2026
-**Status:** Proposed for approval
+**Status:** Approved for implementation on 17 November 2026
 
 ## Intent
 
