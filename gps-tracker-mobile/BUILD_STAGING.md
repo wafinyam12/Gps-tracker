@@ -91,6 +91,19 @@ store search, empty history, location permission denial, and status-bar
 contrast were checked on an Infinix X6525B. Full dummy-visit and offline device
 checks are still pending.
 
+### Area Manager target range (pending staging integration)
+
+Backend target range is in commit `db7d87d`. Copy `routes/api.php` and
+`app/Http/Controllers/Api/DailyTargetController.php` to staging, then run
+`php artisan optimize:clear` and `php artisan route:list --path=target` there.
+The existing `daily_targets` table is reused; there is no new migration or
+Composer change. See `gps-tracker/docs/target-range-api.md` for the contract.
+
+The Area Manager mobile form is in commit `50a74b7`. It has **not** been
+published by OTA yet. Confirm both new staging routes and the scoped Sales
+response before publishing. This UI-only change fits the installed SDK 54
+runtime `1.1.5` and does not require a new APK.
+
 ## Install APK
 
 Download the APK on the Android device and install it manually, or install with USB debugging:
