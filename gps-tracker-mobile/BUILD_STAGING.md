@@ -87,8 +87,9 @@ The Android staging update for runtime `1.1.5` is
 [f3325aa2-8a32-432d-9a31-3f2bc2e8068b](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f3325aa2-8a32-432d-9a31-3f2bc2e8068b).
 No APK rebuild is needed for this UI update on the installed SDK 54 APK.
 Close and reopen the app twice while online to load it. The Sales dashboard and
-store search were checked on an Infinix X6525B; full dummy-visit and offline
-device checks are still pending.
+store search, empty history, location permission denial, and status-bar
+contrast were checked on an Infinix X6525B. Full dummy-visit and offline device
+checks are still pending.
 
 ## Install APK
 
