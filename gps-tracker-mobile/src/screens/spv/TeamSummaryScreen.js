@@ -156,7 +156,7 @@ const TeamSummaryScreen = () => {
               </View>
             ) : null}
 
-            <Text style={styles.sectionTitle}>Progress Sales</Text>
+            <Text style={styles.sectionTitle}>Progress tim</Text>
             {metrics.sales.length === 0 ? (
               <View style={styles.stateCard}>
                 <Text style={styles.stateTitle}>Belum ada data Sales</Text>

@@ -77,7 +77,7 @@ const SalesDetailScreen = () => {
       ) : loadError ? (
         <View style={styles.stateCard}>
           <Text style={styles.stateTitle}>Detail Sales belum bisa dimuat</Text>
-          <Text style={styles.stateText}>{userId ? 'Periksa koneksi lalu coba lagi.' : 'ID Sales tidak tersedia. Kembali ke daftar Sales.'}</Text>
+          <Text style={styles.stateText}>{userId ? 'Periksa koneksi lalu coba lagi.' : 'ID anggota tim tidak tersedia. Kembali ke daftar.'}</Text>
           {userId ? (
             <TouchableOpacity accessibilityRole="button" onPress={() => setRetryKey((value) => value + 1)} style={styles.retryButton}>
               <RefreshCw size={16} color={visitColors.primary} />
@@ -92,7 +92,7 @@ const SalesDetailScreen = () => {
               <View style={[styles.statusPill, presentation.status === 'Online' ? styles.onlinePill : styles.offlinePill]}>
                 <Text style={[styles.statusPillText, presentation.status === 'Online' ? styles.onlineText : styles.offlineText]}>{presentation.status}</Text>
               </View>
-              <Text style={styles.statusLabel}>Status Sales</Text>
+              <Text style={styles.statusLabel}>Status anggota tim</Text>
             </View>
             <Text style={styles.lastSeenLabel}>Terakhir terlihat</Text>
             <Text style={styles.lastSeenValue}>{presentation.lastSeen}</Text>
@@ -113,7 +113,7 @@ const SalesDetailScreen = () => {
             <View style={styles.missingMap}>
               <MapPin size={26} color={visitColors.mutedInk} />
               <Text style={styles.stateTitle}>Belum ada data GPS</Text>
-              <Text style={styles.stateText}>Peta akan tersedia setelah perangkat Sales mengirim posisi.</Text>
+              <Text style={styles.stateText}>Peta akan tersedia setelah perangkat anggota tim mengirim posisi.</Text>
             </View>
           )}
 
@@ -151,7 +151,7 @@ const SalesDetailScreen = () => {
               </View>
             </View>
           </View>
-          <Text style={styles.note}>Peta menampilkan jejak GPS yang tersedia untuk Sales ini. Riwayat lengkap dapat dilihat di dashboard web.</Text>
+          <Text style={styles.note}>Peta menampilkan jejak GPS yang tersedia untuk anggota tim ini. Riwayat lengkap dapat dilihat di dashboard web.</Text>
         </ScrollView>
       )}
     </AppScreen>

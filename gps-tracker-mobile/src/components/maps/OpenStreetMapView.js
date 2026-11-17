@@ -50,7 +50,7 @@ const normalizePoint = (point) => {
 
 const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 
-const buildMapHtml = (initialCenter, initialZoom) => `<!doctype html>
+const buildMapHtml = (initialCenter, initialZoom, zoomControls) => `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -98,7 +98,7 @@ const buildMapHtml = (initialCenter, initialZoom) => `<!doctype html>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     const map = L.map('map', {
-      zoomControl: true,
+      zoomControl: ${zoomControls ? 'true' : 'false'},
       attributionControl: true
     }).setView([${initialCenter.latitude}, ${initialCenter.longitude}], ${initialZoom});
     const markersLayer = L.layerGroup().addTo(map);
@@ -241,6 +241,7 @@ const OpenStreetMapView = ({
   circles = [],
   polyline = [],
   zoom = 13,
+  zoomControls = true,
   viewportKey = 0,
   fitToContent = false,
   onMarkerPress,
@@ -279,8 +280,8 @@ const OpenStreetMapView = ({
   const previousCenterKeyRef = useRef(centerKey);
   const initialViewportRef = useRef({ center: normalizedCenter, zoom });
   const html = useMemo(
-    () => buildMapHtml(initialViewportRef.current.center, initialViewportRef.current.zoom),
-    []
+    () => buildMapHtml(initialViewportRef.current.center, initialViewportRef.current.zoom, zoomControls),
+    [zoomControls]
   );
 
   useEffect(() => {

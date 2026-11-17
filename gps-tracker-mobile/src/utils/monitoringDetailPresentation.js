@@ -23,6 +23,16 @@ const distanceMeters = (from, to) => {
 
 const measure = (value, fallback) => value === null || value === undefined || value === '' ? fallback : String(value);
 
+const formatGpsTime = (value) => {
+  if (!value) return 'Belum ada data';
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return String(value);
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  const jakarta = new Date(timestamp + 7 * 60 * 60 * 1000);
+  const pad = (number) => String(number).padStart(2, '0');
+  return `${pad(jakarta.getUTCDate())}/${pad(jakarta.getUTCMonth() + 1)}/${jakarta.getUTCFullYear()} ${pad(jakarta.getUTCHours())}:${pad(jakarta.getUTCMinutes())} WIB`;
+};
+
 export const isMissingSalesLocation = (error) => error?.response?.status === 404
   && error?.response?.data?.message === 'Belum ada data lokasi untuk user ini.';
 
@@ -36,11 +46,11 @@ export const getSalesLocationPresentation = (userData, history) => {
 
   return {
     status: userData?.is_online ? 'Online' : 'Offline',
-    lastSeen: userData?.last_seen_at_human || userData?.last_seen_at || 'Belum ada data',
+    lastSeen: formatGpsTime(userData?.last_seen_at_human || userData?.last_seen_at),
     location,
     trail,
     coordinates: location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : 'Belum ada data GPS',
-    recordedAt: userData?.location?.recorded_at || userData?.last_seen_at || 'Belum ada data',
+    recordedAt: formatGpsTime(userData?.location?.recorded_at || userData?.last_seen_at),
     distance: `${(totalMeters / 1000).toFixed(1).replace('.', ',')} km`,
     speedBattery: `${measure(userData?.location?.speed, '-')} km/jam · ${measure(userData?.location?.battery, '-')}% baterai`,
   };

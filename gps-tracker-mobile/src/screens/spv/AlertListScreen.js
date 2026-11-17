@@ -46,7 +46,7 @@ const AlertListScreen = () => {
   const renderItem = ({ item }) => (
     <TouchableOpacity
       accessibilityRole="button"
-      accessibilityLabel={'Lihat detail ' + (item.name || 'Sales')}
+      accessibilityLabel={'Lihat detail ' + (item.name || 'anggota tim')}
       disabled={!item.user_id}
       onPress={() => navigation.navigate('SalesDetail', { userId: item.user_id })}
       style={styles.warningCard}
@@ -63,7 +63,7 @@ const AlertListScreen = () => {
       <Text style={styles.warningMetrics}>
         Target {item.target_visits ?? 0} · Unik {item.unique_visits ?? 0} · Duplikat {item.duplicate_visits ?? 0}
       </Text>
-      {item.user_id ? <Text style={styles.detailLink}>Lihat detail Sales</Text> : null}
+      {item.user_id ? <Text style={styles.detailLink}>Lihat detail anggota tim</Text> : null}
     </TouchableOpacity>
   );
 

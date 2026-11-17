@@ -77,7 +77,8 @@ const LiveMapScreen = () => {
   const viewportTimerRef = useRef(null);
   const viewportRef = useRef(null);
   const navigation = useNavigation();
-  const overlayOffsets = getMonitoringMapOverlayOffsets(useSafeAreaInsets());
+  const insets = useSafeAreaInsets();
+  const overlayOffsets = getMonitoringMapOverlayOffsets(insets);
 
   const activeTeamId = selectedTeamId || scopeTeamId;
   const isGlobalView = canAccessAllBranches && !selectedTeamId;
@@ -348,14 +349,17 @@ const LiveMapScreen = () => {
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <OpenStreetMapView
-        style={styles.map}
+        style={[styles.map, { bottom: insets.bottom }]}
         center={region}
         markers={mapMarkers}
         zoom={mapZoom}
+        zoomControls={false}
         viewportKey={viewportKey}
         onMarkerPress={handleMarkerPress}
         onViewportChange={handleViewportChange}
       />
+
+      {insets.top > 0 ? <View pointerEvents="none" style={[styles.systemBarShield, { height: insets.top }]} /> : null}
 
       <View style={[styles.overlayTop, { top: overlayOffsets.top }]}>
         <View style={styles.topRow}>
@@ -460,6 +464,13 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  systemBarShield: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: visitColors.canvas,
   },
   overlayTop: {
     position: 'absolute',

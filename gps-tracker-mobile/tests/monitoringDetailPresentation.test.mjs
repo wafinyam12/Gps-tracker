@@ -25,6 +25,15 @@ test('zero speed and battery remain values, and valid trail distance is calculat
   assert.notEqual(result.distance, '0,0 km');
 });
 
+test('server UTC timestamps are shown as readable Jakarta time', () => {
+  const result = getSalesLocationPresentation({
+    last_seen_at: '2026-11-16T08:01:50.000000Z',
+    location: { latitude: -6.2, longitude: 106.8, recorded_at: '2026-11-16T08:00:53.000000Z' },
+  }, []);
+  assert.equal(result.lastSeen, '16/11/2026 15:01 WIB');
+  assert.equal(result.recordedAt, '16/11/2026 15:00 WIB');
+});
+
 test('invalid coordinates are excluded from trail and map marker', () => {
   const result = getSalesLocationPresentation({ location: { latitude: null, longitude: 106.8 } }, [
     { latitude: -6.2, longitude: 106.8 },
