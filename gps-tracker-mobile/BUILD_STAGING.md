@@ -110,6 +110,9 @@ saving. The backend target API passed 8 new and 6 existing relevant tests.
 A write and summary refresh on staging were not attempted because the visible
 Sales account is real UAT data and no dummy Sales exists in the AM branch.
 Only the isolated local test database was used to verify writes and rollback.
+The numeric field stayed visible above the Infinix keyboard. Its native
+Android underline is still visible on this device despite the transparent
+underline setting; this is a cosmetic item for the next UI pass.
 This is a JS-only OTA; no new APK is required. The update also shows visits
 above target as an actual percentage (for example, 7/5 = 140%) while keeping
 the progress bar capped at 100% width.
