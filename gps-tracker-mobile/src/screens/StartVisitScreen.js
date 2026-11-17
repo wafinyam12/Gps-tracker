@@ -2,9 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -12,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { ArrowLeft, MapPin, Navigation, Search } from 'lucide-react-native';
+import { Navigation, Search } from 'lucide-react-native';
 import { visitService } from '../api/services/visitService';
 import { storeService } from '../api/services/storeService';
 import { normalizePhoneNumber } from '../utils/phone';
@@ -22,6 +20,10 @@ import { logEvent } from '../utils/diagnosticLogger';
 import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 import { offlineQueue } from '../utils/offlineQueue';
 import OpenStreetMapView from '../components/maps/OpenStreetMapView';
+import AppScreen from '../components/ui/AppScreen';
+import VisitHeader from '../components/visit/VisitHeader';
+import VisitStoreRow from '../components/visit/VisitStoreRow';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../styles/visitTheme';
 
 const DEFAULT_REGION = {
   latitude: -6.2,
@@ -118,6 +120,7 @@ const StartVisitScreen = ({ navigation }) => {
   const [hasMore, setHasMore] = useState(true);
   const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [viewMode, setViewMode] = useState('list');
 
   const loadStores = useCallback(async ({
     keyword = '',
@@ -296,6 +299,7 @@ const StartVisitScreen = ({ navigation }) => {
   };
 
   const startVisit = async (store) => {
+    setSelectedStore(store);
     const currentLocation = await requestLocation();
     if (!currentLocation?.coords) {
       return;
@@ -402,10 +406,7 @@ const StartVisitScreen = ({ navigation }) => {
   };
 
   const handleBackToHome = useCallback(() => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+    navigation.popTo('Home');
   }, [navigation]);
 
   const mapMarkers = useMemo(() => {
@@ -440,7 +441,6 @@ const StartVisitScreen = ({ navigation }) => {
   }, [location, selectedStore?.id, stores]);
 
   const renderStore = ({ item }) => {
-    const isSelected = selectedStore?.id === item.id;
     const hasLocation = canOpenRoute(item);
     const distanceMeters = location?.coords && hasLocation
       ? distanceBetweenMeters(
@@ -450,424 +450,171 @@ const StartVisitScreen = ({ navigation }) => {
       : null;
 
     return (
-      <TouchableOpacity
-        style={[styles.storeCard, isSelected && styles.selectedStoreCard]}
-        onPress={() => focusStore(item)}
-        disabled={starting}
-      >
-        <View style={[styles.storeIcon, isSelected && styles.selectedStoreIcon]}>
-          <MapPin size={20} color={isSelected ? '#fff' : '#0F766E'} />
-        </View>
-        <View style={styles.storeInfo}>
-          <Text style={styles.storeCode}>{item.external_bp_code || item.code}</Text>
-          <Text style={styles.storeName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.storeAddress} numberOfLines={2}>{item.address || 'Alamat belum tersedia'}</Text>
-          <Text style={styles.storeMeta} numberOfLines={1}>
-            {item.branch || 'Cabang belum tersedia'}{hasLocation ? ' - Koordinat tersimpan' : ' - Koordinat belum ada'}
-          </Text>
-          <Text style={styles.storeDistance} numberOfLines={1}>
-            {distanceMeters !== null
-              ? `${distanceMeters < 1000 ? `${Math.round(distanceMeters)} m` : `${(distanceMeters / 1000).toFixed(1)} km`} dari lokasi Anda${item.geofence_radius ? ` · radius ${item.geofence_radius} m` : ''}`
-              : (hasLocation ? 'Jarak menunggu GPS' : 'Jarak belum diketahui · radius belum dapat divalidasi')}
-          </Text>
-          <TouchableOpacity
-            style={[styles.routeButton, !hasLocation && styles.routeButtonUnavailable]}
-            onPress={() => handleOpenRoute(item)}
-            disabled={starting}
-            activeOpacity={0.85}
-          >
-            <Navigation size={13} color={hasLocation ? '#0F766E' : '#64748B'} />
-            <Text style={[styles.routeButtonText, !hasLocation && styles.routeButtonUnavailableText]}>
-              {hasLocation ? 'Rute' : 'Rute Belum Tersedia'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity
-          style={[styles.startButton, starting && styles.disabled]}
-          onPress={() => startVisit(item)}
-          disabled={starting}
-        >
-          {starting && isSelected ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.startButtonText}>Mulai</Text>
-          )}
-        </TouchableOpacity>
-      </TouchableOpacity>
+      <VisitStoreRow
+        store={item}
+        selected={selectedStore?.id === item.id}
+        starting={starting}
+        distanceMeters={distanceMeters}
+        onSelect={focusStore}
+        onStart={startVisit}
+        onRoute={handleOpenRoute}
+      />
     );
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.mapWrap}>
-        <OpenStreetMapView
-          style={styles.map}
-          center={location?.coords || DEFAULT_REGION}
-          markers={mapMarkers}
-          zoom={14}
-        />
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader
+        title="Pilih toko"
+        subtitle="Cari pelanggan SAP untuk memulai kunjungan."
+        onBack={handleBackToHome}
+      />
 
-        <View style={styles.locationCard}>
-          <View style={styles.locationHeader}>
-            <TouchableOpacity style={styles.backButton} onPress={handleBackToHome} activeOpacity={0.85}>
-              <ArrowLeft size={16} color="#0F766E" />
-              <Text style={styles.backButtonText}>Home</Text>
-            </TouchableOpacity>
-            <Text style={styles.locationBadge}>Tambah Kunjungan</Text>
-          </View>
-          <Text style={styles.title}>Self-Visit</Text>
-          <View style={styles.locationRow}>
-            <Navigation size={15} color="#64748B" />
-            <Text style={styles.locationText}>
-              {location?.coords
-                ? `${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}`
-                : 'Mencari lokasi...'}
+      <View style={styles.controls}>
+        <View style={styles.searchBox}>
+          <Search size={18} color={visitColors.mutedInk} />
+          <TextInput
+            style={styles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Cari nama, kode, alamat, atau cabang"
+            placeholderTextColor={visitColors.mutedInk}
+            returnKeyType="search"
+          />
+        </View>
+
+        <View style={styles.viewSwitch}>
+          <TouchableOpacity
+            accessibilityRole="tab"
+            accessibilityState={{ selected: viewMode === 'list' }}
+            onPress={() => setViewMode('list')}
+            style={[styles.switchOption, viewMode === 'list' && styles.switchSelected]}
+          >
+            <Text style={[styles.switchText, viewMode === 'list' && styles.switchTextSelected]}>Daftar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="tab"
+            accessibilityState={{ selected: viewMode === 'map' }}
+            onPress={() => setViewMode('map')}
+            style={[styles.switchOption, viewMode === 'map' && styles.switchSelected]}
+          >
+            <Text style={[styles.switchText, viewMode === 'map' && styles.switchTextSelected]}>Peta</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.gpsRow}>
+          <View style={styles.gpsCopy}>
+            <Navigation size={16} color={location?.coords ? visitColors.success : visitColors.warning} />
+            <Text style={styles.gpsText}>
+              {location?.coords ? 'GPS siap digunakan' : 'GPS belum tersedia; pencarian toko tetap bisa'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.refreshLocationButton}
-            onPress={requestLocation}
-            activeOpacity={0.85}
-          >
-            <Navigation size={13} color="#0F766E" />
-            <Text style={styles.refreshLocationText}>Perbarui GPS dan urutan toko</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={requestLocation} style={styles.refreshButton}>
+            <Text style={styles.refreshText}>Perbarui</Text>
           </TouchableOpacity>
-          <Text style={styles.noteText}>
-            Pilih toko dari master data SAP. Koordinat toko baru akan tersimpan saat visit valid pertama.
-          </Text>
         </View>
-      </View>
 
-      <View style={styles.searchBox}>
-        <Search size={18} color="#94A3B8" />
-        <TextInput
-          style={styles.searchInput}
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Cari kode, nama, alamat, atau cabang..."
-          placeholderTextColor="#94A3B8"
-        />
-      </View>
-
-      {!!notice && (
-        <View style={styles.noticeRow}>
-          <Text style={styles.noticeText}>{notice}</Text>
-        </View>
-      )}
-
-        {loading ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#0F766E" />
-            <Text style={styles.loadingText}>Memuat daftar toko aktif...</Text>
+        {notice ? (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>{notice}</Text>
           </View>
-        ) : (
-          <FlatList
-            data={stores}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderStore}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.list}
-            ListEmptyComponent={<Text style={styles.emptyText}>Tidak ada toko yang cocok.</Text>}
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.4}
-            refreshing={loading}
-            onRefresh={handleRefresh}
-            ListFooterComponent={(
-              <>
-                {loadingMore ? (
-                  <View style={styles.footerRow}>
-                    <ActivityIndicator size="small" color="#0F766E" />
-                    <Text style={styles.footerText}>Memuat data berikutnya...</Text>
-                  </View>
-                ) : null}
-                {!loading && !loadingMore && hasMore && stores.length > 0 ? (
-                  <View style={styles.footerHint}>
-                    <Text style={styles.footerHintText}>Scroll lagi untuk memuat data berikutnya.</Text>
-                  </View>
-                ) : null}
-                {!loading && !loadingMore && !hasMore && stores.length > 0 ? (
-                  <View style={styles.footerHint}>
-                    <Text style={styles.footerHintText}>Semua data sudah dimuat.</Text>
-                  </View>
-                ) : null}
-              </>
-            )}
-          />
-        )}
+        ) : null}
       </View>
-    );
-  };
+
+      {viewMode === 'map' ? (
+        <View style={styles.mapWrap}>
+          <OpenStreetMapView
+            style={styles.map}
+            center={location?.coords || DEFAULT_REGION}
+            markers={mapMarkers}
+            zoom={14}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.listTitleRow}>
+        <Text style={styles.listTitle}>Daftar toko</Text>
+        {!loading ? <Text style={styles.listCount}>{stores.length} dimuat</Text> : null}
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color={visitColors.primary} />
+          <Text style={styles.loadingText}>Memuat toko aktif...</Text>
+        </View>
+      ) : (
+        <FlatList
+          style={styles.listView}
+          data={stores}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderStore}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={(
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Toko tidak ditemukan</Text>
+              <Text style={styles.emptyText}>Ubah kata kunci atau perbarui daftar toko saat koneksi tersedia.</Text>
+            </View>
+          )}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.4}
+          refreshing={loading}
+          onRefresh={handleRefresh}
+          ListFooterComponent={(
+            <>
+              {loadingMore ? (
+                <View style={styles.footerRow}>
+                  <ActivityIndicator size="small" color={visitColors.primary} />
+                  <Text style={styles.footerText}>Memuat toko berikutnya...</Text>
+                </View>
+              ) : null}
+              {!loadingMore && hasMore && stores.length > 0 ? (
+                <Text style={styles.footerText}>Geser untuk memuat toko berikutnya.</Text>
+              ) : null}
+              {!loadingMore && !hasMore && stores.length > 0 ? (
+                <Text style={styles.footerText}>Semua toko sudah dimuat.</Text>
+              ) : null}
+            </>
+          )}
+        />
+      )}
+    </AppScreen>
+  );
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
-  },
-  mapWrap: {
-    height: 260,
-    backgroundColor: '#E2E8F0',
-  },
-  map: {
-    width: Dimensions.get('window').width,
-    height: 260,
-  },
-  locationCard: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    top: 16,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 14,
-    padding: 14,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 10,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#E7F1EF',
-    borderWidth: 1,
-    borderColor: '#BFE3DD',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  backButtonText: {
-    color: '#0F766E',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  locationBadge: {
-    flexShrink: 1,
-    color: '#475569',
-    fontSize: 11,
-    fontWeight: '700',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    overflow: 'hidden',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginTop: 8,
-  },
-  locationText: {
-    color: '#64748B',
-    fontSize: 12,
-    fontFamily: 'monospace',
-  },
-  refreshLocationButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 8,
-    paddingVertical: 3,
-  },
-  refreshLocationText: {
-    color: '#0F766E',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  noteText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#475569',
-    lineHeight: 17,
-  },
-  searchBox: {
-    margin: 16,
-    marginBottom: 8,
-    minHeight: 48,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#0F172A',
-  },
-  list: {
-    padding: 16,
-    paddingTop: 8,
-    paddingBottom: Platform.OS === 'android' ? 64 : 40,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  footerHint: {
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  footerHintText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  noticeRow: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  noticeText: {
-    fontSize: 12,
-    color: '#B45309',
-  },
-  loadingRow: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  loadingText: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  storeCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  selectedStoreCard: {
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-  },
-  storeIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#E7F1EF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectedStoreIcon: {
-    backgroundColor: '#F59E0B',
-  },
-  storeInfo: {
-    flex: 1,
-  },
-  storeCode: {
-    color: '#0F766E',
-    fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  storeName: {
-    color: '#0F172A',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  storeAddress: {
-    color: '#64748B',
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 3,
-  },
-  storeMeta: {
-    color: '#94A3B8',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 3,
-  },
-  storeDistance: {
-    color: '#475569',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-    fontWeight: '700',
-  },
-  routeButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#E7F1EF',
-    borderWidth: 1,
-    borderColor: '#BFE3DD',
-  },
-  routeButtonText: {
-    color: '#0F766E',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  routeButtonUnavailable: {
-    backgroundColor: '#F1F5F9',
-    borderColor: '#CBD5E1',
-  },
-  routeButtonUnavailableText: {
-    color: '#64748B',
-  },
-  startButton: {
-    minWidth: 62,
-    minHeight: 38,
-    borderRadius: 12,
-    backgroundColor: '#0F766E',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  startButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  disabled: {
-    opacity: 0.8,
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 60,
-    color: '#94A3B8',
-    fontSize: 14,
-  },
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  controls: { paddingHorizontal: visitSpacing.page, paddingTop: visitSpacing.card },
+  searchBox: { minHeight: 48, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.control, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm, paddingHorizontal: visitSpacing.md },
+  searchInput: { flex: 1, minWidth: 0, ...visitType.body, color: visitColors.ink, paddingVertical: visitSpacing.sm },
+  viewSwitch: { flexDirection: 'row', backgroundColor: visitColors.primaryTint, borderRadius: visitRadii.control, padding: visitSpacing.xs, marginTop: visitSpacing.md },
+  switchOption: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: visitRadii.control },
+  switchSelected: { backgroundColor: visitColors.surface },
+  switchText: { ...visitType.label, color: visitColors.mutedInk },
+  switchTextSelected: { color: visitColors.primary },
+  gpsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: visitSpacing.sm, marginTop: visitSpacing.sm },
+  gpsCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.xs },
+  gpsText: { ...visitType.caption, color: visitColors.mutedInk, flex: 1 },
+  refreshButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: visitSpacing.sm },
+  refreshText: { ...visitType.label, color: visitColors.primary },
+  notice: { backgroundColor: visitColors.warningTint, borderRadius: visitRadii.control, padding: visitSpacing.md, marginTop: visitSpacing.sm },
+  noticeText: { ...visitType.caption, color: visitColors.warning },
+  mapWrap: { height: 190, overflow: 'hidden', borderRadius: visitRadii.card, marginHorizontal: visitSpacing.page, marginTop: visitSpacing.sm, borderWidth: 1, borderColor: visitColors.border },
+  map: { width: '100%', height: '100%' },
+  listTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: visitSpacing.sm, paddingHorizontal: visitSpacing.page, marginTop: visitSpacing.section, marginBottom: visitSpacing.sm },
+  listTitle: { ...visitType.section, color: visitColors.ink },
+  listCount: { ...visitType.caption, color: visitColors.mutedInk },
+  listView: { flex: 1 },
+  listContent: { paddingHorizontal: visitSpacing.page, paddingBottom: visitSpacing.sectionLarge },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: visitSpacing.sm, paddingVertical: visitSpacing.sectionLarge },
+  loadingText: { ...visitType.body, color: visitColors.mutedInk },
+  emptyState: { backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, borderRadius: visitRadii.card, padding: visitSpacing.card },
+  emptyTitle: { ...visitType.section, color: visitColors.ink },
+  emptyText: { ...visitType.body, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: visitSpacing.sm, minHeight: 44 },
+  footerText: { ...visitType.caption, color: visitColors.mutedInk, textAlign: 'center', paddingVertical: visitSpacing.sm },
 });
 
 export default StartVisitScreen;
