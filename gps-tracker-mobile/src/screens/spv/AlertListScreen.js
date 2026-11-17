@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, AlertTriangle, User, CheckCircle } from 'lucide-react-native';
+import { AlertTriangle, ArrowRight, CheckCircle, RefreshCw } from 'lucide-react-native';
 import moment from 'moment';
 import { reportService } from '../../api/services/reportService';
+import AppScreen from '../../components/ui/AppScreen';
+import VisitHeader from '../../components/visit/VisitHeader';
 import { getJakartaDateString } from '../../utils/date';
 import { logEvent } from '../../utils/diagnosticLogger';
+import { getWarningListPresentation } from '../../utils/monitoringDetailPresentation';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
 const AlertListScreen = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [warnings, setWarnings] = useState([]);
   const [warningDate, setWarningDate] = useState(() => getJakartaDateString(-1));
 
@@ -19,176 +24,107 @@ const AlertListScreen = () => {
 
   const fetchWarnings = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const yesterday = getJakartaDateString(-1);
       setWarningDate(yesterday);
-      const response = await reportService.targetSummary({
-        date_from: yesterday,
-        date_to: yesterday,
-      });
-
+      const response = await reportService.targetSummary({ date_from: yesterday, date_to: yesterday });
       const payload = response.data?.data || response.data || {};
       setWarnings(Array.isArray(payload.warnings) ? payload.warnings : []);
     } catch (error) {
       logEvent('alerts.fetch_failed', { status: error.response?.status, error_code: error.code });
-      Alert.alert('Error', 'Gagal mengambil data warning');
+      setWarnings([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   };
 
+  const presentation = getWarningListPresentation({ loading, error: loadError, warnings, date: warningDate });
+  const dateLabel = moment(presentation.date, 'YYYY-MM-DD').format('DD MMMM YYYY');
+
   const renderItem = ({ item }) => (
     <TouchableOpacity
-      style={styles.card}
+      accessibilityRole="button"
+      accessibilityLabel={'Lihat detail ' + (item.name || 'Sales')}
+      disabled={!item.user_id}
       onPress={() => navigation.navigate('SalesDetail', { userId: item.user_id })}
+      style={styles.warningCard}
     >
-      <View style={styles.cardHeader}>
-        <View style={styles.userInfo}>
-          <User size={20} color="#EF4444" />
-          <Text style={styles.userName}>{item.name}</Text>
+      <View style={styles.warningHeading}>
+        <View style={styles.warningNameWrap}>
+          <AlertTriangle size={18} color={visitColors.warning} />
+          <Text style={styles.warningName}>{item.name || 'Sales'}</Text>
         </View>
-        <AlertTriangle size={20} color="#EF4444" />
+        {item.user_id ? <ArrowRight size={18} color={visitColors.primary} /> : null}
       </View>
-
-      <Text style={styles.metaText}>Tanggal: {item.date}</Text>
-      <Text style={styles.metaText}>Target: {item.target_visits} | Unik: {item.unique_visits} | Duplicate: {item.duplicate_visits}</Text>
-      <Text style={styles.anomalyText}>{item.message}</Text>
-      <Text style={styles.tapText}>Ketuk untuk lihat detail sales {'>'}</Text>
+      <Text style={styles.warningDate}>{item.date || presentation.date}</Text>
+      <Text style={styles.warningMessage}>{item.message || 'Target kunjungan perlu ditinjau.'}</Text>
+      <Text style={styles.warningMetrics}>
+        Target {item.target_visits ?? 0} · Unik {item.unique_visits ?? 0} · Duplikat {item.duplicate_visits ?? 0}
+      </Text>
+      {item.user_id ? <Text style={styles.detailLink}>Lihat detail Sales</Text> : null}
     </TouchableOpacity>
   );
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0F766E" />
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <ChevronLeft size={24} color="#1E293B" />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.headerTitle}>Warning Audit</Text>
-          <Text style={styles.headerSubtitle}>
-            Data untuk {moment(warningDate, 'YYYY-MM-DD').format('DD MMMM YYYY')} (hari sebelumnya)
-          </Text>
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader title="Peringatan audit" subtitle={'Data ' + dateLabel} onBack={() => navigation.goBack()} />
+      {presentation.state === 'loading' ? (
+        <View style={styles.stateCard}>
+          <ActivityIndicator size="large" color={visitColors.primary} />
+          <Text style={styles.stateText}>Memuat peringatan...</Text>
         </View>
-      </View>
-
-      <FlatList
-        data={warnings}
-        keyExtractor={(item, index) => `${item.user_id}-${item.date}-${index}`}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <CheckCircle size={48} color="#10B981" />
-            <Text style={styles.emptyText}>Tidak ada warning audit untuk hari kemarin.</Text>
-          </View>
-        }
-        onRefresh={fetchWarnings}
-        refreshing={loading}
-      />
-    </View>
+      ) : presentation.state === 'error' ? (
+        <View style={styles.stateCard}>
+          <Text style={styles.stateTitle}>Peringatan belum bisa dimuat</Text>
+          <Text style={styles.stateText}>Periksa koneksi lalu coba lagi.</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={fetchWarnings} style={styles.retryButton}>
+            <RefreshCw size={16} color={visitColors.primary} />
+            <Text style={styles.retryText}>Coba lagi</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={presentation.warnings}
+          keyExtractor={(item, index) => `${item.user_id}-${item.date}-${index}`}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          onRefresh={fetchWarnings}
+          refreshing={loading}
+          ListHeaderComponent={<Text style={styles.intro}>Tinjau kunjungan yang perlu perhatian dari hari sebelumnya.</Text>}
+          ListEmptyComponent={
+            <View style={styles.emptyCard}>
+              <CheckCircle size={28} color={visitColors.success} />
+              <Text style={styles.stateTitle}>Belum ada peringatan</Text>
+              <Text style={styles.stateText}>Tidak ada peringatan audit untuk {dateLabel}.</Text>
+            </View>
+          }
+        />
+      )}
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
-    paddingBottom: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    gap: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  list: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'android' ? 64 : 20,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#EF4444',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  metaText: {
-    fontSize: 12,
-    color: '#475569',
-    marginTop: 4,
-  },
-  anomalyText: {
-    fontSize: 13,
-    color: '#7C2D12',
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  tapText: {
-    fontSize: 12,
-    color: '#0F766E',
-    fontWeight: 'bold',
-    textAlign: 'right',
-    marginTop: 10,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    marginTop: 100,
-    gap: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-  },
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  list: { paddingHorizontal: visitSpacing.page, paddingTop: visitSpacing.card, paddingBottom: visitSpacing.sectionLarge, flexGrow: 1 },
+  intro: { ...visitType.body, color: visitColors.mutedInk, marginBottom: visitSpacing.card },
+  warningCard: { padding: visitSpacing.card, marginBottom: visitSpacing.sm, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border },
+  warningHeading: { flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm },
+  warningNameWrap: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm },
+  warningName: { ...visitType.section, color: visitColors.ink, flex: 1 },
+  warningDate: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.sm },
+  warningMessage: { ...visitType.body, color: visitColors.ink, marginTop: visitSpacing.sm },
+  warningMetrics: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.sm },
+  detailLink: { ...visitType.label, color: visitColors.primary, marginTop: visitSpacing.md },
+  emptyCard: { padding: visitSpacing.sectionLarge, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, alignItems: 'center', gap: visitSpacing.sm },
+  stateCard: { margin: visitSpacing.page, padding: visitSpacing.card, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, alignItems: 'flex-start', gap: visitSpacing.sm },
+  stateTitle: { ...visitType.section, color: visitColors.ink, textAlign: 'center' },
+  stateText: { ...visitType.body, color: visitColors.mutedInk, textAlign: 'center' },
+  retryButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm, paddingHorizontal: visitSpacing.md },
+  retryText: { ...visitType.label, color: visitColors.primary },
 });
 
 export default AlertListScreen;

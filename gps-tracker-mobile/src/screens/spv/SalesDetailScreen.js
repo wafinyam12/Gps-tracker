@@ -1,318 +1,197 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { locationService } from '../../api/services/locationService';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { ChevronLeft, MapPin, Clock, Navigation, Calendar } from 'lucide-react-native';
+import { Clock, MapPin, Navigation, RefreshCw } from 'lucide-react-native';
+import { locationService } from '../../api/services/locationService';
 import OpenStreetMapView from '../../components/maps/OpenStreetMapView';
-
-const toRadians = (value) => (value * Math.PI) / 180;
-
-const haversineMeters = (from, to) => {
-  if (!from || !to) {
-    return 0;
-  }
-
-  const earthRadius = 6371000;
-  const dLat = toRadians(to.latitude - from.latitude);
-  const dLon = toRadians(to.longitude - from.longitude);
-  const lat1 = toRadians(from.latitude);
-  const lat2 = toRadians(to.latitude);
-
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadius * c;
-};
+import AppScreen from '../../components/ui/AppScreen';
+import VisitHeader from '../../components/visit/VisitHeader';
+import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
+import { getSalesLocationPresentation, isMissingSalesLocation } from '../../utils/monitoringDetailPresentation';
+import { logEvent } from '../../utils/diagnosticLogger';
 
 const SalesDetailScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { userId } = route.params || {};
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [userData, setUserData] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!userId) {
-      Alert.alert('Error', 'User ID tidak ditemukan');
-      navigation.goBack();
+      setLoadError(true);
+      setLoading(false);
       return;
     }
-  }, [navigation, userId]);
 
-  const [loading, setLoading] = useState(true);
-  const [userData, setUserData] = useState(null);
-  const [history, setHistory] = useState([]);
-
-  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError(false);
     const fetchData = async () => {
-      if (!userId) {
-        return;
-      }
-
       try {
         const [userRes, historyRes] = await Promise.all([
-          locationService.getSalesLocation(userId),
+          locationService.getSalesLocation(userId).catch((error) => {
+            if (isMissingSalesLocation(error)) return { data: { data: null } };
+            throw error;
+          }),
           locationService.getLocationHistory(userId),
         ]);
-
+        if (!active) return;
         const userPayload = userRes.data?.data || userRes.data || null;
         const historyPayload = historyRes.data?.data || historyRes.data || {};
-
-        setUserData(userPayload);
+        setUserData(userPayload || { name: historyPayload.name || 'Sales' });
         setHistory(Array.isArray(historyPayload.trail) ? historyPayload.trail : []);
       } catch (error) {
-        Alert.alert('Error', 'Gagal mengambil data detail sales');
-        navigation.goBack();
+        if (!active) return;
+        logEvent('sales_detail.fetch_failed', { status: error.response?.status, error_code: error.code });
+        setLoadError(true);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
-
     fetchData();
-  }, [navigation, userId]);
+    return () => { active = false; };
+  }, [userId, retryKey]);
 
-  const totalDistanceKm = useMemo(() => {
-    if (history.length < 2) {
-      return 0;
-    }
-
-    let totalMeters = 0;
-    for (let index = 1; index < history.length; index += 1) {
-      totalMeters += haversineMeters(history[index - 1], history[index]);
-    }
-
-    return totalMeters / 1000;
-  }, [history]);
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0F766E" />
-      </View>
-    );
-  }
-
-  const lastLoc = userData?.location;
-  const polylineCoords = history
-    .filter((h) => Number.isFinite(h.latitude) && Number.isFinite(h.longitude))
-    .map((h) => ({
-      latitude: h.latitude,
-      longitude: h.longitude,
-    }));
-  const mapMarkers = lastLoc ? [{
+  const presentation = getSalesLocationPresentation(userData, history);
+  const branchName = userData?.branch?.name || userData?.team?.name || 'Cabang belum tersedia';
+  const marker = presentation.location ? [{
     id: 'last-location',
-    latitude: lastLoc.latitude,
-    longitude: lastLoc.longitude,
-    title: 'Posisi Terakhir',
-    description: userData?.last_seen_at_human || userData?.last_seen_at || '',
-    color: '#0F766E',
+    ...presentation.location,
+    title: 'Posisi terakhir',
+    description: presentation.lastSeen,
+    color: visitColors.primary,
   }] : [];
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ChevronLeft size={24} color="#1E293B" />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.headerTitle}>{userData?.name}</Text>
-          <Text style={styles.headerSubtitle}>{userData?.branch?.name || userData?.team?.name || 'Tanpa Cabang'}</Text>
+    <AppScreen style={styles.screen} contentStyle={styles.screenContent} edges={['top', 'bottom', 'left', 'right']}>
+      <VisitHeader title={userData?.name || 'Detail Sales'} subtitle={branchName} onBack={() => navigation.goBack()} />
+      {loading ? (
+        <View style={styles.stateCard}>
+          <ActivityIndicator size="large" color={visitColors.primary} />
+          <Text style={styles.stateText}>Memuat posisi Sales...</Text>
         </View>
-        <View style={styles.statusDot(userData?.is_online)} />
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-      >
-        <View style={styles.mapContainer}>
-          <OpenStreetMapView
-            style={styles.map}
-            center={{
-              latitude: lastLoc?.latitude || -6.2,
-              longitude: lastLoc?.longitude || 106.8,
-            }}
-            markers={mapMarkers}
-            polyline={polylineCoords}
-            zoom={13}
-          />
+      ) : loadError ? (
+        <View style={styles.stateCard}>
+          <Text style={styles.stateTitle}>Detail Sales belum bisa dimuat</Text>
+          <Text style={styles.stateText}>{userId ? 'Periksa koneksi lalu coba lagi.' : 'ID Sales tidak tersedia. Kembali ke daftar Sales.'}</Text>
+          {userId ? (
+            <TouchableOpacity accessibilityRole="button" onPress={() => setRetryKey((value) => value + 1)} style={styles.retryButton}>
+              <RefreshCw size={16} color={visitColors.primary} />
+              <Text style={styles.retryText}>Coba lagi</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
-
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>Status Hari Ini</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Terakhir Terlihat</Text>
-              <Text style={styles.statValue}>{userData?.last_seen_at_human || '-'}</Text>
+      ) : (
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.statusCard}>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusPill, presentation.status === 'Online' ? styles.onlinePill : styles.offlinePill]}>
+                <Text style={[styles.statusPillText, presentation.status === 'Online' ? styles.onlineText : styles.offlineText]}>{presentation.status}</Text>
+              </View>
+              <Text style={styles.statusLabel}>Status Sales</Text>
             </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Jarak Tempuh</Text>
-              <Text style={styles.statValue}>{totalDistanceKm.toFixed(1)} KM</Text>
+            <Text style={styles.lastSeenLabel}>Terakhir terlihat</Text>
+            <Text style={styles.lastSeenValue}>{presentation.lastSeen}</Text>
+          </View>
+
+          <Text style={styles.sectionTitle}>Posisi dan perjalanan</Text>
+          {presentation.location ? (
+            <View style={styles.mapFrame}>
+              <OpenStreetMapView
+                style={styles.map}
+                center={presentation.location}
+                markers={marker}
+                polyline={presentation.trail}
+                zoom={13}
+              />
+            </View>
+          ) : (
+            <View style={styles.missingMap}>
+              <MapPin size={26} color={visitColors.mutedInk} />
+              <Text style={styles.stateTitle}>Belum ada data GPS</Text>
+              <Text style={styles.stateText}>Peta akan tersedia setelah perangkat Sales mengirim posisi.</Text>
+            </View>
+          )}
+
+          <View style={styles.metricsRow}>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricLabel}>Jarak dari jejak GPS</Text>
+              <Text style={styles.metricValue}>{presentation.distance}</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricLabel}>Titik perjalanan</Text>
+              <Text style={styles.metricValue}>{presentation.trail.length}</Text>
             </View>
           </View>
 
-          <View style={styles.detailList}>
-            <View style={styles.detailItem}>
-              <MapPin size={20} color="#64748B" />
-              <View>
-                <Text style={styles.detailLabel}>Lokasi Terakhir</Text>
-                <Text style={styles.detailValue} numberOfLines={2}>
-                  {lastLoc ? `${lastLoc.latitude.toFixed(6)}, ${lastLoc.longitude.toFixed(6)}` : 'Tidak diketahui'}
-                </Text>
+          <View style={styles.detailCard}>
+            <View style={styles.detailRow}>
+              <MapPin size={18} color={visitColors.primary} />
+              <View style={styles.detailCopy}>
+                <Text style={styles.detailLabel}>Lokasi terakhir</Text>
+                <Text style={styles.detailValue}>{presentation.coordinates}</Text>
               </View>
             </View>
-
-            <View style={styles.detailItem}>
-              <Clock size={20} color="#64748B" />
-              <View>
-                <Text style={styles.detailLabel}>Update GPS Terakhir</Text>
-                <Text style={styles.detailValue}>
-                  {lastLoc?.recorded_at || userData?.last_seen_at || 'Belum ada data'}
-                </Text>
+            <View style={styles.detailRow}>
+              <Clock size={18} color={visitColors.primary} />
+              <View style={styles.detailCopy}>
+                <Text style={styles.detailLabel}>Pembaruan GPS</Text>
+                <Text style={styles.detailValue}>{presentation.recordedAt}</Text>
               </View>
             </View>
-
-            <View style={styles.detailItem}>
-              <Navigation size={20} color="#64748B" />
-              <View>
-                <Text style={styles.detailLabel}>Kecepatan / Baterai</Text>
-                <Text style={styles.detailValue}>
-                  {lastLoc?.speed || 0} km/h - {lastLoc?.battery || 0}% Baterai
-                </Text>
+            <View style={styles.detailRow}>
+              <Navigation size={18} color={visitColors.primary} />
+              <View style={styles.detailCopy}>
+                <Text style={styles.detailLabel}>Kecepatan dan baterai</Text>
+                <Text style={styles.detailValue}>{presentation.speedBattery}</Text>
               </View>
             </View>
           </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.historyBtn}
-          onPress={() => Alert.alert('Info', 'Fitur Riwayat Lengkap tersedia di Dashboard Web')}
-        >
-          <Calendar size={20} color="#fff" />
-          <Text style={styles.historyBtnText}>Lihat Riwayat Perjalanan Penuh</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: Platform.OS === 'android' ? 64 : 40 }} />
-      </ScrollView>
-    </View>
+          <Text style={styles.note}>Peta menampilkan jejak GPS yang tersedia untuk Sales ini. Riwayat lengkap dapat dilihat di dashboard web.</Text>
+        </ScrollView>
+      )}
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    gap: 12,
-  },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  statusDot: (online) => ({
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: online ? '#10B981' : '#EF4444',
-    marginLeft: 'auto',
-  }),
-  content: {
-    paddingBottom: Platform.OS === 'android' ? 40 : 16,
-  },
-  scroll: {
-    flex: 1,
-  },
-  mapContainer: {
-    height: 250,
-    backgroundColor: '#F1F5F9',
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  infoSection: {
-    padding: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0F766E',
-  },
-  detailList: {
-    gap: 20,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center',
-  },
-  detailLabel: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  detailValue: {
-    fontSize: 14,
-    color: '#1E293B',
-    marginTop: 2,
-  },
-  historyBtn: {
-    flexDirection: 'row',
-    backgroundColor: '#0F766E',
-    margin: 20,
-    padding: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-  },
-  historyBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  screen: { backgroundColor: visitColors.canvas },
+  screenContent: { paddingTop: 0, paddingBottom: 0 },
+  content: { paddingHorizontal: visitSpacing.page, paddingTop: visitSpacing.card, paddingBottom: visitSpacing.sectionLarge },
+  statusCard: { padding: visitSpacing.card, backgroundColor: visitColors.surface, borderColor: visitColors.border, borderWidth: 1, borderRadius: visitRadii.card },
+  statusRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: visitSpacing.sm },
+  statusPill: { borderRadius: visitRadii.pill, paddingHorizontal: visitSpacing.md, paddingVertical: visitSpacing.xs },
+  onlinePill: { backgroundColor: visitColors.successTint },
+  offlinePill: { backgroundColor: visitColors.warningTint },
+  statusPillText: { ...visitType.label },
+  onlineText: { color: visitColors.success },
+  offlineText: { color: visitColors.warning },
+  statusLabel: { ...visitType.caption, color: visitColors.mutedInk },
+  lastSeenLabel: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.card },
+  lastSeenValue: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.xs },
+  sectionTitle: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.sectionLarge, marginBottom: visitSpacing.sm },
+  mapFrame: { height: 240, borderRadius: visitRadii.card, overflow: 'hidden', borderWidth: 1, borderColor: visitColors.border },
+  map: { ...StyleSheet.absoluteFillObject },
+  missingMap: { minHeight: 180, padding: visitSpacing.card, alignItems: 'center', justifyContent: 'center', gap: visitSpacing.sm, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border },
+  metricsRow: { flexDirection: 'row', gap: visitSpacing.sm, marginTop: visitSpacing.sm },
+  metricCard: { flex: 1, minWidth: 0, padding: visitSpacing.card, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border },
+  metricLabel: { ...visitType.caption, color: visitColors.mutedInk },
+  metricValue: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.xs },
+  detailCard: { marginTop: visitSpacing.section, padding: visitSpacing.card, gap: visitSpacing.card, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border },
+  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: visitSpacing.md },
+  detailCopy: { flex: 1, minWidth: 0 },
+  detailLabel: { ...visitType.caption, color: visitColors.mutedInk },
+  detailValue: { ...visitType.body, color: visitColors.ink, marginTop: visitSpacing.xs },
+  note: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.section },
+  stateCard: { margin: visitSpacing.page, padding: visitSpacing.card, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderColor: visitColors.border, borderWidth: 1, gap: visitSpacing.sm, alignItems: 'flex-start' },
+  stateTitle: { ...visitType.section, color: visitColors.ink, textAlign: 'center' },
+  stateText: { ...visitType.body, color: visitColors.mutedInk, textAlign: 'center' },
+  retryButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: visitSpacing.sm, paddingHorizontal: visitSpacing.md },
+  retryText: { ...visitType.label, color: visitColors.primary },
 });
 
 export default SalesDetailScreen;
