@@ -1,9 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
 const VisitHeader = ({ title, subtitle, onBack, right, status }) => (
+  <>
+  <StatusBar barStyle="dark-content" />
   <View style={styles.header}>
     <View style={styles.row}>
       {onBack ? (
@@ -24,6 +26,7 @@ const VisitHeader = ({ title, subtitle, onBack, right, status }) => (
     </View>
     {status ? <View style={styles.status}>{status}</View> : null}
   </View>
+  </>
 );
 
 const styles = StyleSheet.create({
