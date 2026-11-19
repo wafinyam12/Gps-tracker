@@ -20,7 +20,7 @@ xyz.utomodev.salesdaily.staging
 ```
 
 Current staging version: `1.1.6` (Expo SDK 54)
-Current staging `versionCode`: `9`
+Current staging `versionCode`: `10`
 This APK embeds the restored **Manajemen User** and **Manajemen Cabang** menus;
 it does not rely on the SDK 54 `1.1.4` OTA update to show them.
 
@@ -140,9 +140,14 @@ for users to move to that runtime.
 
 ### OTA kamera visit dan draft form (19 November 2026)
 
-Perubahan JavaScript pada kamera kunjungan menambah pilihan depan/belakang dan
-membuka kamera sebagai modal. Isian form visit yang belum disimpan tetap ada
-ketika sales kembali dari kamera; ringkasan foto tetap diperbarui.
+Perubahan JavaScript pada kamera kunjungan menambah pilihan depan/belakang.
+Kamera dibuka sebagai layar penuh. Isian form visit yang belum disimpan tetap
+ada ketika sales kembali dari kamera; ringkasan foto tetap diperbarui.
+
+Update awal di bawah memakai presentasi modal. Pengguna build 9 melaporkan
+indikator kamera menyala tetapi layar kamera tidak tampil. Presentasi modal
+kemudian dibatalkan; kedua update awal ini telah digantikan dan **bukan**
+update terbaru yang perlu diuji.
 
 - Android `staging`, EAS Environment `preview`, runtime `1.1.5`:
   [update group `ea94173f-ec8e-4b7d-a8b0-b0c56189785b`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/ea94173f-ec8e-4b7d-a8b0-b0c56189785b)
@@ -151,10 +156,24 @@ ketika sales kembali dari kamera; ringkasan foto tetap diperbarui.
   [update group `0d918911-dd93-429b-99cc-259c234dc3f5`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/0d918911-dd93-429b-99cc-259c234dc3f5)
   (update ID `01a1f274-7984-7545-932a-f3ede33bcba0`).
 
-Kedua update telah diverifikasi sebagai update terbaru untuk runtime masing-masing
-di branch `staging`. Tes offline mobile lulus 20/20 dan bundle Android berhasil
-dibuat oleh EAS. Pemeriksaan alur visit pada perangkat masih menunggu umpan
-balik pengguna. `app.json` telah dikembalikan ke `runtimeVersion.policy=appVersion`.
+Update koreksi terbaru di branch `staging`:
+
+- Runtime `1.1.5`: [group `68c0f295-d938-4f97-a3f0-2bd13a9deada`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/68c0f295-d938-4f97-a3f0-2bd13a9deada)
+  (Android update ID `01a1f28b-0684-71b8-812c-572ec5d089b0`).
+- Runtime `1.1.6`: [group `e78c97bb-43e4-4710-b691-fae7ee666db8`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/e78c97bb-43e4-4710-b691-fae7ee666db8)
+  (Android update ID `01a1f28c-84a7-75a4-b479-92d681b6ecc5`).
+
+Server Expo mengembalikan HTTP 200 dan ID koreksi terbaru untuk kedua runtime.
+Tes offline mobile lulus 20/20 dan bundle Android koreksi berhasil dibuat.
+Pemeriksaan alur visit pada perangkat masih menunggu umpan balik pengguna.
+`app.json` telah dikembalikan ke `runtimeVersion.policy=appVersion`.
+
+Karena build 9 di perangkat pengguna belum menampilkan OTA yang diharapkan,
+[APK staging 1.1.6 build 10](https://expo.dev/accounts/nyma/projects/sales-daily/builds/d529765d-bcad-438c-99f8-362194d47ebe)
+dibuat dengan koreksi tertanam. Build ID `d529765d-bcad-438c-99f8-362194d47ebe`,
+channel `staging`, runtime `1.1.6`, dan commit sumber `6e6aa23`. Pasang di atas
+build 9 tanpa menghapus aplikasi/data. Setelah terpasang, periksa tombol
+"Ambil foto wajib", pilihan kamera depan/belakang, lalu kembalinya isian form.
 
 ### Sales visit UI update (17 November 2026)
 
