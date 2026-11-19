@@ -258,5 +258,6 @@
         </header>
         @yield('content')
     </div>
+    <script src="{{ asset('js/crm-live.js') }}" data-version-url="{{ route('crm.live-version') }}" defer></script>
 </body>
 </html>

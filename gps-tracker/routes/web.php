@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Web\CrmAuthController;
 use App\Http\Controllers\Web\CrmDashboardController;
+use App\Http\Controllers\Web\CrmLiveController;
 use App\Http\Controllers\Web\CrmStoreController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,7 @@ Route::prefix('crm')->name('crm.')->group(function () {
 
     Route::middleware(['auth', 'role:spv|manager|admin|superadmin'])->group(function () {
         Route::get('/', [CrmDashboardController::class, 'index'])->name('dashboard');
+        Route::get('live-version', [CrmLiveController::class, 'version'])->name('live-version');
         Route::get('stores', [CrmStoreController::class, 'index'])->name('stores.index');
         Route::get('stores/{store}', [CrmStoreController::class, 'show'])->name('stores.show');
         Route::patch('stores/{store}', [CrmStoreController::class, 'update'])->name('stores.update');

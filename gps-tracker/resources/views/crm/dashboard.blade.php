@@ -630,7 +630,7 @@
 @endpush
 
 @section('content')
-<main class="page">
+<main class="page" data-crm-live-root>
     <div class="hero">
         <div>
             <h1>Sales Daily Dashboard</h1>
@@ -639,6 +639,7 @@
         <div class="hero-meta">
             <span class="badge badge-info">{{ $filters['date_from'] }} - {{ $filters['date_to'] }}</span>
             <span class="badge @if($riskTotal > 0) badge-medium @else badge-good @endif">{{ $fmt($riskTotal) }} audit issue</span>
+            <span class="badge" data-crm-live-status>Memuat data terbaru otomatis</span>
         </div>
     </div>
 
@@ -1112,7 +1113,7 @@
                                     $visitJson = json_encode($visit, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                                     $resultText = $resultLabels[$visit['visit_result']] ?? ($visit['visit_result'] ?: 'Belum diisi');
                                 @endphp
-                                <details class="panel visit-detail">
+                                <details class="panel visit-detail" data-visit-id="{{ $visit['id'] }}">
                                     <summary>
                                         <div class="visit-summary">
                                             <div>
@@ -1334,10 +1335,9 @@
 
 <script>
     (function () {
-        const tabs = Array.from(document.querySelectorAll('[data-crm-tab]'));
-        const sections = Array.from(document.querySelectorAll('[data-crm-section]'));
-
         function activate(tabName) {
+            const tabs = Array.from(document.querySelectorAll('[data-crm-tab]'));
+            const sections = Array.from(document.querySelectorAll('[data-crm-section]'));
             if (!sections.some((section) => section.dataset.crmSection === tabName)) {
                 tabName = 'summary';
             }
@@ -1358,10 +1358,12 @@
             }
         }
 
-        tabs.forEach((tab) => {
-            tab.addEventListener('click', () => activate(tab.dataset.crmTab));
+        document.addEventListener('click', (event) => {
+            const tab = event.target.closest('[data-crm-tab]');
+            if (tab) activate(tab.dataset.crmTab);
         });
 
+        window.crmActivateTab = activate;
         const initial = window.location.hash.replace('#', '') || window.localStorage.getItem('crm.activeTab') || 'summary';
         activate(initial);
     })();
