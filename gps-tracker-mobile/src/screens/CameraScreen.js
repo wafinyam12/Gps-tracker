@@ -25,6 +25,7 @@ const PhotoUploadScreen = () => {
   const [photos, setPhotos] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [facing, setFacing] = useState('back');
   const cameraRef = useRef(null);
   const photosRef = useRef(photos);
   const saveCoordinatorRef = useRef(null);
@@ -255,7 +256,7 @@ const PhotoUploadScreen = () => {
       <CameraView
         ref={cameraRef}
         style={styles.camera}
-        facing="back"
+        facing={facing}
       >
         <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Tutup kamera">
           <X size={24} color="#fff" />
@@ -267,6 +268,16 @@ const PhotoUploadScreen = () => {
         </View>
 
         <View style={styles.captureContainer}>
+          <TouchableOpacity
+            style={styles.switchCameraBtn}
+            onPress={() => setFacing(current => current === 'back' ? 'front' : 'back')}
+            disabled={isProcessing}
+            accessibilityRole="button"
+            accessibilityLabel={`Ganti ke kamera ${facing === 'back' ? 'depan' : 'belakang'}`}
+          >
+            <RefreshCcw size={22} color="#fff" />
+            <Text style={styles.switchCameraText}>{facing === 'back' ? 'Depan' : 'Belakang'}</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={[styles.captureBtn, !canCaptureVisitPhoto(photos.length) && styles.captureDisabled]} onPress={takePicture} disabled={!canCaptureVisitPhoto(photos.length) || isProcessing} accessibilityRole="button" accessibilityLabel="Ambil foto">
             <View style={styles.captureInner} />
           </TouchableOpacity>
@@ -340,6 +351,8 @@ const styles = StyleSheet.create({
   captureBtn: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   captureInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff' },
   captureDisabled: { opacity: 0.45 },
+  switchCameraBtn: { position: 'absolute', left: visitSpacing.page, minWidth: 76, minHeight: 64, borderRadius: visitRadii.control, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', gap: visitSpacing.xs },
+  switchCameraText: { ...visitType.caption, color: visitColors.surface },
   doneFab: { position: 'absolute', right: visitSpacing.sectionLarge, width: 50, height: 50, borderRadius: 25, backgroundColor: visitColors.primary, justifyContent: 'center', alignItems: 'center' },
   controls: {
     flexDirection: 'row',

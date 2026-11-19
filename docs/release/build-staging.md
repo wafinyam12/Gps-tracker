@@ -138,6 +138,24 @@ change can still receive a compatibility OTA when explicitly published for its
 existing runtime. If a release introduces a new runtime, distribute a new APK
 for users to move to that runtime.
 
+### OTA kamera visit dan draft form (19 November 2026)
+
+Perubahan JavaScript pada kamera kunjungan menambah pilihan depan/belakang dan
+membuka kamera sebagai modal. Isian form visit yang belum disimpan tetap ada
+ketika sales kembali dari kamera; ringkasan foto tetap diperbarui.
+
+- Android `staging`, EAS Environment `preview`, runtime `1.1.5`:
+  [update group `ea94173f-ec8e-4b7d-a8b0-b0c56189785b`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/ea94173f-ec8e-4b7d-a8b0-b0c56189785b)
+  (update ID `01a1f272-e4ea-7a6d-ab28-5655d2b03156`).
+- Android `staging`, EAS Environment `preview`, runtime `1.1.6`:
+  [update group `0d918911-dd93-429b-99cc-259c234dc3f5`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/0d918911-dd93-429b-99cc-259c234dc3f5)
+  (update ID `01a1f274-7984-7545-932a-f3ede33bcba0`).
+
+Kedua update telah diverifikasi sebagai update terbaru untuk runtime masing-masing
+di branch `staging`. Tes offline mobile lulus 20/20 dan bundle Android berhasil
+dibuat oleh EAS. Pemeriksaan alur visit pada perangkat masih menunggu umpan
+balik pengguna. `app.json` telah dikembalikan ke `runtimeVersion.policy=appVersion`.
+
 ### Sales visit UI update (17 November 2026)
 
 The Sales visit screens now use a compact dashboard, a list-first store search,

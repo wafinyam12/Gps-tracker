@@ -82,7 +82,7 @@ const AppStack = () => (
     <Stack.Screen
       name="PhotoUpload"
       component={CameraScreen} // Renamed to PhotoUpload for clarity
-      options={{ headerShown: false }}
+      options={{ headerShown: false, presentation: 'transparentModal', gestureEnabled: false }}
     />
     <Stack.Screen
       name="VisitForm"
@@ -207,7 +207,7 @@ const AdminStack = () => (
     <Stack.Screen
       name="PhotoUpload"
       component={CameraScreen}
-      options={{ headerShown: false }}
+      options={{ headerShown: false, presentation: 'transparentModal', gestureEnabled: false }}
     />
     <Stack.Screen
       name="VisitForm"

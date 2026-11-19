@@ -148,9 +148,12 @@ function VisitFormScreen({ route, navigation }) {
   const [cashPaymentSubmitting, setCashPaymentSubmitting] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isMountedRef = useRef(true);
+  const draftRef = useRef({ key: null, dirty: false });
+  const loadedVisitKeyRef = useRef(null);
   const currentUserFullName = user?.full_name || user?.name || '';
 
   const resolvedVisitLogId = visitLogId || routeVisitLogId || null;
+  const visitKey = isOfflineVisit ? `offline:${offlineVisit.localVisitId}` : `server:${resolvedVisitLogId}`;
   const isCheckedOut = Boolean(visit?.checkout_at);
   const isDetailMode = mode === 'detail';
   const canEditVisit = !isCheckedOut && !isDetailMode;
@@ -287,11 +290,19 @@ function VisitFormScreen({ route, navigation }) {
   }, [currentUserFullName]);
 
   const loadVisit = useCallback(async () => {
+    const hydrateUnlessEdited = (visitData) => {
+      if (draftRef.current.key !== visitKey || !draftRef.current.dirty) {
+        hydrateForm(visitData);
+        draftRef.current = { key: visitKey, dirty: false };
+      }
+    };
+
     if (isOfflineVisit) {
       const offlineData = buildOfflineVisit(offlineVisit);
       if (isMountedRef.current) {
         setVisit(offlineData);
-        hydrateForm(offlineData);
+        hydrateUnlessEdited(offlineData);
+        loadedVisitKeyRef.current = visitKey;
         setLoading(false);
       }
       return;
@@ -304,7 +315,7 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    if (isMountedRef.current) {
+    if (isMountedRef.current && loadedVisitKeyRef.current !== visitKey) {
       setLoading(true);
     }
     try {
@@ -315,7 +326,8 @@ function VisitFormScreen({ route, navigation }) {
 
       const visitData = response.data?.visit || response.data?.data?.visit || null;
       setVisit(visitData);
-      hydrateForm(visitData);
+      hydrateUnlessEdited(visitData);
+      loadedVisitKeyRef.current = visitKey;
     } catch (error) {
       if (!isMountedRef.current) {
         return;
@@ -328,7 +340,7 @@ function VisitFormScreen({ route, navigation }) {
         setLoading(false);
       }
     }
-  }, [hydrateForm, isOfflineVisit, offlineVisit, resolvedVisitLogId]);
+  }, [hydrateForm, isOfflineVisit, offlineVisit, resolvedVisitLogId, visitKey]);
 
   const requestLocation = useCallback(async () => {
     try {
@@ -389,6 +401,7 @@ function VisitFormScreen({ route, navigation }) {
   );
 
   const setField = (field, value) => {
+    draftRef.current = { key: visitKey, dirty: true };
     setForm((previous) => ({ ...previous, [field]: value }));
   };
 
