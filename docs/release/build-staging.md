@@ -165,7 +165,8 @@ Update koreksi terbaru di branch `staging`:
 
 Server Expo mengembalikan HTTP 200 dan ID koreksi terbaru untuk kedua runtime.
 Tes offline mobile lulus 20/20 dan bundle Android koreksi berhasil dibuat.
-Pemeriksaan alur visit pada perangkat masih menunggu umpan balik pengguna.
+Pada 19 November 2026, pengguna melaporkan pengujian langsung di perangkat
+sudah aman. Jalur yang terpasang saat uji (OTA atau APK build 10) belum dicatat.
 `app.json` telah dikembalikan ke `runtimeVersion.policy=appVersion`.
 
 Karena build 9 di perangkat pengguna belum menampilkan OTA yang diharapkan,
