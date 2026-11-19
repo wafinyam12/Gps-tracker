@@ -22,6 +22,7 @@ class Store extends Model
         'branch',
         'city',
         'location',
+        'coordinate_source',
         'geofence_radius',
         'pic_name',
         'pic_phone',
@@ -51,6 +52,11 @@ class Store extends Model
     public function visitLogs()
     {
         return $this->hasMany(VisitLog::class);
+    }
+
+    public function coordinateChanges()
+    {
+        return $this->hasMany(StoreCoordinateChange::class);
     }
 
     public function hasLocation(): bool
