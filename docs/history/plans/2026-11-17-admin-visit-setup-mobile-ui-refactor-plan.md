@@ -2,7 +2,7 @@
 
 **Goal:** Bring the released User and Cabang setup screens into the approved visit UI while preserving account and branch permissions, validation, SAP settings, and current routes.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-released-visit-support-mobile-ui-refactor-design.md`
+**Spec:** `docs/history/designs/2026-11-17-released-visit-support-mobile-ui-refactor-design.md`
 
 **Tech:** Expo SDK 54, React Native 0.81, React Navigation 7, existing `visitTheme`, `AppScreen`, `VisitHeader`, Node test runner, Android staging OTA runtime 1.1.5.
 
@@ -45,7 +45,7 @@
 
 - [ ] Run `node --test tests/*.test.mjs`, offline suite, Expo SDK dependency check (offline check acceptable if network is unavailable), Android export, and diff check; expect all pass.
 - [ ] On Infinix, inspect superadmin User/Cabang list and forms, password eye, keyboard, Back, and role-visible actions without saving/deleting real data. Check an admin-cabang account if available.
-- [ ] Publish Android staging OTA for runtime 1.1.5 only after gates; cold-start twice and inspect crash/JS logs. Record update URL and device outcome in `gps-tracker-mobile/BUILD_STAGING.md`.
+- [ ] Publish Android staging OTA for runtime 1.1.5 only after gates; cold-start twice and inspect crash/JS logs. Record update URL and device outcome in `docs/release/build-staging.md`.
 
 ## Review focus
 

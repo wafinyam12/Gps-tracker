@@ -1,10 +1,7 @@
-# Sales Daily mobile staging SDK 54
+# Sales Daily Mobile
 
-This branch is the temporary SDK 54 staging candidate for visit UAT. It keeps
-offline visits and queued photos encrypted with SQLCipher. The Android APK is
-version 1.1.6, versionCode 9. See [BUILD_STAGING.md](BUILD_STAGING.md) for the
-exact build and device test steps.
+Aplikasi mobile memakai React Native dan Expo SDK 54. Dokumentasi proyek tersedia di [pusat dokumentasi](../docs/README.md).
 
-Keep SDK 58 investigation separate from the SDK 54 staging channel. The Sales
-visit UI is delivered through an Android OTA for runtime 1.1.5; see
-[BUILD_STAGING.md](BUILD_STAGING.md) for the update and verification status.
+- [Build APK staging dan OTA untuk runtime 1.1.5/1.1.6](../docs/release/build-staging.md)
+- [Template UAT lama (APK 1.1.0)](../docs/history/uat/mobile-uat-v1.1.0.md)
+- [Log diagnostik](../docs/operations/diagnostic-logs.md)

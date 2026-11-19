@@ -8,7 +8,7 @@
 
 **Tech Stack:** Laravel 13 / PHP 8.4, Spatie roles, `daily_targets` unique `(user_id,target_date)`, PHPUnit, Expo SDK 54 / React Native 0.81, Node test runner, EAS Update runtime 1.1.5.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-area-manager-target-range-design.md`
+**Spec:** `docs/history/designs/2026-11-17-area-manager-target-range-design.md`
 
 ## Global Constraints
 
@@ -69,8 +69,8 @@
 ### Task 3: Staging integration and documentation
 
 **Files:**
-- Update: `gps-tracker-mobile/BUILD_STAGING.md`
-- Update: backend API documentation under `gps-tracker/docs` if present.
+- Update: `docs/release/build-staging.md`
+- Update: backend API documentation in `docs/reference/target-range-api.md`.
 
 - [ ] Run backend focused/full relevant tests, `node --test tests/*.test.mjs`, offline suite, Expo dependency check, Android export, and diff check; expected success.
 - [ ] Provide exact backend files/deployment order for staging. Confirm new GET and POST return expected scoped responses in staging before publishing mobile OTA.

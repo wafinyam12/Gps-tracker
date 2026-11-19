@@ -8,7 +8,7 @@
 
 **Tech Stack:** Laravel 13, PHP 8.4, MySQL feature tests, Expo SDK 54 mobile client.
 
-**Spec:** `docs/superpowers/specs/2026-11-18-area-manager-visit-customer-scope-design.md`
+**Spec:** `docs/history/designs/2026-11-18-area-manager-visit-customer-scope-design.md`
 
 ## Global Constraints
 

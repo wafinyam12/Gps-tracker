@@ -8,7 +8,7 @@
 
 **Tech Stack:** React Native 0.81.5, Expo SDK 54, React Navigation 7, OpenStreetMap WebView, Node test runner, EAS Update staging runtime 1.1.5.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-released-visit-support-mobile-ui-refactor-design.md`
+**Spec:** `docs/history/designs/2026-11-17-released-visit-support-mobile-ui-refactor-design.md`
 
 ## Global Constraints
 
@@ -104,7 +104,7 @@
 
 **Files:**
 - Verify: all Task 1–4 files plus `gps-tracker-mobile/app.json` and `eas.json`
-- Update: `gps-tracker-mobile/BUILD_STAGING.md` with release note and device outcome
+- Update: `docs/release/build-staging.md` with release note and device outcome
 
 **Interfaces:** No new API/native interface. Android staging channel and runtime remain 1.1.5.
 
@@ -112,4 +112,4 @@
 - [ ] Ask the user to log in as an Area Manager test account on the connected Infinix, without sending credentials. Check dashboard, map, customer toggle, branch scope, summary date/branch, Sales detail, warnings, and nested Back paths. Use only read-only monitoring actions.
 - [ ] Check the admin/superadmin dashboard retains User/Branch management links, and that Area Manager has neither. Verify the server-provided scope with the visible branch and no global selector.
 - [ ] Publish Android OTA to `staging` with EAS Environment `preview` only after local gates pass; cold-start twice on the device, inspect the new UI and logcat, and publish a corrective staging OTA if device-only defects appear.
-- [ ] Record update group URL, tests, scope/navigation outcome, and any remaining limitations in `BUILD_STAGING.md`; commit documentation. Production rollout is outside this plan.
+- [ ] Record update group URL, tests, scope/navigation outcome, and any remaining limitations in `docs/release/build-staging.md`; commit documentation. Production rollout is outside this plan.

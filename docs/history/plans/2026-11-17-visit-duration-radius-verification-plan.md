@@ -10,7 +10,7 @@
 
 **Tech Stack:** Laravel 11/PHP 8.2+, MySQL spatial `Point`, PHPUnit; Expo SDK 54/React Native, Node test runner, existing encrypted offline storage.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-visit-duration-radius-verification-design.md`
+**Spec:** `docs/history/designs/2026-11-17-visit-duration-radius-verification-design.md`
 
 ## Global Constraints
 
@@ -169,7 +169,7 @@
 ### Task 8: Integration, staging handoff, and device smoke test
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-11-17-visit-duration-radius-verification-design.md` only if an implementation decision needs recording
+- Modify: `docs/history/designs/2026-11-17-visit-duration-radius-verification-design.md` only if an implementation decision needs recording
 - Create: `docs/visit-radius-staging-rollout.md`
 
 **Interfaces:**

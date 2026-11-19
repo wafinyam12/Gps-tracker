@@ -8,7 +8,7 @@
 
 **Tech Stack:** React Native 0.81, Expo SDK 54, React Navigation 7, existing lucide icons, EAS Update runtime 1.1.5.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-sales-visit-mobile-ui-refactor-design.md`
+**Spec:** `docs/history/designs/2026-11-17-sales-visit-mobile-ui-refactor-design.md`
 
 ## Global Constraints
 

@@ -1,5 +1,7 @@
 # User Acceptance Test (UAT) — Sales Daily Mobile
 
+> Arsip template UAT untuk APK `1.1.0` (`versionCode` 3). Untuk rilis staging terbaru, mulai dari [panduan build](../../release/build-staging.md) dan matriks pemeriksaan pada [rollout visit](../../release/visit-presence-staging-rollout.md).
+
 | Informasi | Nilai |
 |---|---|
 | Produk | Sales Daily / GPS Tracker Mobile |

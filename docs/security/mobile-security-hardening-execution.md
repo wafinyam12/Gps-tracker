@@ -2,7 +2,7 @@
 
 Tanggal: 2026-10-05
 Branch: `security/mobile-security-hardening-followup`
-Rencana induk: `docs/superpowers/plans/2026-10-05-mobile-security-hardening.md`
+Rencana induk: `docs/history/plans/2026-10-05-mobile-security-hardening.md`
 
 ## Perubahan yang sudah diterapkan
 

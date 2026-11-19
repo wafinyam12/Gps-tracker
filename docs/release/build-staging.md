@@ -28,7 +28,7 @@ The queue, store cache, KYC drafts, and queued visit photos are encrypted in
 SQLCipher. Queued photos are BLOBs in `offline-visits-encrypted.db`. This needs
 a **new APK**; an OTA update cannot add SQLCipher to an older APK.
 
-This source is in the `staging/sdk54-main` checkout at `D:\gps tracker`.
+Use the `staging/sdk54-main` checkout of this repository.
 Keep its SDK 54 dependencies and lock file together when building.
 
 ## Check Project
@@ -41,10 +41,10 @@ npm run test:offline
 
 ## Build APK With EAS
 
-Run EAS from the mobile app folder, not from the repository root:
+From the repository root, enter the mobile app folder before running EAS:
 
 ```bash
-cd "D:\gps tracker\gps-tracker-mobile"
+cd gps-tracker-mobile
 ```
 
 Login once:
@@ -157,7 +157,7 @@ in `9bf3e56`. Copy the current `routes/api.php` and
 `app/Http/Controllers/Api/DailyTargetController.php` to staging, then run
 `php artisan optimize:clear` and `php artisan route:list --path=target` there.
 The existing `daily_targets` table is reused; there is no new migration or
-Composer change. See `gps-tracker/docs/target-range-api.md` for the contract.
+Composer change. See the [Area Manager target API](../reference/target-range-api.md) for the contract.
 
 The Area Manager mobile form starts in commit `50a74b7`. The current Android
 staging update for runtime `1.1.5` is

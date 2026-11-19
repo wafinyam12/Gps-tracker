@@ -8,7 +8,7 @@
 
 **Tech Stack:** Laravel 11, MySQL spatial, PHPUnit, Expo SDK 54, expo-location, expo-task-manager, expo-sqlite SQLCipher, Node tests.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-adaptive-visit-presence-and-battery-design.md`
+**Spec:** `docs/history/designs/2026-11-17-adaptive-visit-presence-and-battery-design.md`
 
 **Progress 18 November:** Task 1–5 selesai di kode lokal. Task 6 direproduksi di HP (14 toko berkoordinat, jalan tampil, marker hilang); akar masalah WebView diperbaiki dan tes lokal lulus, verifikasi setelah OTA menunggu. Task 7: seluruh suite backend 82 lulus/502 assertion dan 75 tes mobile lulus, ekspor Android SDK 54 berhasil; APK Infinix Android 13 serta izin native diperiksa lewat ADB. Empat kegagalan suite sebelumnya dituntaskan, termasuk satu perbaikan penanganan 404 SAP BP dan dua fixture tes. Backend staging, OTA, uji visit dummy, dan perbandingan baterai masih menunggu. Commit tidak tersedia karena `.git/index.lock` ditolak oleh izin lingkungan ini.
 
@@ -101,7 +101,7 @@
 
 ### Task 7: Staging handoff and pilot battery test
 
-**Files:** `docs/visit-presence-staging-rollout.md`.
+**Files:** `docs/release/visit-presence-staging-rollout.md`.
 
 **Interfaces:** Handoff specifies backend file/migration order, API contract, rollback, test matrix, and battery baseline/active visit protocol.
 

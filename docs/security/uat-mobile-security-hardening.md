@@ -1,5 +1,7 @@
 # Dokumen UAT — Sales Daily Mobile
 
+> Arsip pengujian keamanan yang disiapkan untuk versi `1.1.0` pada Oktober 2026. Status di bawah adalah catatan saat itu. Untuk APK staging terbaru, gunakan [panduan build](../release/build-staging.md) dan [rollout visit](../release/visit-presence-staging-rollout.md).
+
 **Status:** Siap untuk pelaksanaan UAT setelah APK internal terbaru tersedia  
 **Lingkungan:** Hostinger UAT — `crm-sales.utomo-dev.xyz`  
 **Versi aplikasi sumber:** `1.1.0` (`android.versionCode` terakhir tercatat `3`)  
@@ -37,7 +39,7 @@ Lengkapi dan tandai setiap butir sebelum pengujian aplikasi:
 Command build dari PowerShell:
 
 ```powershell
-cd "D:\gps tracker\gps-tracker-mobile"
+cd gps-tracker-mobile
 npx eas-cli@latest build --platform android --profile preview
 ```
 

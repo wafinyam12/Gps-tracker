@@ -8,7 +8,7 @@
 
 **Tech Stack:** Laravel 11 logging/middleware; React Native Axios; Expo SDK 54 `expo-file-system/legacy`; built-in React Native `Share` API.
 
-**Spec:** `docs/superpowers/specs/2026-10-02-api-mobile-logging-design.md`
+**Spec:** `docs/history/designs/2026-10-02-api-mobile-logging-design.md`
 
 ## Global Constraints
 

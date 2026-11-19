@@ -53,7 +53,9 @@ Artinya Laravel akan melakukan **dispatch job setiap hari pukul 16.00 WIB**. Cro
 
 ## 3. Prasyarat
 
-Lakukan pemeriksaan ini di folder backend `D:\gps tracker\gps-tracker` (atau path deployment server).
+Path Windows dalam contoh di bawah memakai `C:\path\to\repo\gps-tracker`. Ganti dengan lokasi checkout atau deployment backend yang sebenarnya.
+
+Lakukan pemeriksaan ini di folder backend `C:\path\to\repo\gps-tracker` (atau path deployment server).
 
 ### 3.1 Migrasi dan queue
 
@@ -185,8 +187,8 @@ Bagian ini sesuai untuk server Windows atau mesin staging yang menjalankan Larag
    - Enabled: aktif.
 4. Tab **Actions** → **New** → Start a program:
    - **Program/script**: `C:\laragon\bin\php\php-<versi>\php.exe`
-   - **Add arguments**: `"D:\gps tracker\gps-tracker\artisan" schedule:run`
-   - **Start in**: `D:\gps tracker\gps-tracker`
+   - **Add arguments**: `"C:\path\to\repo\gps-tracker\artisan" schedule:run`
+   - **Start in**: `C:\path\to\repo\gps-tracker`
 5. Tab **Settings**: aktifkan restart on failure, misalnya restart tiap 1 menit hingga 3 kali.
 6. Simpan, lalu pilih task tersebut → **Run**. Pastikan History task tidak menampilkan error.
 
@@ -200,11 +202,11 @@ Contoh command instalasi service dari Command Prompt **Run as Administrator**:
 
 ```bat
 nssm install SalesDailySapCoordinateWorker "C:\laragon\bin\php\php-<versi>\php.exe"
-nssm set SalesDailySapCoordinateWorker AppParameters "D:\gps tracker\gps-tracker\artisan" queue:work database --queue=sap-coordinate-sync,default --sleep=3 --tries=3 --timeout=90
-nssm set SalesDailySapCoordinateWorker AppDirectory "D:\gps tracker\gps-tracker"
+nssm set SalesDailySapCoordinateWorker AppParameters "C:\path\to\repo\gps-tracker\artisan" queue:work database --queue=sap-coordinate-sync,default --sleep=3 --tries=3 --timeout=90
+nssm set SalesDailySapCoordinateWorker AppDirectory "C:\path\to\repo\gps-tracker"
 nssm set SalesDailySapCoordinateWorker Start SERVICE_AUTO_START
-nssm set SalesDailySapCoordinateWorker AppStdout "D:\gps tracker\gps-tracker\storage\logs\sap-coordinate-worker.log"
-nssm set SalesDailySapCoordinateWorker AppStderr "D:\gps tracker\gps-tracker\storage\logs\sap-coordinate-worker-error.log"
+nssm set SalesDailySapCoordinateWorker AppStdout "C:\path\to\repo\gps-tracker\storage\logs\sap-coordinate-worker.log"
+nssm set SalesDailySapCoordinateWorker AppStderr "C:\path\to\repo\gps-tracker\storage\logs\sap-coordinate-worker-error.log"
 nssm start SalesDailySapCoordinateWorker
 ```
 
@@ -213,8 +215,8 @@ Jika NSSM tidak tersedia, buat task kedua di Task Scheduler:
 - Name: `Sales Daily - SAP Coordinate Worker`
 - Trigger: `At startup`, dengan restart on failure.
 - Program/script: path lengkap `php.exe`.
-- Add arguments: `"D:\gps tracker\gps-tracker\artisan" queue:work database --queue=sap-coordinate-sync,default --sleep=3 --tries=3 --timeout=90 --max-time=3600`
-- Start in: `D:\gps tracker\gps-tracker`.
+- Add arguments: `"C:\path\to\repo\gps-tracker\artisan" queue:work database --queue=sap-coordinate-sync,default --sleep=3 --tries=3 --timeout=90 --max-time=3600`
+- Start in: `C:\path\to\repo\gps-tracker`.
 
 Untuk alternatif Task Scheduler, jadwalkan restart worker setiap jam karena opsi `--max-time=3600` menghentikan worker setelah satu jam. Untuk production, Windows Service/NSSM lebih stabil.
 

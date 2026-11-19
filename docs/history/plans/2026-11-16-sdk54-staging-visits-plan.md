@@ -8,7 +8,7 @@
 
 **Tech Stack:** Expo SDK 54, React Native 0.81, expo-sqlite 16 with SQLCipher, expo-file-system 19, EAS Build.
 
-**Spec:** `docs/superpowers/specs/2026-11-16-sdk54-staging-visits-design.md`
+**Spec:** `docs/history/designs/2026-11-16-sdk54-staging-visits-design.md`
 
 ## Global Constraints
 
@@ -45,7 +45,7 @@
 
 ### Task 3: Pilot handoff
 
-**Files:** `gps-tracker-mobile/BUILD_STAGING.md`, `gps-tracker-mobile/README.md`
+**Files:** `docs/release/build-staging.md`, `gps-tracker-mobile/README.md`
 
 - [ ] Document exact staging build and device smoke test steps.
 - [ ] Check final diff for unintended SDK 58 dependencies and sensitive data.

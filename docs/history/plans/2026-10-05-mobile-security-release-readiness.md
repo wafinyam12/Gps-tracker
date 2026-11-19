@@ -8,7 +8,7 @@
 
 **Tech Stack:** Expo SDK 54, React Native 0.81, Expo SecureStore 15, Expo SQLite 16 / SQLCipher, Laravel 11, Flysystem local/S3-compatible storage, EAS Android App Bundle, Google Play Console.
 
-**Spec:** `docs/security/mobile-security-hardening-execution.md`; original assessment and implemented hardening: `docs/superpowers/plans/2026-10-05-mobile-security-hardening.md`.
+**Spec:** `docs/security/mobile-security-hardening-execution.md`; original assessment and implemented hardening: `docs/history/plans/2026-10-05-mobile-security-hardening.md`.
 
 ## Global Constraints
 
