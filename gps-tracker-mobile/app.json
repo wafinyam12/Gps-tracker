@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "xyz.utomodev.salesdaily.staging",
-      "versionCode": 9,
+      "versionCode": 10,
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
