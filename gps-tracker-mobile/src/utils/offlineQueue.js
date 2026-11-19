@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import apiClient from '../api/client';
 import { logEvent } from './diagnosticLogger';
 import { secureOfflineVisitStorage } from './secureOfflineVisitStorage';
+import { appendVisitPhotoMetadata } from './visitPhotoMetadata';
 import {
   OFFLINE_QUEUE_KEY,
   OFFLINE_STORE_CACHE_KEY,
@@ -173,6 +174,8 @@ const buildRequestPayload = async (item, data) => {
       await Promise.all(temporaryUris.map((uri) => secureOfflineVisitStorage.deleteUploadTempFile(uri)));
       throw error;
     }
+
+    appendVisitPhotoMetadata(formData, data.photos);
 
     return { data: formData, headers: sanitizedHeaders, temporaryUris };
   }

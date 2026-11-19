@@ -462,26 +462,28 @@ function VisitFormScreen({ route, navigation }) {
       return;
     }
 
-    const location = await requestLocation();
-    if (!location?.coords) {
-      return;
+    let allowPhotoLocation = false;
+    try {
+      const permission = await Location.getForegroundPermissionsAsync();
+      allowPhotoLocation = permission.granted;
+      if (!allowPhotoLocation) {
+        const accepted = await confirmLocationDisclosure({
+          title: 'Lokasi Foto Kunjungan',
+          message: 'Lokasi saat foto diambil digunakan sebagai bukti kunjungan dan dapat membantu melengkapi titik toko. Foto tetap bisa diambil jika izin lokasi tidak diberikan.',
+        });
+        if (accepted) {
+          allowPhotoLocation = (await Location.requestForegroundPermissionsAsync()).granted;
+        }
+      }
+    } catch (error) {
+      logEvent('visit.photo_location_permission_failed', { error_code: error?.code });
     }
-
-    const integrity = evaluateVisitLocation(location);
-    if (!integrity.isValid) {
-      Alert.alert(integrity.title, integrity.message);
-      return;
-    }
-
-    const locationPayload = integrity.payload;
 
     navigation.navigate('PhotoUpload', {
       visitLogId: resolvedVisitLogId,
       offlineVisitId: isOfflineVisit ? offlineVisit.localVisitId : null,
       type: 'other',
-      latitude: locationPayload.latitude,
-      longitude: locationPayload.longitude,
-      takenAt: locationPayload.location_recorded_at || new Date().toISOString(),
+      allowPhotoLocation,
       userId: user?.id,
       username: user?.name,
     });

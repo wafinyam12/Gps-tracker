@@ -1,4 +1,5 @@
 import apiClient from '../client';
+import { appendVisitPhotoMetadata } from '../../utils/visitPhotoMetadata';
 
 const normalizeCheckInPayload = (storeOrVisit, latitude, longitude, options = {}) => {
   const basePayload = {
@@ -93,6 +94,7 @@ export const visitService = {
         formData.append('photo_client_uuids[]', photo.client_uuid);
       }
     });
+    appendVisitPhotoMetadata(formData, photos);
 
     const response = await apiClient.post('/visit/photos', formData);
     return response.data;

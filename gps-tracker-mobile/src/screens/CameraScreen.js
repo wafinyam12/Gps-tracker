@@ -9,16 +9,18 @@ import { offlineQueue } from '../utils/offlineQueue';
 import { secureOfflineVisitStorage } from '../utils/secureOfflineVisitStorage';
 import NetInfo from '@react-native-community/netinfo';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import { logEvent } from '../utils/diagnosticLogger';
 import { createPhotoSaveCoordinator } from '../utils/photoSaveCoordinator';
 import { canCaptureVisitPhoto } from '../utils/visitPhotoPresentation';
+import { createVisitPhotoMetadata } from '../utils/visitPhotoMetadata';
 import { visitColors, visitRadii, visitSpacing, visitType } from '../styles/visitTheme';
 
 const PhotoUploadScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { visitLogId, offlineVisitId, type, latitude, longitude, takenAt, userId, username } = route.params || {};
+  const { visitLogId, offlineVisitId, type, allowPhotoLocation, userId, username } = route.params || {};
   const { user } = useAuth();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -26,7 +28,9 @@ const PhotoUploadScreen = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [facing, setFacing] = useState('back');
+  const [pendingLocations, setPendingLocations] = useState(0);
   const cameraRef = useRef(null);
+  const mountedRef = useRef(true);
   const photosRef = useRef(photos);
   const saveCoordinatorRef = useRef(null);
   if (!saveCoordinatorRef.current) {
@@ -49,17 +53,43 @@ const PhotoUploadScreen = () => {
     photosRef.current = photos;
   }, [photos]);
 
-  useEffect(() => () => {
-    saveCoordinator.cleanupWhenSafe(
-      photosRef.current.map((photo) => photo.uri)
-    ).then((cleanupFailed) => {
-      if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
-    }).catch(() => logEvent('visit.photo_temp_cleanup_failed'));
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      saveCoordinator.cleanupWhenSafe(
+        photosRef.current.map((photo) => photo.uri)
+      ).then((cleanupFailed) => {
+        if (cleanupFailed) logEvent('visit.photo_temp_cleanup_failed');
+      }).catch(() => logEvent('visit.photo_temp_cleanup_failed'));
+    };
   }, [saveCoordinator]);
 
   useEffect(() => navigation.addListener('beforeRemove', (event) => {
     if (!saveCoordinator.canLeave()) event.preventDefault();
   }), [navigation, saveCoordinator]);
+
+  const recordPhotoLocation = async (uri, capturedAt) => {
+    let timeoutId;
+    try {
+      const location = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('photo_location_timeout')), 8000);
+        }),
+      ]);
+      if (mountedRef.current) {
+        setPhotos((current) => current.map((photo) => photo.uri === uri
+          ? { ...photo, metadata: createVisitPhotoMetadata(capturedAt, location) }
+          : photo));
+      }
+    } catch (error) {
+      logEvent('visit.photo_location_unavailable', { error_code: error?.code || error?.message });
+    } finally {
+      clearTimeout(timeoutId);
+      if (mountedRef.current) setPendingLocations((count) => Math.max(0, count - 1));
+    }
+  };
 
   const takePicture = async () => {
     if (!cameraRef.current) {
@@ -77,6 +107,7 @@ const PhotoUploadScreen = () => {
       const options = { quality: 0.7, base64: false };
       const data = await cameraRef.current.takePictureAsync(options);
       originalUri = data.uri;
+      const capturedAt = new Date().toISOString();
 
       const manipulated = await ImageManipulator.manipulateAsync(
         data.uri,
@@ -84,9 +115,16 @@ const PhotoUploadScreen = () => {
         { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
       );
 
-      setPhotos(prevPhotos => [...prevPhotos, manipulated]);
+      setPhotos(prevPhotos => [...prevPhotos, {
+        ...manipulated,
+        metadata: createVisitPhotoMetadata(capturedAt, null),
+      }]);
       setShowPreview(true);
       logEvent('visit.photo_captured', { source: 'camera' });
+      if (allowPhotoLocation) {
+        setPendingLocations((count) => count + 1);
+        void recordPhotoLocation(manipulated.uri, capturedAt);
+      }
     } catch (error) {
       logEvent('visit.photo_capture_failed', { error_code: error?.code });
       Alert.alert('Error', 'Gagal mengambil foto. Coba lagi.');
@@ -111,6 +149,7 @@ const PhotoUploadScreen = () => {
   };
 
   const uploadPhotos = async () => {
+    if (pendingLocations > 0) return;
     if (photos.length === 0) {
       Alert.alert('Info', 'Silakan ambil foto terlebih dahulu.');
       return;
@@ -128,10 +167,8 @@ const PhotoUploadScreen = () => {
           name: `photo_${index}.jpg`,
           type: 'image/jpeg',
           client_uuid: offlineQueue.createUuid(),
+          metadata: photo.metadata,
         })),
-        latitude,
-        longitude,
-        taken_at: takenAt || new Date().toISOString(),
         submitted_by_user_id: userId || user?.id,
         submitted_by_username: username || user?.name,
       };
@@ -146,8 +183,7 @@ const PhotoUploadScreen = () => {
         return;
       }
 
-      await visitService.uploadPhotos(visitLogId, photoPayload.photos, latitude, longitude, resolvedType, {
-        takenAt: takenAt || new Date().toISOString(),
+      await visitService.uploadPhotos(visitLogId, photoPayload.photos, undefined, undefined, resolvedType, {
         userId: userId || user?.id,
         username: username || user?.name,
       });
@@ -240,11 +276,11 @@ const PhotoUploadScreen = () => {
           <TouchableOpacity
             style={[styles.controlBtn, styles.btnConfirm]}
             onPress={uploadPhotos}
-            disabled={isProcessing}
+            disabled={isProcessing || pendingLocations > 0}
             accessibilityRole="button"
           >
-            {isProcessing ? <ActivityIndicator color="#fff" /> : <Check size={24} color="#fff" />}
-            <Text style={styles.controlText}>{isProcessing ? 'Menyimpan...' : 'Simpan foto'}</Text>
+            {isProcessing || pendingLocations > 0 ? <ActivityIndicator color="#fff" /> : <Check size={24} color="#fff" />}
+            <Text style={styles.controlText}>{isProcessing ? 'Menyimpan...' : pendingLocations > 0 ? 'Merekam lokasi...' : 'Simpan foto'}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
