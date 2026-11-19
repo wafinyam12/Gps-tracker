@@ -89,54 +89,61 @@ class CheckInController extends Controller
         }
 
         $checkoutAt = $this->recordedAt($request);
-        $durationMinutes = null;
-
-        if ($visitLog->checkin_at) {
-            $checkinAt = Carbon::parse(
-                $visitLog->getRawOriginal('checkin_at'),
-                self::LOCAL_TIMEZONE
-            );
-
-            if ($checkoutAt->timestamp >= $checkinAt->timestamp) {
-                $durationMinutes = (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60);
-            }
-        }
-
         $checkoutPoint = new Point((float) $request->latitude, (float) $request->longitude);
-        $checkoutDecision = $this->geofence->checkoutDecision(
-            $visitLog, $checkoutPoint, $request->filled('accuracy') ? (float) $request->accuracy : null,
-        );
-        $durationStatus = $durationMinutes === null ? 'invalid_time' : (
-            $visitLog->checkin_radius_status === 'inside_radius'
-                && $checkoutDecision['status'] === 'inside_radius' ? 'verified' : 'uncertain'
-        );
-
         $rawFormData = $request->input('form_data');
         $formData = $this->withSubmissionMeta($request, is_array($rawFormData) ? $rawFormData : []);
-        $checkinLocation = $visitLog->checkin_location;
-        $shouldRecordCoordinateObservation = ! $visitLog->is_mock_location
-            && ! $visitLog->is_duplicate
-            && ($visitLog->checkin_valid || $visitLog->checkin_distance === null)
-            && $checkinLocation instanceof Point;
-        $shouldSaveStoreLocation = $shouldRecordCoordinateObservation
-            && $visitLog->checkin_accuracy !== null
-            && (float) $visitLog->checkin_accuracy <= (float) config('sap.coordinate_max_observation_accuracy_meters', 25);
 
-        DB::transaction(function () use (
+        $outcome = DB::transaction(function () use (
             $request,
             $visitLog,
+            $user,
             $checkoutAt,
-            $durationMinutes,
             $formData,
-            $checkinLocation,
-            $shouldRecordCoordinateObservation,
-            $shouldSaveStoreLocation,
             $offlineSync,
             $checkoutPoint,
-            $checkoutDecision,
-            $durationStatus,
         ) {
-            $visitLog->update([
+            // Coordinate changes lock the store before open visits. Match that
+            // order and read the visit again so a new center is not missed.
+            $store = Store::query()->lockForUpdate()->find($visitLog->store_id);
+            $lockedVisit = VisitLog::query()
+                ->whereKey($visitLog->id)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedVisit->checkout_at !== null) {
+                $replayed = filled($request->client_uuid)
+                    && hash_equals((string) $lockedVisit->checkout_client_uuid, (string) $request->client_uuid);
+
+                return ['visit' => $lockedVisit, 'completed' => true, 'replayed' => $replayed];
+            }
+
+            $durationMinutes = null;
+            if ($lockedVisit->checkin_at) {
+                $checkinAt = Carbon::parse($lockedVisit->getRawOriginal('checkin_at'), self::LOCAL_TIMEZONE);
+                if ($checkoutAt->timestamp >= $checkinAt->timestamp) {
+                    $durationMinutes = (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60);
+                }
+            }
+
+            $checkoutDecision = $this->geofence->checkoutDecision(
+                $lockedVisit, $checkoutPoint, $request->filled('accuracy') ? (float) $request->accuracy : null,
+            );
+            $durationStatus = $durationMinutes === null ? 'invalid_time' : (
+                $lockedVisit->checkin_radius_status === 'inside_radius'
+                    && $checkoutDecision['status'] === 'inside_radius' ? 'verified' : 'uncertain'
+            );
+
+            $checkinLocation = $lockedVisit->checkin_location;
+            $shouldRecordCoordinateObservation = ! $lockedVisit->is_mock_location
+                && ! $lockedVisit->is_duplicate
+                && ($lockedVisit->checkin_valid || $lockedVisit->checkin_distance === null)
+                && $checkinLocation instanceof Point;
+            $shouldSaveStoreLocation = $shouldRecordCoordinateObservation
+                && $lockedVisit->checkin_accuracy !== null
+                && (float) $lockedVisit->checkin_accuracy <= (float) config('sap.coordinate_max_observation_accuracy_meters', 25);
+
+            $lockedVisit->update([
                 'checkout_at'       => $checkoutAt,
                 'checkout_location' => $checkoutPoint,
                 'duration_minutes'  => $durationMinutes,
@@ -148,20 +155,16 @@ class CheckInController extends Controller
                 'visit_result'      => $request->visit_result,
                 'form_data'         => $formData,
                 'checkout_client_uuid' => $request->client_uuid,
-                'is_offline_sync' => $offlineSync || $visitLog->is_offline_sync,
-                'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : $visitLog->offline_received_at,
+                'is_offline_sync' => $offlineSync || $lockedVisit->is_offline_sync,
+                'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : $lockedVisit->offline_received_at,
             ]);
-            $this->presenceSummaries->recalculate($visitLog);
+            $this->presenceSummaries->recalculate($lockedVisit);
 
             // A visit/start only opens a draft visit form. Persist a previously
             // unknown store location only after the visit is actually submitted.
             // Use the check-in point, not the checkout point, because it records
             // the sales' location when they first arrived at the customer.
             if ($shouldRecordCoordinateObservation) {
-                $store = Store::query()
-                    ->lockForUpdate()
-                    ->find($visitLog->store_id);
-
                 if ($shouldSaveStoreLocation && $store && ! $store->hasLocation()) {
                     $store->forceFill([
                         'location' => $checkinLocation,
@@ -170,14 +173,20 @@ class CheckInController extends Controller
 
                 if ($store) {
                     $store->loadMissing('team');
-                    $this->coordinateSync->recordCompletedVisit($visitLog, $store, $checkinLocation);
+                    $this->coordinateSync->recordCompletedVisit($lockedVisit, $store, $checkinLocation);
                 }
             }
+
+            return ['visit' => $lockedVisit, 'completed' => false, 'replayed' => false];
         });
 
+        $visitLog = $outcome['visit'];
+        if ($outcome['completed'] && ! $outcome['replayed']) {
+            return response()->error('Kunjungan ini sudah selesai.', 422);
+        }
         $visitLog->load(['store', 'user']);
 
-        return $this->checkoutResponse($visitLog);
+        return $this->checkoutResponse($visitLog, $outcome['replayed']);
     }
 
     private function checkoutResponse(VisitLog $visitLog, bool $replayed = false)

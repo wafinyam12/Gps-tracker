@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Store;
 use App\Models\User;
 use App\Models\VisitLog;
+use App\Services\Stores\StoreCoordinateService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use MatanYadaev\EloquentSpatial\Objects\Point;
@@ -121,6 +122,47 @@ class VisitRadiusVerificationTest extends TestCase
             'visit_result' => 'no_order',
         ])->assertStatus(200)
             ->assertJsonPath('data.visit.checkout_radius_status', 'inside_radius');
+    }
+
+    public function test_checkout_rereads_a_center_added_after_the_visit_was_resolved(): void
+    {
+        $sales = $this->sales();
+        $store = $this->store();
+        $store->forceFill(['location' => null])->save();
+        $this->actingAs($sales, 'sanctum');
+        $start = $this->postJson('/api/v1/visit/start', [
+            'store_id' => $store->id, 'latitude' => -6.2, 'longitude' => 106.8,
+            'accuracy' => 10,
+        ])->assertStatus(201);
+        $visitId = $start->json('data.visit_log_id');
+        // Legacy open visits can have no geofence snapshot despite a valid check-in.
+        VisitLog::findOrFail($visitId)->forceFill([
+            'geofence_center' => null,
+            'geofence_reference_source' => null,
+        ])->save();
+        $adjusted = false;
+
+        VisitLog::retrieved(function (VisitLog $loaded) use ($visitId, $store, $sales, &$adjusted) {
+            if ($adjusted || $loaded->id !== $visitId) return;
+            $adjusted = true;
+            VisitLog::withoutEvents(fn () => app(StoreCoordinateService::class)->setManual(
+                $store, $sales, new Point(-6.20005, 106.8), 50,
+                'Titik toko diperiksa dari bukti foto kunjungan.'
+            ));
+        });
+
+        try {
+            $this->postJson('/api/v1/visit/checkout', [
+                'visit_log_id' => $visitId,
+                'latitude' => -6.20005, 'longitude' => 106.8, 'accuracy' => 10,
+                'visit_result' => 'no_order',
+            ])->assertStatus(200)
+                ->assertJsonPath('data.visit.checkout_radius_status', 'inside_radius');
+            $this->assertTrue($adjusted);
+            $this->assertSame('crm_manual', VisitLog::findOrFail($visitId)->geofence_reference_source);
+        } finally {
+            VisitLog::flushEventListeners();
+        }
     }
 
     public function test_offline_changed_customer_reference_is_saved_for_review_without_target_count(): void

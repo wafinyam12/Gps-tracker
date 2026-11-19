@@ -89,7 +89,7 @@ terbitkan update yang sama dua kali:
 
 1. Di `app.json`, ubah sementara `expo.runtimeVersion` menjadi string
    `"1.1.5"`. Jangan ubah `expo.version` (`1.1.6`) atau `android.versionCode`
-   (`9`).
+   (`10`).
 2. Dari folder `gps-tracker-mobile`, terbitkan update untuk runtime lama:
 
    ```powershell
@@ -168,6 +168,20 @@ Tes offline mobile lulus 20/20 dan bundle Android koreksi berhasil dibuat.
 Pada 19 November 2026, pengguna melaporkan pengujian langsung di perangkat
 sudah aman. Jalur yang terpasang saat uji (OTA atau APK build 10) belum dicatat.
 `app.json` telah dikembalikan ke `runtimeVersion.policy=appVersion`.
+
+### Rilis koordinat toko dan pembaruan CRM otomatis (belum dipublikasikan)
+
+Perubahan ini meliputi koreksi titik dan radius master toko dari CRM, pengisian master kosong dari GPS foto baru yang lolos pemeriksaan, GPS terpisah untuk setiap foto mobile, dan penyegaran CRM otomatis. Panduan penggunaan ada di [Koordinat Master Toko di CRM](../operations/store-coordinate-management.md).
+
+Urutan rilis staging:
+
+1. Deploy backend Laravel terlebih dahulu. Jalankan `php artisan migrate --force` untuk menambah tabel audit dan metadata GPS foto, lalu `php artisan optimize:clear`. Periksa `php artisan route:list --path=crm` dan endpoint `/crm/live-version` saat login dengan peran CRM.
+2. Di CRM, buka **Master Toko**. Coba koreksi satu toko uji dengan alasan dan periksa riwayat. Buka dashboard di tab lain; setelah mobile mengirim visit/foto, data seharusnya diperbarui otomatis saat tab terlihat tanpa browser refresh. Form koreksi yang belum disimpan harus tetap berisi inputnya.
+3. Setelah API baru aktif, terbitkan bundle mobile pada runtime `1.1.5` dan `1.1.6` memakai prosedur dua OTA di atas. Kode ini memakai `expo-camera` dan `expo-location` yang sudah menjadi dependency SDK 54; pastikan kedua APK terpasang memiliki modul native itu sebelum OTA. Jangan kirim bundle ke runtime yang tidak kompatibel.
+4. Uji di kedua runtime: ambil dua foto di titik berbeda, periksa titik dan akurasi masing-masing di CRM; ulangi saat offline lalu sinkronkan. Coba tanpa izin GPS: kamera tetap terbuka dan foto tersimpan, tetapi master tidak terisi otomatis. Periksa pilihan kamera depan/belakang dan isian form visit tetap ada saat kembali dari kamera.
+5. Untuk kasus foto lama seperti visit #66, pilih titik foto secara manual di CRM setelah memeriksa peta dan bukti. Data lama tidak mempunyai akurasi GPS per foto yang dapat diverifikasi. Kunjungan yang telah selesai tidak dihitung ulang.
+
+Hingga backend dan kedua OTA benar-benar dipublikasikan dan diuji di perangkat, bagian ini adalah prosedur rilis, bukan laporan bahwa fitur sudah tersedia bagi sales.
 
 Karena build 9 di perangkat pengguna belum menampilkan OTA yang diharapkan,
 [APK staging 1.1.6 build 10](https://expo.dev/accounts/nyma/projects/sales-daily/builds/d529765d-bcad-438c-99f8-362194d47ebe)
