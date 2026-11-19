@@ -9,6 +9,7 @@ use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Services\Visits\VisitPhotoExifService;
 use App\Services\Visits\VisitPhotoUrlService;
+use App\Services\Stores\StoreCoordinateService;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class VisitPhotoController extends Controller
     public function __construct(
         private readonly VisitPhotoExifService $exifService,
         private readonly VisitPhotoUrlService $photoUrls,
+        private readonly StoreCoordinateService $coordinates,
     ) {
     }
 
@@ -45,13 +47,24 @@ class VisitPhotoController extends Controller
         $latitude = $request->filled('latitude') ? (float) $request->latitude : null;
         $longitude = $request->filled('longitude') ? (float) $request->longitude : null;
         $takenAt = $request->filled('taken_at')
-            ? Carbon::parse($request->taken_at)->setTimezone(self::LOCAL_TIMEZONE)
-            : now(self::LOCAL_TIMEZONE);
+            ? Carbon::parse($request->taken_at)->utc()
+            : now();
         $photos = $request->file('photos');
         $clientUuids = array_values($request->input('photo_client_uuids', []));
+        $photoMetadata = $request->input('photo_metadata');
 
         if ($clientUuids && count($clientUuids) !== count($photos)) {
             return response()->error('ID foto tidak sesuai dengan jumlah foto yang dikirim.', 422);
+        }
+
+        if ($photoMetadata !== null && (! array_is_list($photoMetadata) || count($photoMetadata) !== count($photos))) {
+            return response()->error('Metadata foto tidak sesuai dengan jumlah foto.', 422);
+        }
+
+        foreach ($photoMetadata ?? [] as $metadata) {
+            if (isset($metadata['latitude']) !== isset($metadata['longitude'])) {
+                return response()->error('Koordinat foto harus berisi latitude dan longitude.', 422);
+            }
         }
 
         foreach ($clientUuids as $clientUuid) {
@@ -67,6 +80,28 @@ class VisitPhotoController extends Controller
         $createdCount = 0;
 
         foreach ($photos as $index => $photo) {
+            $metadata = $photoMetadata[$index] ?? null;
+            $photoLatitude = $metadata === null
+                ? $latitude
+                : (isset($metadata['latitude']) ? (float) $metadata['latitude'] : null);
+            $photoLongitude = $metadata === null
+                ? $longitude
+                : (isset($metadata['longitude']) ? (float) $metadata['longitude'] : null);
+            $photoTakenAt = ! empty($metadata['taken_at'])
+                ? Carbon::parse($metadata['taken_at'])->utc()
+                : $takenAt;
+            $photoRecordedAt = ! empty($metadata['location_recorded_at'])
+                ? Carbon::parse($metadata['location_recorded_at'])->utc()
+                : null;
+            $photoAccuracy = isset($metadata['accuracy']) ? (float) $metadata['accuracy'] : null;
+            $photoIsMock = isset($metadata['is_mock_location'])
+                ? filter_var($metadata['is_mock_location'], FILTER_VALIDATE_BOOLEAN)
+                : null;
+            $photoSource = $metadata === null
+                ? 'legacy_shared'
+                : ($photoLatitude !== null && $photoLongitude !== null && ! empty($metadata['taken_at'])
+                    ? 'photo_capture'
+                    : 'capture_missing');
             $clientUuid = $clientUuids[$index] ?? null;
             $existingPhoto = $clientUuid
                 ? VisitPhoto::where('client_uuid', $clientUuid)->first()
@@ -77,7 +112,7 @@ class VisitPhotoController extends Controller
                 continue;
             }
 
-            $path = $this->processAndStore($photo, $visitLog->id, $latitude, $longitude, $takenAt);
+            $path = $this->processAndStore($photo, $visitLog->id, $photoLatitude, $photoLongitude, $photoTakenAt);
 
             try {
                 $visitPhoto = VisitPhoto::create([
@@ -85,13 +120,17 @@ class VisitPhotoController extends Controller
                     'client_uuid'  => $clientUuid,
                     'path'         => $path,
                     'type'         => $request->type ?? 'checkin',
-                    'location'     => ($latitude !== null && $longitude !== null)
+                    'location'     => ($photoLatitude !== null && $photoLongitude !== null)
                         ? new Point(
-                            latitude: $latitude,
-                            longitude: $longitude,
+                            latitude: $photoLatitude,
+                            longitude: $photoLongitude,
                         )
                         : null,
-                    'taken_at'     => $takenAt,
+                    'taken_at'     => $photoTakenAt,
+                    'location_accuracy' => $photoAccuracy,
+                    'location_recorded_at' => $photoRecordedAt,
+                    'location_is_mock' => $photoIsMock,
+                    'location_source' => $photoSource,
                 ]);
                 $createdCount++;
             } catch (QueryException $exception) {
@@ -112,6 +151,16 @@ class VisitPhotoController extends Controller
 
                 Storage::disk('visit_photos')->delete($path);
                 throw $exception;
+            }
+
+            try {
+                $this->coordinates->seedFromPhoto($visitPhoto);
+            } catch (Throwable $exception) {
+                Log::warning('Visit photo saved but store coordinate seed failed.', [
+                    'photo_id' => $visitPhoto->id,
+                    'visit_log_id' => $visitLog->id,
+                    'error' => $exception->getMessage(),
+                ]);
             }
 
             $uploaded[] = $this->formatUploadedPhoto($visitPhoto, $user);
@@ -252,7 +301,7 @@ class VisitPhotoController extends Controller
      */
     private function processAndStore($file, int $visitLogId, ?float $latitude = null, ?float $longitude = null, ?Carbon $takenAt = null): string
     {
-        $directory = ($takenAt ?? now(self::LOCAL_TIMEZONE))->format('Y/m/d').'/'.$visitLogId;
+        $directory = ($takenAt ?? now())->copy()->setTimezone(self::LOCAL_TIMEZONE)->format('Y/m/d').'/'.$visitLogId;
 
         $manager = new ImageManager(new GdDriver());
 
