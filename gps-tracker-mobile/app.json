@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sales Daily",
     "slug": "sales-daily",
-    "version": "1.1.5",
+    "version": "1.1.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "xyz.utomodev.salesdaily.staging",
-      "versionCode": 8,
+      "versionCode": 9,
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"

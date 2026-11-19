@@ -19,8 +19,8 @@ Android package staging:
 xyz.utomodev.salesdaily.staging
 ```
 
-Current staging version: `1.1.5` (Expo SDK 54)
-Current staging `versionCode`: `8`
+Current staging version: `1.1.6` (Expo SDK 54)
+Current staging `versionCode`: `9`
 This APK embeds the restored **Manajemen User** and **Manajemen Cabang** menus;
 it does not rely on the SDK 54 `1.1.4` OTA update to show them.
 

@@ -1,6 +1,6 @@
 {
   "name": "sales-daily-mobile",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "main": "index.js",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
