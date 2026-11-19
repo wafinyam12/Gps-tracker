@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\VisitAuditFormatter;
+
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\VisitLog;
@@ -144,6 +146,7 @@ class VisitMonitoringController extends Controller
                     'visit_result'      => $visitLog->visit_result,
                     'notes'             => $visitLog->notes,
                     'duration_minutes'  => $visitLog->duration_minutes,
+                    'audit' => VisitAuditFormatter::summary($visitLog),
                 ];
             }),
             'open_visit' => $openVisit ? [

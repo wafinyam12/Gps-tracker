@@ -180,21 +180,22 @@ const TeamSummaryScreen = () => {
                 <Text style={styles.stateText}>Pilih tanggal lain atau perbarui ringkasan saat data tersedia.</Text>
               </View>
             ) : metrics.sales.map((item) => (
-              <TouchableOpacity
+              <View
                 key={String(item.userId)}
-                accessibilityRole="button"
-                accessibilityLabel={'Lihat detail ' + item.name}
-                onPress={() => navigation.navigate('SalesDetail', { userId: item.userId })}
                 style={styles.salesRow}
               >
-                <View style={styles.salesTop}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={'Lihat posisi ' + item.name} onPress={() => navigation.navigate('SalesDetail', { userId: item.userId })} style={styles.salesTop}>
                   <Text style={styles.salesName}>{item.name}</Text>
                   <ArrowRight size={18} color={visitColors.primary} />
-                </View>
+                </TouchableOpacity>
                 <Text style={styles.salesProgress}>{item.unique} dari {item.target} toko · {item.completion}% {item.excess > 0 ? `· melebihi target ${item.excess}` : 'selesai'}</Text>
                 <View style={styles.salesTrack}><View style={[styles.salesFill, { width: item.fill + '%' }]} /></View>
                 <Text style={styles.salesAudit}>Duplikat {item.duplicate} · Mock GPS {item.mockGps} · Check-in invalid {item.invalidCheckins}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={'Lihat kunjungan ' + item.name} onPress={() => navigation.navigate('TeamVisitList', { userId: item.userId, salesName: item.name, date: moment(selectedDate).format('YYYY-MM-DD') })} style={styles.visitListAction}>
+                  <Text style={styles.visitListActionText}>Lihat kunjungan</Text>
+                  <ArrowRight size={16} color={visitColors.primary} />
+                </TouchableOpacity>
+              </View>
             ))}
           </>
         )}
@@ -239,6 +240,8 @@ const styles = StyleSheet.create({
   salesTrack: { height: 6, backgroundColor: visitColors.primaryTint, borderRadius: visitRadii.pill, overflow: 'hidden', marginTop: visitSpacing.sm },
   salesFill: { height: '100%', backgroundColor: visitColors.primary },
   salesAudit: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.sm },
+  visitListAction: { minHeight: 44, borderTopWidth: 1, borderTopColor: visitColors.border, marginTop: visitSpacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  visitListActionText: { ...visitType.label, color: visitColors.primary },
   stateCard: { padding: visitSpacing.card, borderRadius: visitRadii.card, backgroundColor: visitColors.surface, borderWidth: 1, borderColor: visitColors.border, alignItems: 'flex-start', gap: visitSpacing.sm },
   stateTitle: { ...visitType.section, color: visitColors.ink },
   stateText: { ...visitType.body, color: visitColors.mutedInk },

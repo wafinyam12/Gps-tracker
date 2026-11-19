@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Models\VisitLog;
 use App\Services\LocationIntegrityService;
+use App\Services\VisitGeofenceService;
+use App\Services\VisitPresenceSummaryService;
 use App\Services\MasterData\StoreCatalogSyncService;
 use App\Services\Sap\CustomerCoordinateSyncService;
 use Carbon\Carbon;
@@ -22,6 +24,8 @@ class CheckInController extends Controller
         private readonly StoreCatalogSyncService $catalog,
         private readonly LocationIntegrityService $locationIntegrity,
         private readonly CustomerCoordinateSyncService $coordinateSync,
+        private readonly VisitGeofenceService $geofence,
+        private readonly VisitPresenceSummaryService $presenceSummaries,
     ) {
     }
 
@@ -93,8 +97,19 @@ class CheckInController extends Controller
                 self::LOCAL_TIMEZONE
             );
 
-            $durationMinutes = max(0, (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60));
+            if ($checkoutAt->timestamp >= $checkinAt->timestamp) {
+                $durationMinutes = (int) floor(($checkoutAt->timestamp - $checkinAt->timestamp) / 60);
+            }
         }
+
+        $checkoutPoint = new Point((float) $request->latitude, (float) $request->longitude);
+        $checkoutDecision = $this->geofence->checkoutDecision(
+            $visitLog, $checkoutPoint, $request->filled('accuracy') ? (float) $request->accuracy : null,
+        );
+        $durationStatus = $durationMinutes === null ? 'invalid_time' : (
+            $visitLog->checkin_radius_status === 'inside_radius'
+                && $checkoutDecision['status'] === 'inside_radius' ? 'verified' : 'uncertain'
+        );
 
         $rawFormData = $request->input('form_data');
         $formData = $this->withSubmissionMeta($request, is_array($rawFormData) ? $rawFormData : []);
@@ -117,14 +132,18 @@ class CheckInController extends Controller
             $shouldRecordCoordinateObservation,
             $shouldSaveStoreLocation,
             $offlineSync,
+            $checkoutPoint,
+            $checkoutDecision,
+            $durationStatus,
         ) {
             $visitLog->update([
                 'checkout_at'       => $checkoutAt,
-                'checkout_location' => new Point(
-                    latitude: $request->latitude,
-                    longitude: $request->longitude,
-                ),
+                'checkout_location' => $checkoutPoint,
                 'duration_minutes'  => $durationMinutes,
+                'checkout_accuracy' => $request->accuracy,
+                'checkout_distance' => $checkoutDecision['distance_meters'],
+                'checkout_radius_status' => $checkoutDecision['status'],
+                'duration_verification_status' => $durationStatus,
                 'notes'             => $request->notes,
                 'visit_result'      => $request->visit_result,
                 'form_data'         => $formData,
@@ -132,6 +151,7 @@ class CheckInController extends Controller
                 'is_offline_sync' => $offlineSync || $visitLog->is_offline_sync,
                 'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : $visitLog->offline_received_at,
             ]);
+            $this->presenceSummaries->recalculate($visitLog);
 
             // A visit/start only opens a draft visit form. Persist a previously
             // unknown store location only after the visit is actually submitted.
@@ -194,6 +214,10 @@ class CheckInController extends Controller
             'location_recorded_at' => 'nullable|date',
             'client_uuid' => 'nullable|uuid',
             'offline_sync' => 'nullable|boolean',
+            'captured_store_latitude' => 'nullable|numeric|between:-90,90',
+            'captured_store_longitude' => 'nullable|numeric|between:-180,180',
+            'captured_store_radius' => 'nullable|integer|between:1,50',
+            'captured_store_has_location' => 'nullable|boolean',
         ]);
 
         $user = $request->user();
@@ -247,20 +271,30 @@ class CheckInController extends Controller
             ->whereDate('visit_date', $visitDate)
             ->exists();
 
-        $geofenceRadius = $this->effectiveGeofenceRadius($store);
-        $distanceMeters = null;
-        $isValidLocation = ! $isMock;
-
-        if ($store->location instanceof Point) {
-            $distanceMeters = $this->calculateDistance(
-                $request->latitude,
-                $request->longitude,
-                $store->location->latitude,
-                $store->location->longitude,
-            );
-
-            $isValidLocation = $distanceMeters <= $geofenceRadius && ! $isMock;
+        $capturedReference = null;
+        if ($request->has('captured_store_has_location')) {
+            $capturedReference = [
+                'latitude' => $request->input('captured_store_latitude'),
+                'longitude' => $request->input('captured_store_longitude'),
+                'radius' => $request->input('captured_store_radius'),
+                'has_location' => $request->boolean('captured_store_has_location'),
+            ];
         }
+        $decision = $this->geofence->startDecision(
+            $store, $salesLocation,
+            $request->filled('accuracy') ? (float) $request->accuracy : null,
+            $offlineSync, $capturedReference,
+        );
+        if ($decision['reject']) {
+            return response()->error('Check-in harus dilakukan di radius customer dengan GPS yang akurat.', 422, [
+                'reason' => $decision['status'],
+                'distance_meters' => $decision['distance_meters'],
+                'geofence_radius' => $decision['radius_meters'],
+            ]);
+        }
+
+        $distanceMeters = $decision['distance_meters'];
+        $isValidLocation = $decision['countable'] && ! $isMock;
 
         $visitLog = null;
 
@@ -276,6 +310,7 @@ class CheckInController extends Controller
             $isDuplicate,
             $checkinAt,
             $offlineSync,
+            $decision,
             &$visitLog
         ) {
             $visitLog = VisitLog::create([
@@ -288,11 +323,15 @@ class CheckInController extends Controller
                 'checkin_accuracy'  => $request->accuracy,
                 'checkin_valid'     => $isValidLocation,
                 'checkin_distance'  => $distanceMeters !== null ? round($distanceMeters, 2) : null,
+                'geofence_center' => $decision['center'],
+                'geofence_radius_meters' => $decision['radius_meters'],
+                'geofence_reference_source' => $decision['source'],
+                'checkin_radius_status' => $decision['status'],
                 'is_mock_location'  => $isMock,
                 'is_offline_sync'   => $offlineSync,
                 'offline_received_at' => $offlineSync ? now(self::LOCAL_TIMEZONE) : null,
                 'is_duplicate'      => $isDuplicate,
-                'counted_as_target' => $isValidLocation && ! $isDuplicate,
+                'counted_as_target' => $isValidLocation && ! $isDuplicate && ! $user->hasRole('spv'),
                 'duplicate_reason'  => $isDuplicate ? 'store_already_visited_today' : null,
                 'form_data'         => $this->withSubmissionMeta($request, [
                     'started_from' => 'mobile_self_service',
@@ -320,6 +359,10 @@ class CheckInController extends Controller
             $warnings[] = 'Kunjungan ini tercatat sebagai duplicate dan tidak dihitung ke target.';
         }
 
+        if ($visitLog->checkin_radius_status === 'reference_changed') {
+            $warnings[] = 'Titik lokasi customer berubah sejak data offline disimpan. Kunjungan perlu ditinjau dan belum dihitung ke target.';
+        }
+
         if (! $visitLog->is_mock_location && $visitLog->checkin_distance === null) {
             $warnings[] = 'Koordinat toko belum tersedia. Jarak dan radius belum dapat divalidasi. Visit dapat dilanjutkan sebagai observasi lokasi awal.';
         }
@@ -343,7 +386,7 @@ class CheckInController extends Controller
             'is_valid_location'  => $visitLog->checkin_valid,
             'location_status'    => $this->locationStatus($visitLog),
             'distance_meters'    => $visitLog->checkin_distance,
-            'geofence_radius'    => $this->effectiveGeofenceRadius($store),
+            'geofence_radius'    => $visitLog->geofence_radius_meters ?? $this->effectiveGeofenceRadius($store),
             'is_duplicate'       => $visitLog->is_duplicate,
             'counted_as_target'  => $visitLog->counted_as_target,
             'store'              => $this->formatStore($store),
@@ -431,6 +474,18 @@ class CheckInController extends Controller
             'checkin_accuracy'   => $visitLog->checkin_accuracy,
             'is_mock_location'   => $visitLog->is_mock_location,
             'photos_count'       => $visitLog->photos?->count() ?? 0,
+            'geofence_center_latitude' => $visitLog->geofence_center?->latitude,
+            'geofence_center_longitude' => $visitLog->geofence_center?->longitude,
+            'geofence_radius_meters' => $visitLog->geofence_radius_meters,
+            'geofence_reference_source' => $visitLog->geofence_reference_source,
+            'checkin_radius_status' => $visitLog->checkin_radius_status ?? 'legacy_unverified',
+            'checkout_radius_status' => $visitLog->checkout_radius_status ?? 'legacy_unverified',
+            'checkout_latitude' => $visitLog->checkout_location?->latitude,
+            'checkout_longitude' => $visitLog->checkout_location?->longitude,
+            'checkout_accuracy' => $visitLog->checkout_accuracy,
+            'checkout_distance' => $visitLog->checkout_distance,
+            'duration_verification_status' => $visitLog->duration_verification_status ?? 'legacy_unverified',
+            'presence' => $this->presenceSummaries->response($visitLog),
         ];
     }
 

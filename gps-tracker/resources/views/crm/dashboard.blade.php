@@ -653,14 +653,19 @@
         </div>
         <div class="filter-field">
             <label for="team_id">Cabang</label>
-            <select id="team_id" name="team_id">
-                <option value="">Semua cabang</option>
-                @foreach ($teams as $team)
-                    <option value="{{ $team->id }}" @selected((string) ($filters['team_id'] ?? '') === (string) $team->id)>
-                        {{ $team->name }}
-                    </option>
-                @endforeach
-            </select>
+            @if ($viewer->hasRole('spv'))
+                <input type="hidden" name="team_id" value="{{ $filters['team_id'] }}">
+                <input id="team_id" value="{{ $teams->first()?->name ?? $viewer->team?->name ?? 'Cabang akun' }}" readonly>
+            @else
+                <select id="team_id" name="team_id">
+                    <option value="">Semua cabang</option>
+                    @foreach ($teams as $team)
+                        <option value="{{ $team->id }}" @selected((string) ($filters['team_id'] ?? '') === (string) $team->id)>
+                            {{ $team->name }}
+                        </option>
+                    @endforeach
+                </select>
+            @endif
         </div>
         <div class="filter-field">
             <label for="user_id">Sales</label>
@@ -1158,6 +1163,10 @@
                                                 <div class="kv-row"><span>Check-in</span><strong>{{ $fmtDateTime($visit['checkin_at']) }}</strong></div>
                                                 <div class="kv-row"><span>Checkout</span><strong>{{ $fmtDateTime($visit['checkout_at']) }}</strong></div>
                                                 <div class="kv-row"><span>Durasi</span><strong>{{ $visit['duration_minutes'] !== null ? $fmt($visit['duration_minutes']).' menit' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Status pengukuran</span><strong>{{ match ($visit['presence_status']) { 'complete' => 'Lengkap', 'provisional' => 'Menunggu sinkronisasi lokasi', default => 'Belum tersedia' } }}</strong></div>
+                                                <div class="kv-row"><span>Estimasi dalam radius</span><strong>{{ $visit['inside_radius_seconds'] !== null ? $fmt(round($visit['inside_radius_seconds'] / 60, 1)).' menit' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Estimasi di luar radius</span><strong>{{ $visit['outside_radius_seconds'] !== null ? $fmt(round($visit['outside_radius_seconds'] / 60, 1)).' menit' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Tidak terukur</span><strong>{{ $visit['unmeasured_seconds'] !== null ? $fmt(round($visit['unmeasured_seconds'] / 60, 1)).' menit' : '-' }}</strong></div>
                                                 <div class="kv-row"><span>Hasil</span><strong>{{ $resultText }}</strong></div>
                                                 <div class="kv-row"><span>Catatan</span><strong>{{ $visit['notes'] ?: '-' }}</strong></div>
                                                 <div class="kv-row"><span>Dihitung Target</span><strong>{{ $fmtBool($visit['counted_as_target']) }}</strong></div>
@@ -1190,6 +1199,9 @@
                                                 </div>
                                                 <div class="kv-row"><span>Akurasi</span><strong>{{ $visit['checkin_accuracy'] !== null ? $fmt($visit['checkin_accuracy']).' m' : '-' }}</strong></div>
                                                 <div class="kv-row"><span>Jarak Check-in</span><strong>{{ $visit['checkin_distance'] !== null ? $fmt($visit['checkin_distance']).' m' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Status checkout</span><strong>{{ match ($visit['checkout_radius_status']) { 'inside_radius' => 'Di dalam radius', 'outside_radius' => 'Di luar radius', 'uncertain' => 'GPS tidak pasti', default => 'Belum tersedia' } }}</strong></div>
+                                                <div class="kv-row"><span>Jarak checkout</span><strong>{{ $visit['checkout_distance'] !== null ? $fmt($visit['checkout_distance']).' m' : '-' }}</strong></div>
+                                                <div class="kv-row"><span>Akurasi checkout</span><strong>{{ $visit['checkout_accuracy'] !== null ? $fmt($visit['checkout_accuracy']).' m' : '-' }}</strong></div>
                                                 <div class="kv-row"><span>Check-in Valid</span><strong>{{ $fmtBool($visit['checkin_valid']) }}</strong></div>
                                                 <div class="kv-row"><span>Fake GPS Visit</span><strong>{{ $fmtBool($visit['is_mock_location']) }}</strong></div>
                                             </div>

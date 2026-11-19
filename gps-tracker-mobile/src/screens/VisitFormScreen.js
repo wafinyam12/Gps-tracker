@@ -35,6 +35,8 @@ import { canOpenRoute, openMapRoute } from '../utils/maps';
 import { evaluateVisitLocation } from '../utils/locationIntegrity';
 import { ACTIVITY_TYPES, VISIT_RESULTS } from '../utils/visitOptions';
 import { offlineQueue } from '../utils/offlineQueue';
+import { visitSampleQueue } from '../utils/visitSampleQueue';
+import { startBackgroundTracking } from '../utils/backgroundTracker';
 import { logEvent } from '../utils/diagnosticLogger';
 import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 
@@ -152,6 +154,19 @@ function VisitFormScreen({ route, navigation }) {
   const isCheckedOut = Boolean(visit?.checkout_at);
   const isDetailMode = mode === 'detail';
   const canEditVisit = !isCheckedOut && !isDetailMode;
+
+  useEffect(() => {
+    if (!user?.id || !visit || !canEditVisit || isOfflineVisit || !resolvedVisitLogId) return;
+    let cancelled = false;
+    (async () => {
+      const active = await visitSampleQueue.activeVisit(String(user.id));
+      if (!active && !cancelled) {
+        await visitSampleQueue.begin(String(user.id), { serverVisitId: resolvedVisitLogId, startedAt: visit.checkin_at });
+        await startBackgroundTracking();
+      }
+    })().catch((error) => logEvent('visit.presence_resume_failed', { error_code: error?.code }));
+    return () => { cancelled = true; };
+  }, [user?.id, visit?.id, canEditVisit, isOfflineVisit, resolvedVisitLogId]);
   const store = visit?.store || {};
   const hasStoreRoute = canOpenRoute(store);
   const sapOutstanding = store?.sap_outstanding_receivable || null;
@@ -219,7 +234,7 @@ function VisitFormScreen({ route, navigation }) {
     || (checkinDistance === null ? 'unknown' : (visit?.checkin_valid ? 'valid' : 'outside_radius'));
   const locationStatusLabel = {
     valid: 'Valid dalam radius',
-    outside_radius: 'Di luar radius Â· tidak dihitung ke target',
+    outside_radius: 'Di luar radius · tidak dihitung ke target',
     unknown: 'Jarak belum dapat divalidasi',
     mock: 'Lokasi GPS tidak valid',
   }[locationStatus] || 'Status lokasi belum tersedia';
@@ -628,6 +643,12 @@ function VisitFormScreen({ route, navigation }) {
               setCancelling(true);
               try {
                 const result = await offlineQueue.removeVisit(offlineVisit.localVisitId);
+                try {
+                  await visitSampleQueue.cancel(String(user.id));
+                  await startBackgroundTracking();
+                } catch (trackingError) {
+                  logEvent('visit.presence_cancel_failed', { error_code: trackingError?.code });
+                }
                 if (result.cleanupFailed) {
                   Alert.alert(
                     'Visit Dibatalkan',
@@ -675,6 +696,12 @@ function VisitFormScreen({ route, navigation }) {
             setCancelling(true);
             try {
               await visitService.deleteVisit(resolvedVisitLogId);
+              try {
+                await visitSampleQueue.cancel(String(user.id));
+                await startBackgroundTracking();
+              } catch (trackingError) {
+                logEvent('visit.presence_cancel_failed', { error_code: trackingError?.code });
+              }
               returnToStoreList();
             } catch (error) {
               logEvent('visit.cancel_failed', { status: error.response?.status, error_code: error?.code });
@@ -737,6 +764,14 @@ function VisitFormScreen({ route, navigation }) {
 
       if (isOfflineVisit) {
         await offlineQueue.enqueueVisitCheckout(offlineVisit.localVisitId, checkoutPayload);
+        try {
+          await visitSampleQueue.finish(String(user.id), location);
+          await startBackgroundTracking();
+          await offlineQueue.processQueue({ silent: true });
+          await visitSampleQueue.flush(String(user.id), true);
+        } catch (sampleError) {
+          logEvent('visit.presence_finish_pending', { error_code: sampleError?.code });
+        }
         logEvent('visit.checkout_queued_offline');
         Alert.alert('Visit Disimpan Offline', 'Check-out tersimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
           { text: 'OK', onPress: () => navigation.popToTop() },
@@ -762,6 +797,13 @@ function VisitFormScreen({ route, navigation }) {
         }
       );
       logEvent('visit.checkout_succeeded');
+      try {
+        await visitSampleQueue.finish(String(user.id), location);
+        await startBackgroundTracking();
+        await visitSampleQueue.flush(String(user.id), true);
+      } catch (sampleError) {
+        logEvent('visit.presence_finish_pending', { status: sampleError?.response?.status, error_code: sampleError?.code });
+      }
 
       if (!isMountedRef.current) {
         return;
@@ -770,7 +812,7 @@ function VisitFormScreen({ route, navigation }) {
       const payload = response.data || {};
       setVisitLogId(payload.visit_log_id || resolvedVisitLogId);
 
-      Alert.alert('Berhasil', 'Kunjungan berhasil disimpan.', [
+      Alert.alert('Berhasil', 'Kunjungan disimpan. Estimasi waktu di area customer akan tampil setelah sinkronisasi lokasi selesai.', [
         { text: 'OK', onPress: () => navigation.popToTop() },
       ]);
     } catch (error) {
@@ -785,6 +827,12 @@ function VisitFormScreen({ route, navigation }) {
           visit_log_id: resolvedVisitLogId,
           offline_sync: true,
         }, {}, { kind: 'visit_checkout' });
+        try {
+          await visitSampleQueue.finish(String(user.id), location);
+          await startBackgroundTracking();
+        } catch (sampleError) {
+          logEvent('visit.presence_finish_pending', { error_code: sampleError?.code });
+        }
         Alert.alert('Disimpan Offline', 'Check-out disimpan di perangkat dan akan dikirim otomatis saat koneksi kembali.', [
           { text: 'OK', onPress: () => navigation.popToTop() },
         ]);
@@ -831,7 +879,7 @@ function VisitFormScreen({ route, navigation }) {
           storeName={storeName}
           storeAddress={storeAddress}
           branch={store.branch}
-          timeline={checkinTime ? `Check-in ${checkinTime}${checkoutTime ? ` Â· Checkout ${checkoutTime}` : ''}` : visitTimelineText}
+          timeline={checkinTime ? `Check-in ${checkinTime}${checkoutTime ? ` · Checkout ${checkoutTime}` : ''}` : visitTimelineText}
           status={isCheckedOut ? 'Selesai' : 'Aktif'}
           onRoute={hasStoreRoute ? handleOpenRoute : undefined}
         />

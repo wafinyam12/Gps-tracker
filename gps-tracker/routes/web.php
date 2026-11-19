@@ -26,7 +26,7 @@ Route::prefix('crm')->name('crm.')->group(function () {
         ->middleware('auth')
         ->name('logout');
 
-    Route::middleware(['auth', 'role:manager|admin|superadmin'])->group(function () {
+    Route::middleware(['auth', 'role:spv|manager|admin|superadmin'])->group(function () {
         Route::get('/', [CrmDashboardController::class, 'index'])->name('dashboard');
         Route::get('reports/visits/export', [CrmDashboardController::class, 'exportVisits'])
             ->middleware('throttle:export')

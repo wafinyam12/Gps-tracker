@@ -9,11 +9,11 @@ use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Services\Sap\OutstandingReceivableService;
 use App\Services\Visits\VisitPhotoUrlService;
+use App\Support\VisitAuditFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
-use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class VisitLogController extends Controller
 {
@@ -70,7 +70,7 @@ class VisitLogController extends Controller
             ->when($request->status === 'completed', fn ($query) => $query->whereNotNull('checkout_at'))
             ->latest('checkin_at')
             ->get()
-            ->map(fn (VisitLog $visitLog) => $this->formatVisit($visitLog, false));
+            ->map(fn (VisitLog $visitLog) => $this->formatVisit($visitLog, false, false));
 
         return response()->success([
             'total'  => $visits->count(),
@@ -97,6 +97,12 @@ class VisitLogController extends Controller
         $visitLog->loadMissing('user');
         if (! $this->canAccess($request, $visitLog)) {
             return response()->error('Unauthorized.', 403);
+        }
+        if (! $this->canMutate($request, $visitLog)) {
+            return response()->error('Unauthorized.', 403);
+        }
+        if ($request->hasAny(['latitude', 'longitude'])) {
+            return response()->error('Titik checkout hanya dapat dicatat melalui proses checkout.', 422);
         }
 
         $request->validate([
@@ -125,13 +131,6 @@ class VisitLogController extends Controller
             $payload['form_data'] = $this->withSubmissionMeta($request, is_array($formData) ? $formData : []);
         }
 
-        if ($request->filled('latitude') && $request->filled('longitude')) {
-            $payload['checkout_location'] = new Point(
-                latitude: $request->latitude,
-                longitude: $request->longitude,
-            );
-        }
-
         if (empty($payload)) {
             return response()->error('Tidak ada data kunjungan yang diubah.', 422);
         }
@@ -148,6 +147,9 @@ class VisitLogController extends Controller
     {
         $visitLog->loadMissing('user');
         if (! $this->canAccess($request, $visitLog)) {
+            return response()->error('Unauthorized.', 403);
+        }
+        if (! $this->canMutate($request, $visitLog)) {
             return response()->error('Unauthorized.', 403);
         }
 
@@ -193,6 +195,12 @@ class VisitLogController extends Controller
         return $visitLog->user_id === $user->id;
     }
 
+    private function canMutate(Request $request, VisitLog $visitLog): bool
+    {
+        return $request->user()->hasRole('superadmin')
+            || (int) $visitLog->user_id === (int) $request->user()->id;
+    }
+
     private function withSubmissionMeta(Request $request, array $formData): array
     {
         $user = $request->user();
@@ -209,9 +217,9 @@ class VisitLogController extends Controller
         return $formData;
     }
 
-    private function formatVisit(VisitLog $visitLog, bool $includeSap = true): array
+    private function formatVisit(VisitLog $visitLog, bool $includeSap = true, bool $includeAuditCoords = true): array
     {
-        return [
+        $data = [
             'id'                 => $visitLog->id,
             'visit_date'         => $visitLog->visit_date?->toDateString(),
             'user'               => [
@@ -240,6 +248,10 @@ class VisitLogController extends Controller
             'photos_count'       => $visitLog->photos?->count() ?? 0,
             'photos_preview'     => $this->formatPhotoPreviews($visitLog, 3),
         ];
+
+        return array_merge($data, $includeAuditCoords
+            ? VisitAuditFormatter::detail($visitLog)
+            : VisitAuditFormatter::summary($visitLog));
     }
 
     private function formatStore(?Store $store, ?User $salesUser = null, bool $includeSap = true): array

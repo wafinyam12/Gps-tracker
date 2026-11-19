@@ -168,6 +168,7 @@ class LocationController extends Controller
                 ->map(function (Team $branch) use ($onlineCounts) {
                     return [
                         ...$this->formatBranch($branch),
+                        'members_count' => (int) $branch->members_count,
                         'online_sales_count' => (int) ($onlineCounts[$branch->id] ?? 0),
                     ];
                 })

@@ -244,6 +244,7 @@ class ApiTest extends TestCase
     public function it_forwards_cash_payment_to_udportal_using_the_sales_branch_account()
     {
         config([
+            'services.cash_payment.enabled' => true,
             'udportal.api_base_url' => 'https://udportal.example.test/api/v1',
             'udportal.api_token' => null,
             'udportal.api_username' => null,

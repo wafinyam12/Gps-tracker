@@ -19,11 +19,13 @@ class VisitAnalyticsService
 
     public function scopeUsers(?User $viewer = null, ?int $userId = null, ?int $teamId = null): Collection
     {
-        $resolvedTeamId = $this->resolveTeamScope($viewer, $teamId);
-        $roles = $viewer?->isBranchAdmin() ? ['sales'] : ['sales', 'spv'];
+        if ($viewer?->hasRole('spv') && $viewer->managedTeamId() === null) {
+            return collect();
+        }
 
+        $resolvedTeamId = $this->resolveTeamScope($viewer, $teamId);
         return User::query()
-            ->whereHas('roles', fn ($query) => $query->whereIn('name', $roles))
+            ->whereHas('roles', fn ($query) => $query->where('name', 'sales'))
             ->where('is_active', true)
             ->when($userId, fn ($query) => $query->where('id', $userId))
             ->when($resolvedTeamId, fn ($query) => $query->where('team_id', $resolvedTeamId))
@@ -34,6 +36,10 @@ class VisitAnalyticsService
 
     public function loadVisits(string $dateFrom, string $dateTo, ?User $viewer = null, ?int $userId = null, ?int $teamId = null, ?int $storeId = null): Collection
     {
+        if ($viewer?->hasRole('spv') && $viewer->managedTeamId() === null) {
+            return collect();
+        }
+
         $resolvedTeamId = $this->resolveTeamScope($viewer, $teamId);
 
         return VisitLog::query()

@@ -2,6 +2,8 @@
 
 namespace App\Services\Sap;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 
 class BpCoordinateService
@@ -58,7 +60,11 @@ class BpCoordinateService
     {
         $request = Http::acceptJson()
             ->timeout(max(1, (int) config('sap.bp_coordinate_timeout', 15)))
-            ->retry(2, 250);
+            ->retry(2, 250, function ($exception) {
+                return $exception instanceof ConnectionException
+                    || ($exception instanceof RequestException
+                        && ($exception->response->serverError() || $exception->response->status() === 429));
+            }, throw: false);
 
         $token = trim((string) config('sap.bp_coordinate_token'));
         if ($token !== '') {

@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\VisitMonitoringController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VisitLogController;
+use App\Http\Controllers\Api\VisitLocationSampleController;
 use App\Http\Controllers\Api\VisitPhotoController;
 use App\Http\Middleware\ApiRequestLog;
 use Illuminate\Support\Facades\Route;
@@ -49,6 +50,8 @@ Route::prefix('v1')->middleware(ApiRequestLog::class)->group(function () {
                 ->middleware('throttle:checkin');
             Route::post('visit/checkout', [CheckInController::class, 'checkOut'])
                 ->middleware('throttle:checkin');
+            Route::post('visits/{visitLog}/samples', [VisitLocationSampleController::class, 'store'])
+                ->middleware('throttle:location-ping');
 
             Route::post('visit/photos', [VisitPhotoController::class, 'upload'])
                 ->middleware('throttle:photo-upload');

@@ -117,6 +117,14 @@ const buildMapHtml = (initialCenter, initialZoom, zoomControls) => `<!doctype ht
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+    const safeColor = (value, fallback) => {
+      if (typeof value !== 'string') return fallback;
+      if (/^#[0-9a-f]{3,8}$/i.test(value)) return value;
+      const isRgb = (value.startsWith('rgb(') || value.startsWith('rgba(')) && value.endsWith(')');
+      const channels = value.slice(value.indexOf('(') + 1, -1);
+      return isRgb && [...channels].every((character) => '0123456789., %'.includes(character))
+        ? value : fallback;
+    };
     const post = (payload) => {
       try {
         window.ReactNativeWebView?.postMessage(JSON.stringify(payload));
@@ -169,6 +177,7 @@ const buildMapHtml = (initialCenter, initialZoom, zoomControls) => `<!doctype ht
           );
         leafletMarker.on('click', () => post({ type: 'markerPress', marker }));
       });
+      post({ type: 'markerRender', count: markersLayer.getLayers().length });
     };
     const addCircles = (circles) => {
       circlesLayer.clearLayers();
@@ -222,7 +231,9 @@ const buildMapHtml = (initialCenter, initialZoom, zoomControls) => `<!doctype ht
       try {
         const payload = JSON.parse(rawMessage);
         if (payload.type === 'updateMap') updateMap(payload);
-      } catch (error) {}
+      } catch (error) {
+        post({ type: 'mapError', stage: 'update' });
+      }
     };
 
     document.addEventListener('message', (event) => receive(event.data));
@@ -310,6 +321,12 @@ const OpenStreetMapView = ({
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'mapReady') {
         setMapReady(true);
+      } else if (data.type === 'mapError') {
+        logEvent('map.webview_update_failed', { stage: data.stage });
+      } else if (data.type === 'markerRender') {
+        if (data.count !== normalizedMarkers.length) {
+          logEvent('map.marker_count_mismatch', { expected: normalizedMarkers.length, rendered: data.count });
+        }
       } else if (data.type === 'markerPress') {
         const marker = data.marker;
         const point = normalizePoint(marker);
@@ -375,6 +392,7 @@ const OpenStreetMapView = ({
         mixedContentMode="never"
         onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
         onMessage={handleMessage}
+        onError={() => logEvent('map.webview_load_failed')}
         scrollEnabled={false}
         style={styles.webview}
       />

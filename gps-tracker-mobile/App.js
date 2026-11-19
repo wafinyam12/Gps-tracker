@@ -34,6 +34,8 @@ import StoreListScreen from './src/screens/admin/StoreListScreen';
 import LiveMapScreen from './src/screens/spv/LiveMapScreen';
 import SalesDetailScreen from './src/screens/spv/SalesDetailScreen';
 import TeamSummaryScreen from './src/screens/spv/TeamSummaryScreen';
+import TeamVisitListScreen from './src/screens/spv/TeamVisitListScreen';
+import VisitAuditDetailScreen from './src/screens/spv/VisitAuditDetailScreen';
 import TargetRangeScreen from './src/screens/spv/TargetRangeScreen';
 import AlertListScreen from './src/screens/spv/AlertListScreen';
 import MySummaryScreen from './src/screens/MySummaryScreen';
@@ -107,6 +109,8 @@ const AppStack = () => (
       component={TeamSummaryScreen}
       options={{ headerShown: false }}
     />
+    <Stack.Screen name="TeamVisitList" component={TeamVisitListScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="VisitAuditDetail" component={VisitAuditDetailScreen} options={{ headerShown: false }} />
     <Stack.Screen
       name="Alerts"
       component={AlertListScreen}
@@ -177,6 +181,8 @@ const AdminStack = () => (
       component={TeamSummaryScreen}
       options={{ headerShown: false }}
     />
+    <Stack.Screen name="TeamVisitList" component={TeamVisitListScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="VisitAuditDetail" component={VisitAuditDetailScreen} options={{ headerShown: false }} />
     <Stack.Screen
       name="TargetRange"
       component={TargetRangeScreen}

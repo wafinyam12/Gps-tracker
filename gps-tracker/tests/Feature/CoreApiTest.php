@@ -422,14 +422,21 @@ class CoreApiTest extends TestCase
 
         $catalog = app(StoreCatalogSyncService::class);
         Http::fake([
-            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/47' => Http::response(
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/47' => Http::sequence()
+                ->push($this->sapOutstandingResponse([
+                    $this->sapOutstandingCustomer([
+                        'Customer Code' => 'C0001',
+                        'Customer Name' => 'Customer Pindah Sales',
+                    ]),
+                ]), 200)
+                ->push($this->sapOutstandingResponse([]), 200),
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/48' => Http::response(
                 $this->sapOutstandingResponse([
                     $this->sapOutstandingCustomer([
                         'Customer Code' => 'C0001',
                         'Customer Name' => 'Customer Pindah Sales',
                     ]),
-                ]),
-                200,
+                ]), 200,
             ),
         ]);
         $catalog->sync(false, $sales47, true);
@@ -444,21 +451,6 @@ class CoreApiTest extends TestCase
         $storeId = $store->id;
 
         Cache::flush();
-        Http::fake([
-            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/47' => Http::response(
-                $this->sapOutstandingResponse([]),
-                200,
-            ),
-            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_SURABAYA/48' => Http::response(
-                $this->sapOutstandingResponse([
-                    $this->sapOutstandingCustomer([
-                        'Customer Code' => 'C0001',
-                        'Customer Name' => 'Customer Pindah Sales',
-                    ]),
-                ]),
-                200,
-            ),
-        ]);
 
         $catalog->sync(false, $sales47, true);
         $this->assertDatabaseHas('stores', [
@@ -1353,54 +1345,50 @@ class CoreApiTest extends TestCase
 
     public function test_spv_visit_summary_reports_warning_for_under_target_day(): void
     {
-        $spv = User::factory()->create(['is_active' => true]);
+        $team = Team::create([
+            'code' => 'AM-SUMMARY-01',
+            'name' => 'Cabang AM Summary',
+            'area' => 'Jakarta',
+            'db_sap' => 'SAP_AM_SUMMARY',
+            'is_active' => true,
+        ]);
+        $spv = User::factory()->create(['is_active' => true, 'team_id' => $team->id]);
         $spv->assignRole('spv');
+        $sales = User::factory()->create(['is_active' => true, 'team_id' => $team->id, 'slpCode' => '47']);
+        $sales->assignRole('sales');
         $token = $spv->createToken('test-spv')->plainTextToken;
 
         Carbon::setTestNow(Carbon::create(2026, 6, 16, 9, 0, 0, 'Asia/Jakarta'));
 
         $stores = [
-            ['SAP-DMY-0001', 'Toko Dummy Sudirman', 'Jl. Jenderal Sudirman Kav. 10, Jakarta Pusat', 'Jakarta Pusat', -6.21462, 106.82172],
-            ['SAP-DMY-0002', 'Toko Dummy Thamrin', 'Jl. M.H. Thamrin No. 15, Jakarta Pusat', 'Jakarta Pusat', -6.19445, 106.82292],
-            ['SAP-DMY-0003', 'Toko Dummy Kuningan', 'Jl. HR Rasuna Said, Jakarta Selatan', 'Jakarta Selatan', -6.21957, 106.83245],
-            ['SAP-DMY-0004', 'Toko Dummy Kelapa Gading', 'Jl. Boulevard Raya, Jakarta Utara', 'Jakarta Utara', -6.15886, 106.90718],
+            ['AM-001', 'Toko Sudirman'],
+            ['AM-002', 'Toko Thamrin'],
+            ['AM-003', 'Toko Kuningan'],
+            ['AM-004', 'Toko Kelapa Gading'],
         ];
 
         $currentTime = Carbon::create(2026, 6, 16, 9, 0, 0, 'Asia/Jakarta');
 
-        foreach ($stores as [$code, $name, $address, $branch, $lat, $lng]) {
-            Carbon::setTestNow($currentTime);
-
-            $startResponse = $this->withHeader('Authorization', 'Bearer '.$token)
-                ->postJson('/api/v1/visit/start', [
-                    'external_bp_code' => $code,
-                    'store_name' => $name,
-                    'store_address' => $address,
-                    'branch' => $branch,
-                    'latitude' => $lat,
-                    'longitude' => $lng,
-                    'accuracy' => 10,
-                    'is_mock_location' => false,
-                ])
-                ->assertStatus(201);
-
-            $visitLogId = $startResponse->json('data.visit_log_id');
-
-            Carbon::setTestNow($currentTime->copy()->addMinutes(10));
-
-            $this->withHeader('Authorization', 'Bearer '.$token)
-                ->postJson('/api/v1/visit/checkout', [
-                    'visit_log_id' => $visitLogId,
-                    'latitude' => $lat,
-                    'longitude' => $lng,
-                    'visit_result' => 'closed',
-                    'notes' => 'Daily visit selesai',
-                    'form_data' => [
-                        'notes' => 'Daily visit selesai',
-                    ],
-                ])
-                ->assertStatus(200);
-
+        foreach ($stores as [$code, $name]) {
+            $store = Store::create([
+                'team_id' => $team->id,
+                'code' => $code,
+                'external_bp_code' => $code,
+                'sap_slp_code' => '47',
+                'name' => $name,
+                'status' => 'active',
+                'master_source' => 'sap_outstanding_receivable',
+            ]);
+            VisitLog::create([
+                'user_id' => $sales->id,
+                'store_id' => $store->id,
+                'visit_date' => '2026-06-16',
+                'checkin_at' => $currentTime,
+                'checkout_at' => $currentTime->copy()->addMinutes(10),
+                'checkin_valid' => true,
+                'counted_as_target' => true,
+                'visit_result' => 'closed',
+            ]);
             $currentTime = $currentTime->copy()->addMinutes(20);
         }
 
@@ -1414,7 +1402,8 @@ class CoreApiTest extends TestCase
                 'success' => true,
             ])
             ->assertJsonPath('data.overview.unique_visits', 4)
-            ->assertJsonPath('data.overview.warning_count', 1);
+            ->assertJsonPath('data.overview.warning_count', 1)
+            ->assertJsonPath('data.overview.total_sales', 1);
 
         $warnings = $response->json('data.warnings');
         $this->assertNotEmpty($warnings);

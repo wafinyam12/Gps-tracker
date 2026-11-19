@@ -105,13 +105,14 @@ class StoreController extends Controller
         }
 
         $query = $this->orderAvailableStores($query, $request);
+        $ownerNames = $catalog->areaManagerSalesOwnerNames($request->user());
 
         if ($shouldPaginate) {
             $stores = $query->paginate($perPage, ['*'], 'page', $page);
 
             return response()->success([
                 'items' => $stores->getCollection()
-                    ->map(fn (Store $store) => (new StoreResource($store))->toArray($request))
+                    ->map(fn (Store $store) => $this->formatAvailableStore($store, $request, $ownerNames))
                     ->values()
                     ->all(),
                 'meta' => [
@@ -129,8 +130,19 @@ class StoreController extends Controller
         $stores = $query->get();
 
         return response()->success(
-            $stores->map(fn (Store $store) => (new StoreResource($store))->toArray($request))->values()->all()
+            $stores->map(fn (Store $store) => $this->formatAvailableStore($store, $request, $ownerNames))->values()->all()
         );
+    }
+
+    private function formatAvailableStore(Store $store, Request $request, array $ownerNames): array
+    {
+        $data = (new StoreResource($store))->toArray($request);
+
+        if ($request->user()?->hasRole('spv')) {
+            $data['sales_owner_name'] = $ownerNames[trim((string) $store->sap_slp_code)] ?? null;
+        }
+
+        return $data;
     }
 
     private function orderAvailableStores($query, Request $request)

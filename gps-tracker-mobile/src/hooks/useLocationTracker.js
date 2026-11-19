@@ -5,6 +5,7 @@ import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { canTrackLocation } from '../utils/roles';
 import { logEvent } from '../utils/diagnosticLogger';
+import { isBackgroundTrackingActive } from '../utils/backgroundTracker';
 
 const normalizeBearing = (heading) => (
   typeof heading === 'number' && heading >= 0 && heading <= 360 ? heading : null
@@ -33,6 +34,7 @@ export const useLocationTracker = () => {
     }
 
     try {
+      if (await isBackgroundTrackingActive()) return;
       await apiClient.post('/location/ping', {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,

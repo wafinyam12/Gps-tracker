@@ -68,6 +68,7 @@ class CrmAuthController extends Controller
 
     private function canAccessCrm(User $user): bool
     {
-        return $user->hasAnyRole(['manager', 'admin', 'superadmin']);
+        return $user->hasAnyRole(['manager', 'admin', 'superadmin'])
+            || ($user->hasRole('spv') && $user->team_id !== null);
     }
 }

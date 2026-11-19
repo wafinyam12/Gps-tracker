@@ -3,6 +3,7 @@
 use App\Jobs\SyncSapCustomerCatalog;
 use App\Console\Commands\SyncSapCustomerCoordinatesCommand;
 use App\Models\User;
+use App\Models\VisitLocationSample;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -32,10 +33,25 @@ Schedule::call(function () {
                 )->onQueue('sap-sync');
             }
         });
-})->hourly()->name('sync-active-sap-customer-catalogs')->withoutOverlapping();
+})->everyTenMinutes()->name('sync-active-sap-customer-catalogs')->withoutOverlapping();
 
 Schedule::command(SyncSapCustomerCoordinatesCommand::class)
     ->dailyAt('16:00')
     ->timezone('Asia/Jakarta')
     ->name('sync-sap-customer-coordinates')
+    ->withoutOverlapping();
+
+Artisan::command('visits:prune-location-samples', function () {
+    $cutoff = now()->subDays(30);
+    VisitLocationSample::query()
+        ->where('created_at', '<', $cutoff)
+        ->chunkById(1000, function ($samples) {
+            VisitLocationSample::query()->whereIn('id', $samples->pluck('id'))->delete();
+        });
+})->purpose('Delete raw visit GPS samples older than 30 days; keep visit summaries');
+
+Schedule::command('visits:prune-location-samples')
+    ->dailyAt('02:30')
+    ->timezone('Asia/Jakarta')
+    ->name('prune-raw-visit-location-samples')
     ->withoutOverlapping();

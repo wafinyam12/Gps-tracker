@@ -67,17 +67,24 @@ class StoreCatalogSyncService
             ->first();
     }
 
-    /**
-     * Apply the authenticated user's customer boundary to a stores query.
-     * SAP customers are scoped branch first, then to their current SAP sales.
-     */
+    /** Apply the authenticated user's customer boundary to a stores query. */
     public function scopeQuery(Builder $query, ?User $user = null, bool $onlyActive = false): Builder
     {
-        $query->where('master_source', $this->resolveSourceKey($user));
+        if ($this->isAreaManager($user)) {
+            $query->where('master_source', 'sap_outstanding_receivable');
 
-        if ($this->hasSapCredentials($user)) {
+            if ($user->team_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('team_id', (int) $user->team_id)
+                    ->whereIn('sap_slp_code', array_map('strval', array_keys($this->areaManagerSalesOwnerNames($user))));
+            }
+        } elseif ($this->hasSapCredentials($user)) {
+            $query->where('master_source', 'sap_outstanding_receivable');
             $query->where('team_id', (int) $user->team_id)
                 ->where('sap_slp_code', $this->sapSalesCode($user));
+        } else {
+            $query->where('master_source', 'sap_dummy');
         }
 
         if ($onlyActive) {
@@ -87,9 +94,33 @@ class StoreCatalogSyncService
         return $query;
     }
 
+    /** @return array<string, string> SAP Sales code => names of active Sales in the AM's branch. */
+    public function areaManagerSalesOwnerNames(?User $user): array
+    {
+        if (! $this->isAreaManager($user) || $user->team_id === null) {
+            return [];
+        }
+
+        return User::query()
+            ->where('team_id', (int) $user->team_id)
+            ->where('is_active', true)
+            ->whereHas('roles', fn (Builder $roles) => $roles->where('name', 'sales')->where('guard_name', 'web'))
+            ->get(['name', 'slpCode'])
+            ->groupBy(fn (User $sales) => $sales->sapSalesCode() ?? '')
+            ->filter(fn (Collection $sales, string $code) => $code !== '')
+            ->map(fn (Collection $sales) => $sales->pluck('name')
+                ->map(fn ($name) => trim((string) $name))
+                ->filter(fn (string $name) => $name !== '')
+                ->unique()
+                ->sort()
+                ->values()
+                ->implode(', '))
+            ->all();
+    }
+
     public function warm(?User $user = null, bool $onlyActive = false): void
     {
-        if (! $this->hasSapCredentials($user)) {
+        if ($this->isAreaManager($user) || ! $this->hasSapCredentials($user)) {
             return;
         }
 
@@ -98,6 +129,12 @@ class StoreCatalogSyncService
 
     public function ensureCatalog(bool $onlyActive = false, ?User $user = null, bool $force = false): void
     {
+        // Area Managers read the Sales catalogs synchronized for their branch.
+        // They have no individual SAP catalog to refresh or reconcile.
+        if ($this->isAreaManager($user)) {
+            return;
+        }
+
         $identity = $this->resolveCatalogIdentity($user);
 
         if (! $force && $this->hasFreshCatalog($identity) && $this->hasCatalogRows($user)) {
@@ -236,13 +273,6 @@ class StoreCatalogSyncService
             ->get();
     }
 
-    private function resolveSourceKey(?User $user): string
-    {
-        return $this->hasSapCredentials($user)
-            ? 'sap_outstanding_receivable'
-            : 'sap_dummy';
-    }
-
     private function resolveCatalogIdentity(?User $user): string
     {
         if ($this->hasSapCredentials($user)) {
@@ -261,6 +291,11 @@ class StoreCatalogSyncService
         return $user?->team_id !== null
             && filled($user?->sapDatabase())
             && filled($this->sapSalesCode($user));
+    }
+
+    private function isAreaManager(?User $user): bool
+    {
+        return $user?->hasRole('spv') ?? false;
     }
 
     private function hasCatalogRows(?User $user): bool
@@ -379,6 +414,12 @@ class StoreCatalogSyncService
 
         if ($existing?->location) {
             $payload['location'] = $existing->location;
+        }
+
+        // SAP's catalog payload supplies the default radius on each refresh.
+        // Keep any radius already calibrated on the CRM master record.
+        if ($existing) {
+            $payload['geofence_radius'] = $this->normalizeGeofenceRadius($existing->geofence_radius);
         }
 
         if ($existing) {

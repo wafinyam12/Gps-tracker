@@ -1,11 +1,11 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { ArrowRight, Navigation } from 'lucide-react-native';
+import { ArrowRight, Navigation, UserRound } from 'lucide-react-native';
 import { canOpenRoute } from '../../utils/maps';
 import { getStoreDistanceLabel } from '../../utils/visitStorePresentation';
 import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
-const VisitStoreRow = ({ store, selected, starting, distanceMeters, onSelect, onStart, onRoute }) => {
+const VisitStoreRow = ({ store, showSalesOwner = false, selected, starting, distanceMeters, onSelect, onStart, onRoute }) => {
   const hasCoordinates = canOpenRoute(store);
 
   return (
@@ -22,6 +22,14 @@ const VisitStoreRow = ({ store, selected, starting, distanceMeters, onSelect, on
         <Text style={styles.name}>{store?.name || 'Toko'}</Text>
         <Text style={styles.address}>{store?.address || 'Alamat belum tersedia'}</Text>
         <Text style={styles.branch}>{store?.branch || 'Cabang belum tersedia'}</Text>
+        {showSalesOwner ? (
+          <View style={styles.ownerRow}>
+            <UserRound size={15} color={visitColors.primary} />
+            <Text style={styles.ownerText}>
+              Sales: {store?.sales_owner_name || 'Nama belum tersedia'}
+            </Text>
+          </View>
+        ) : null}
         <Text style={styles.distance}>{getStoreDistanceLabel(hasCoordinates, distanceMeters)}</Text>
         {store?.geofence_radius ? <Text style={styles.radius}>Radius kunjungan {store.geofence_radius} m</Text> : null}
       </TouchableOpacity>
@@ -68,6 +76,8 @@ const styles = StyleSheet.create({
   name: { ...visitType.section, color: visitColors.ink, marginTop: visitSpacing.xs },
   address: { ...visitType.body, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
   branch: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.sm },
+  ownerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: visitSpacing.sm, marginTop: visitSpacing.sm, paddingHorizontal: visitSpacing.sm, paddingVertical: visitSpacing.sm, borderRadius: visitRadii.control, backgroundColor: visitColors.primaryTint },
+  ownerText: { ...visitType.label, color: visitColors.primary, flex: 1 },
   distance: { ...visitType.caption, color: visitColors.ink, marginTop: visitSpacing.xs },
   radius: { ...visitType.caption, color: visitColors.mutedInk, marginTop: visitSpacing.xs },
   actions: { borderTopWidth: 1, borderTopColor: visitColors.border, paddingHorizontal: visitSpacing.card, paddingVertical: visitSpacing.sm, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: visitSpacing.sm },

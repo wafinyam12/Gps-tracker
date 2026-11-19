@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Exports\SalesSummaryExport;
+use App\Exports\VisitReportExport;
 use App\Models\DailyTarget;
 use App\Models\LocationPing;
 use App\Models\Store;
@@ -11,6 +13,7 @@ use App\Models\VisitLog;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Maatwebsite\Excel\Facades\Excel;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -22,6 +25,7 @@ class CrmWebTest extends TestCase
     private Team $branchA;
     private Team $branchB;
     private User $manager;
+    private User $areaManagerA;
     private User $adminA;
     private User $salesA;
     private User $salesB;
@@ -54,6 +58,9 @@ class CrmWebTest extends TestCase
 
         $this->manager = $this->makeUser('Manager CRM', 'manager-crm@example.com');
         $this->manager->assignRole('manager');
+
+        $this->areaManagerA = $this->makeUser('Area Manager A', 'area-manager-a@example.com', $this->branchA->id);
+        $this->areaManagerA->assignRole('spv');
 
         $this->adminA = $this->makeUser('Admin Cabang A', 'admin-a@example.com', $this->branchA->id);
         $this->adminA->assignRole('admin');
@@ -121,6 +128,101 @@ class CrmWebTest extends TestCase
             ->assertDontSee('Cabang B')
             ->assertDontSee('Sales B')
             ->assertDontSee('Toko B');
+    }
+
+    public function test_area_manager_crm_shows_visit_presence_and_outside_checkout_for_own_team(): void
+    {
+        $visit = VisitLog::where('user_id', $this->salesA->id)->whereNotNull('checkout_at')->firstOrFail();
+        $visit->update([
+            'checkout_location' => new Point(-6.1988, 106.8),
+            'checkin_radius_status' => 'inside_radius',
+            'checkout_radius_status' => 'outside_radius',
+            'checkout_accuracy' => 10,
+            'checkout_distance' => 133.4,
+            'inside_radius_seconds' => 600,
+            'outside_radius_seconds' => 120,
+            'unmeasured_seconds' => 480,
+            'presence_status' => 'complete',
+        ]);
+
+        $this->actingAs($this->areaManagerA)
+            ->get('/crm?date_from=2026-06-16&date_to=2026-06-16')
+            ->assertOk()
+            ->assertSee('Estimasi dalam radius')
+            ->assertSee('Di luar radius')
+            ->assertSee('Tidak terukur')
+            ->assertDontSee('Toko B');
+    }
+
+    public function test_area_manager_can_log_in_and_only_see_assigned_branch(): void
+    {
+        $this->post('/crm/login', [
+            'username' => 'area-manager-a@example.com',
+            'password' => 'password',
+        ])->assertRedirect(route('crm.dashboard'));
+
+        $this->get('/crm?date_from=2026-06-16&date_to=2026-06-16')
+            ->assertOk()
+            ->assertViewHas('dashboard', fn (array $dashboard) => $dashboard['overview']['total_visits'] === 2
+                && $dashboard['branch_performance']->count() === 1
+                && $dashboard['branch_performance']->first()['team_id'] === $this->branchA->id)
+            ->assertSee('Cabang A')
+            ->assertSee('Sales A')
+            ->assertDontSee('Semua cabang')
+            ->assertDontSee('Cabang B')
+            ->assertDontSee('Sales B')
+            ->assertDontSee('Toko B');
+    }
+
+    public function test_area_manager_cannot_request_another_branch_or_sales_in_crm(): void
+    {
+        $this->actingAs($this->areaManagerA);
+
+        foreach (['/crm', '/crm/reports/visits/export', '/crm/reports/sales-summary/export'] as $path) {
+            $this->get($path.'?team_id='.$this->branchB->id)->assertForbidden();
+            $this->get($path.'?user_id='.$this->salesB->id)->assertForbidden();
+        }
+    }
+
+    public function test_area_manager_exports_only_assigned_branch_data(): void
+    {
+        Excel::fake();
+        $this->actingAs($this->areaManagerA);
+
+        $query = '?date_from=2026-06-16&date_to=2026-06-16';
+
+        $this->get('/crm/reports/visits/export'.$query)->assertOk();
+        Excel::assertDownloaded('crm-laporan-kunjungan-2026-06-16-sd-2026-06-16.xlsx', function (VisitReportExport $export) {
+            $visits = $export->collection();
+
+            return $visits->contains('user_id', $this->salesA->id)
+                && ! $visits->contains('user_id', $this->salesB->id);
+        });
+
+        $this->get('/crm/reports/sales-summary/export'.$query)->assertOk();
+        Excel::assertDownloaded('crm-summary-sales-2026-06-16-sd-2026-06-16.xlsx', function (SalesSummaryExport $export) {
+            $sales = $export->collection();
+
+            return $sales->contains('user_id', $this->salesA->id)
+                && ! $sales->contains('user_id', $this->salesB->id);
+        });
+    }
+
+    public function test_area_manager_without_branch_cannot_open_crm_or_exports(): void
+    {
+        $unassigned = $this->makeUser('Area Manager Tanpa Cabang', 'unassigned-area-manager@example.com');
+        $unassigned->assignRole('spv');
+
+        $this->post('/crm/login', [
+            'username' => 'unassigned-area-manager@example.com',
+            'password' => 'password',
+        ])->assertSessionHasErrors('username');
+
+        $this->actingAs($unassigned);
+
+        foreach (['/crm', '/crm/reports/visits/export', '/crm/reports/sales-summary/export'] as $path) {
+            $this->get($path)->assertForbidden();
+        }
     }
 
     public function test_sales_user_cannot_access_crm_web(): void

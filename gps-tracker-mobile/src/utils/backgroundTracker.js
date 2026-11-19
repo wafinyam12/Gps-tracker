@@ -4,6 +4,8 @@ import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 import { canTrackLocation } from './roles';
 import { offlineQueue } from './offlineQueue';
+import { visitSampleQueue } from './visitSampleQueue';
+import { visitTrackingOptions } from './visitSampleQueueCore';
 import { logEvent } from './diagnosticLogger';
 
 const LOCATION_TRACKING_TASK = 'background-location-tracking';
@@ -35,7 +37,7 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
     }
     if (data) {
       const { locations } = data;
-      const location = locations[0];
+      const location = locations?.[locations.length - 1];
       if (location) {
         try {
           const user = await getStoredUser();
@@ -46,6 +48,14 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
           if (consent !== 'accepted') {
             await stopBackgroundTracking();
             return;
+          }
+
+          for (const sampleLocation of locations) {
+            try {
+              await visitSampleQueue.capture(String(user.id), sampleLocation);
+            } catch (storageError) {
+              logEvent('tracking.visit_sample_save_failed', { error_code: storageError?.code });
+            }
           }
 
           // Ping ke server
@@ -59,11 +69,17 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
             is_mock_location: location.mocked || false,
           });
 
-          // A running foreground location service gives pending offline visits
-          // another opportunity to leave the device without user interaction.
-          await offlineQueue.processQueue({ silent: true });
         } catch (e) {
           logEvent('tracking.background_ping_failed', { status: e.response?.status, error_code: e.code });
+        }
+        try {
+          const user = await getStoredUser();
+          if (canTrackLocation(user)) {
+            await offlineQueue.processQueue({ silent: true });
+            await visitSampleQueue.flush(String(user.id));
+          }
+        } catch (syncError) {
+          logEvent('tracking.visit_sample_sync_failed', { status: syncError?.response?.status, error_code: syncError?.code });
         }
       }
     }
@@ -73,8 +89,19 @@ if (typeof TaskManager.isTaskDefined !== 'function' || !TaskManager.isTaskDefine
 // 2. Fungsi untuk menyalakan background tracking
 export const startBackgroundTracking = async () => {
   try {
-    if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK)) {
+    const user = await getStoredUser();
+    if (!canTrackLocation(user)) return false;
+    const consent = await SecureStore.getItemAsync(`background_location_consent_${user.id}`);
+    if (consent !== 'accepted') return false;
+    const activeVisit = await visitSampleQueue.activeVisit(String(user.id));
+    const mode = activeVisit ? 'visit' : 'general';
+    const modeKey = `location_tracking_mode_${user.id}`;
+    const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK);
+    if (started && await SecureStore.getItemAsync(modeKey) === mode) {
       return true;
+    }
+    if (started) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
     }
 
     const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
@@ -89,16 +116,18 @@ export const startBackgroundTracking = async () => {
       return false;
     }
 
+    const cadence = visitTrackingOptions(Boolean(activeVisit));
     await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
-      accuracy: Location.Accuracy.Balanced,
-      timeInterval: 300000, // Tiap 5 menit jika background untuk hemat baterai
-      distanceInterval: 50,  // Atau tiap 50 meter
+      accuracy: cadence.accuracy === 'high' ? Location.Accuracy.High : Location.Accuracy.Balanced,
+      timeInterval: cadence.timeInterval,
+      distanceInterval: cadence.distanceInterval,
       foregroundService: {
         notificationTitle: "GPS Tracker Aktif",
         notificationBody: "Melacak posisi untuk visit harian",
-        notificationColor: "#FF0000",
+        notificationColor: "#456F68",
       },
     });
+    await SecureStore.setItemAsync(modeKey, mode);
     logEvent('tracking.started');
 
     return true;
@@ -122,3 +151,5 @@ export const stopBackgroundTracking = async () => {
     return false;
   }
 };
+
+export const isBackgroundTrackingActive = () => Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK);

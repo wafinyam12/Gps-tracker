@@ -19,6 +19,11 @@ import { evaluateVisitLocation } from '../utils/locationIntegrity';
 import { logEvent } from '../utils/diagnosticLogger';
 import { confirmLocationDisclosure } from '../utils/locationDisclosure';
 import { offlineQueue } from '../utils/offlineQueue';
+import { visitSampleQueue } from '../utils/visitSampleQueue';
+import { startBackgroundTracking } from '../utils/backgroundTracker';
+import { evaluateStartRadius, capturedStoreReference } from '../utils/visitRadiusDecision';
+import { useAuth } from '../context/AuthContext';
+import { getRoleName } from '../utils/roles';
 import OpenStreetMapView from '../components/maps/OpenStreetMapView';
 import AppScreen from '../components/ui/AppScreen';
 import VisitHeader from '../components/visit/VisitHeader';
@@ -55,6 +60,7 @@ const normalizeStore = (store) => ({
   geofence_radius: store.geofence_radius,
   status: store.status,
   has_location: Boolean(store.has_location),
+  sales_owner_name: typeof store.sales_owner_name === 'string' ? store.sales_owner_name.trim() : '',
 });
 
 const distanceBetweenMeters = (first, second) => {
@@ -109,6 +115,8 @@ const dedupeStores = (items) => {
 };
 
 const StartVisitScreen = ({ navigation }) => {
+  const { user } = useAuth();
+  const showSalesOwner = getRoleName(user) === 'spv';
   const requestSeqRef = useRef(0);
   const [search, setSearch] = useState('');
   const [location, setLocation] = useState(null);
@@ -311,6 +319,12 @@ const StartVisitScreen = ({ navigation }) => {
       return;
     }
 
+    const radiusDecision = evaluateStartRadius(store, integrity.payload);
+    if (!radiusDecision.canStart) {
+      Alert.alert('Lokasi Check-in', radiusDecision.message);
+      return;
+    }
+
     const clientUuid = offlineQueue.createUuid();
     const startPayload = {
       store_id: store.id,
@@ -324,6 +338,7 @@ const StartVisitScreen = ({ navigation }) => {
       is_mock_location: integrity.payload.is_mock_location,
       location_recorded_at: integrity.payload.location_recorded_at,
       client_uuid: clientUuid,
+      ...capturedStoreReference(store),
     };
 
     setStarting(true);
@@ -332,13 +347,25 @@ const StartVisitScreen = ({ navigation }) => {
 
       const payload = response.data || {};
       const warning = payload.warning || response.message || '';
+      let trackingWarning = '';
+
+      try {
+        await visitSampleQueue.begin(String(user.id), { serverVisitId: payload.visit_log_id, startedAt: startPayload.location_recorded_at });
+        await visitSampleQueue.capture(String(user.id), currentLocation);
+        if (!await startBackgroundTracking()) {
+          trackingWarning = 'Aktifkan izin lokasi latar belakang agar waktu di radius dapat diperkirakan saat layar terkunci.';
+        }
+      } catch (trackingError) {
+        logEvent('visit.presence_start_failed', { error_code: trackingError?.code });
+        trackingWarning = 'Pengukuran lokasi belum aktif. Visit tetap dimulai, tetapi waktu di area customer mungkin tidak terukur.';
+      }
 
       navigation.push('VisitForm', {
         visitLogId: payload.visit_log_id,
       });
 
-      if (warning) {
-        Alert.alert('Info Visit', warning);
+      if (warning || trackingWarning) {
+        Alert.alert('Info Visit', [warning, trackingWarning].filter(Boolean).join('\n\n'));
       }
     } catch (error) {
       logEvent('visit.start_failed', { status: error.response?.status, error_code: error.code });
@@ -366,6 +393,13 @@ const StartVisitScreen = ({ navigation }) => {
       if (!reachable || !error.response) {
         try {
           const queued = await offlineQueue.enqueueVisitStart(startPayload, clientUuid);
+          try {
+            await visitSampleQueue.begin(String(user.id), { localVisitId: queued.localVisitId, startedAt: startPayload.location_recorded_at });
+            await visitSampleQueue.capture(String(user.id), currentLocation);
+            await startBackgroundTracking();
+          } catch (trackingError) {
+            logEvent('visit.offline_presence_start_failed', { error_code: trackingError?.code });
+          }
           navigation.push('VisitForm', {
             offlineVisit: {
               ...queued,
@@ -452,6 +486,7 @@ const StartVisitScreen = ({ navigation }) => {
     return (
       <VisitStoreRow
         store={item}
+        showSalesOwner={showSalesOwner}
         selected={selectedStore?.id === item.id}
         starting={starting}
         distanceMeters={distanceMeters}

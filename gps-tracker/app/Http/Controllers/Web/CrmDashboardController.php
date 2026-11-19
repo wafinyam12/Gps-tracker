@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Web;
 use App\Exports\SalesSummaryExport;
 use App\Exports\VisitReportExport;
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Services\Crm\CrmAnalyticsService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -89,6 +90,19 @@ class CrmDashboardController extends Controller
         ]);
 
         $filters = array_merge($defaults, array_filter($validated, fn ($value) => $value !== null && $value !== ''));
+
+        $viewer = $request->user();
+        if ($viewer?->hasRole('spv')) {
+            $teamId = $viewer->team_id;
+            abort_if($teamId === null, 403, 'Area Manager harus memiliki cabang.');
+            abort_if($filters['team_id'] !== null && (int) $filters['team_id'] !== (int) $teamId, 403);
+            abort_if($filters['user_id'] !== null && ! User::query()
+                ->whereKey($filters['user_id'])
+                ->where('team_id', $teamId)
+                ->exists(), 403);
+
+            $filters['team_id'] = (int) $teamId;
+        }
 
         if (! isset($filters['date_to']) || ! $filters['date_to']) {
             $filters['date_to'] = Carbon::parse($filters['date_from'], self::LOCAL_TIMEZONE)->toDateString();

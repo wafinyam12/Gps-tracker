@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -34,7 +34,7 @@ const HomeScreen = () => {
     disableBackgroundLocationTracking,
   } = useAuth();
   const navigation = useNavigation();
-  const { isTracking, startTracking } = useLocationTracker();
+  const { isTracking, startTracking, stopTracking } = useLocationTracker();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,11 +58,18 @@ const HomeScreen = () => {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
     if (canVisit && locationConsentGranted && backgroundTrackingEnabled) {
-      startTracking();
+      startTracking().then(() => {
+        if (cancelled) stopTracking();
+      }).catch((error) => logEvent('tracking.home_start_failed', { error_code: error?.code }));
     }
-  }, [backgroundTrackingEnabled, canVisit, locationConsentGranted, startTracking]);
+    return () => {
+      cancelled = true;
+      stopTracking();
+    };
+  }, [backgroundTrackingEnabled, canVisit, locationConsentGranted, startTracking, stopTracking]));
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
