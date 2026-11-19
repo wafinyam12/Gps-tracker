@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Store;
+use App\Models\SapCoordinateSync;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
+use App\Services\Stores\StoreCoordinateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Pagination\LengthAwarePaginator;
 use MatanYadaev\EloquentSpatial\Objects\Point;
@@ -138,6 +140,61 @@ class CrmStoreManagementTest extends TestCase
 
         $this->assertNull($this->storeA->fresh()->location);
         $this->assertDatabaseCount('store_coordinate_changes', 0);
+    }
+
+    public function test_master_store_pages_show_unvisited_store_and_link_from_dashboard(): void
+    {
+        $this->actingAs($this->admin)
+            ->get('/crm/stores')
+            ->assertOk()
+            ->assertSee('Toko A')
+            ->assertSee('BP-A')
+            ->assertSee('Belum ada koordinat');
+
+        $this->get('/crm')
+            ->assertOk()
+            ->assertSee('Master Toko')
+            ->assertSee(route('crm.stores.index'), false);
+    }
+
+    public function test_detail_shows_photo_candidate_manual_history_and_sap_status(): void
+    {
+        $photo = $this->photoFor($this->storeA, new Point(-7.973899, 112.748395));
+        app(StoreCoordinateService::class)->setManual(
+            $this->storeA, $this->admin, $photo->location, 30,
+            'Foto tampak depan diperiksa admin.', $photo,
+        );
+        SapCoordinateSync::create([
+            'team_id' => $this->branchA->id,
+            'store_id' => $this->storeA->id,
+            'db_sap' => 'TEST',
+            'cardcode' => 'BP-A',
+            'latitude' => -7.973899,
+            'longitude' => 112.748395,
+            'source' => 'visit_observation',
+            'status' => 'no_change',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get('/crm/stores/'.$this->storeA->id)
+            ->assertOk()
+            ->assertSee('-7.973899')
+            ->assertSee('Akurasi GPS foto lama tidak tersedia')
+            ->assertSee('Gunakan titik foto')
+            ->assertSee('Foto tampak depan diperiksa admin.')
+            ->assertSee('no_change')
+            ->assertSee('name="latitude"', false)
+            ->assertSee('Simpan Koreksi');
+    }
+
+    public function test_manager_can_review_master_without_an_edit_form(): void
+    {
+        $this->actingAs($this->manager)
+            ->get('/crm/stores/'.$this->storeA->id)
+            ->assertOk()
+            ->assertSee('Titik master')
+            ->assertDontSee('Simpan Koreksi')
+            ->assertDontSee('name="latitude"', false);
     }
 
     private function payload(): array

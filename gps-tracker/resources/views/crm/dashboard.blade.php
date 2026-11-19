@@ -982,6 +982,7 @@
                         <h2>Analisis Toko</h2>
                         <p>Lihat customer yang paling sering dikunjungi dan kualitas aktivitas visit pada level toko.</p>
                     </div>
+                    <a class="btn btn-primary" href="{{ route('crm.stores.index') }}">Master Toko</a>
                     <span class="badge">{{ count($dashboard['store_analysis']) }} toko</span>
                 </div>
 

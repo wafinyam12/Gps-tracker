@@ -9,6 +9,7 @@ use App\Models\Team;
 use App\Models\VisitLog;
 use App\Models\VisitPhoto;
 use App\Services\Stores\StoreCoordinateService;
+use App\Services\Visits\VisitPhotoUrlService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -16,8 +17,10 @@ use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class CrmStoreController extends Controller
 {
-    public function __construct(private readonly StoreCoordinateService $coordinates)
-    {
+    public function __construct(
+        private readonly StoreCoordinateService $coordinates,
+        private readonly VisitPhotoUrlService $photoUrls,
+    ) {
     }
 
     public function index(Request $request)
@@ -82,6 +85,9 @@ class CrmStoreController extends Controller
             ->latest('id')
             ->limit(12)
             ->get();
+        $photoPreviewUrls = $recentPhotos->mapWithKeys(fn (VisitPhoto $photo) => [
+            $photo->id => $this->photoUrls->temporaryPreviewUrl($photo),
+        ]);
         $coordinateChanges = $store->coordinateChanges()
             ->with(['actor', 'photo'])
             ->latest('id')
@@ -94,7 +100,7 @@ class CrmStoreController extends Controller
         $canEdit = $viewer->hasAnyRole(['admin', 'superadmin']);
 
         return view('crm.stores.show', compact(
-            'store', 'viewer', 'recentVisits', 'recentPhotos', 'coordinateChanges', 'sapSync', 'canEdit',
+            'store', 'viewer', 'recentVisits', 'recentPhotos', 'photoPreviewUrls', 'coordinateChanges', 'sapSync', 'canEdit',
         ));
     }
 
