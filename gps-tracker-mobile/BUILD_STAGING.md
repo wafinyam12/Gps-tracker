@@ -76,8 +76,67 @@ Use the staging channel with the matching EAS Environment:
 npx eas-cli update --branch staging --platform android --environment preview --message "Deskripsi perubahan"
 ```
 
-Changes to native dependencies, Android permissions, runtime version, or app
-version require a new APK build; they cannot be delivered through OTA.
+### Support OTA untuk runtime 1.1.5 dan 1.1.6
+
+Build lama `1.1.5` meminta runtime `1.1.5`; APK staging baru `1.1.6` meminta
+runtime `1.1.6`. Konfigurasi saat ini memakai `runtimeVersion.policy=appVersion`,
+jadi perintah OTA biasa dari source ini hanya menerbitkan update untuk runtime
+`1.1.6`. Channel dan branch tetap `staging`; Expo hanya mengirim update yang
+runtime-nya cocok dengan APK terpasang.
+
+Untuk perubahan JavaScript/UI yang kompatibel dengan native code kedua APK,
+terbitkan update yang sama dua kali:
+
+1. Di `app.json`, ubah sementara `expo.runtimeVersion` menjadi string
+   `"1.1.5"`. Jangan ubah `expo.version` (`1.1.6`) atau `android.versionCode`
+   (`9`).
+2. Dari folder `gps-tracker-mobile`, terbitkan update untuk runtime lama:
+
+   ```powershell
+   npx.cmd eas-cli update --branch staging --platform android --environment preview --message "Deskripsi perubahan - runtime 1.1.5"
+   ```
+
+   Pastikan output EAS menyebut runtime `1.1.5`.
+3. Kembalikan `expo.runtimeVersion` ke
+   `{ "policy": "appVersion" }`. Dengan `expo.version` `1.1.6`, konfigurasi
+   ini menghasilkan runtime `1.1.6`.
+4. Terbitkan bundle yang sama untuk runtime baru:
+
+   ```powershell
+   npx.cmd eas-cli update --branch staging --platform android --environment preview --message "Deskripsi perubahan - runtime 1.1.6"
+   ```
+
+   Pastikan output EAS menyebut runtime `1.1.6`.
+5. Periksa kedua update di branch staging:
+
+   ```powershell
+   npx.cmd eas-cli update:list --branch staging --platform android --runtime-version 1.1.5
+   npx.cmd eas-cli update:list --branch staging --platform android --runtime-version 1.1.6
+   ```
+
+Jangan commit atau membiarkan override `"1.1.5"` di `app.json`; sebelum build
+APK berikutnya, pastikan kembali ada policy `appVersion`. Terapkan proses dua
+kali hanya jika bundle tetap kompatibel dengan native code pada APK `1.1.5`
+dan `1.1.6`. Perubahan native seperti dependency, permission, atau konfigurasi
+native membutuhkan APK baru; jangan kirim JavaScript yang bergantung pada API
+native baru ke runtime lama.
+
+Terus layani kedua runtime sampai versi lama resmi dihentikan. Saat rilis baru
+membutuhkan instalasi ulang atau native runtime baru, distribusikan APK baru,
+beri tahu pengguna agar menyinkronkan kunjungan offline sebelum uninstall
+(uninstall menghapus antrean lokal terenkripsi), lalu hentikan publikasi OTA
+untuk runtime `1.1.5` dan `1.1.6` setelah pengguna diwajibkan pindah. Kebutuhan
+build baru ditentukan oleh kompatibilitas native, bukan semata-mata nomor versi
+major.
+
+Referensi: [runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)
+dan [EAS CLI](https://docs.expo.dev/eas/cli/).
+
+Changes to native dependencies, Android permissions, or native configuration
+require a new APK because OTA cannot add or change native code. An app-version
+change can still receive a compatibility OTA when explicitly published for its
+existing runtime. If a release introduces a new runtime, distribute a new APK
+for users to move to that runtime.
 
 ### Sales visit UI update (17 November 2026)
 
