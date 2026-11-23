@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ArrowRight, Navigation, UserRound } from 'lucide-react-native';
 import { canOpenRoute } from '../../utils/maps';
-import { getStoreDistanceLabel } from '../../utils/visitStorePresentation';
+import { getStoreDistanceLabel, getStoreOwnerLabel } from '../../utils/visitStorePresentation';
 import { visitColors, visitRadii, visitSpacing, visitType } from '../../styles/visitTheme';
 
 const VisitStoreRow = ({ store, showSalesOwner = false, selected, starting, distanceMeters, onSelect, onStart, onRoute }) => {
@@ -26,7 +26,7 @@ const VisitStoreRow = ({ store, showSalesOwner = false, selected, starting, dist
           <View style={styles.ownerRow}>
             <UserRound size={15} color={visitColors.primary} />
             <Text style={styles.ownerText}>
-              Sales: {store?.sales_owner_name || 'Nama belum tersedia'}
+              {getStoreOwnerLabel(store)}
             </Text>
           </View>
         ) : null}

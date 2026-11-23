@@ -42,7 +42,7 @@
     "web": "expo start --web",
     "doctor": "expo install --check",
     "check": "npm run doctor",
-    "test:offline": "node --test tests/offlineDataMigration.test.mjs tests/sqlcipherPhotoRepository.test.mjs tests/encryptedMigrationCommit.test.mjs tests/kycDraftMigration.test.mjs tests/photoSaveCoordinator.test.mjs tests/userFormValidation.test.mjs tests/visitPhotoMetadata.test.mjs"
+    "test:offline": "node --test tests/offlineDataMigration.test.mjs tests/sqlcipherPhotoRepository.test.mjs tests/encryptedMigrationCommit.test.mjs tests/kycDraftMigration.test.mjs tests/photoSaveCoordinator.test.mjs tests/userFormValidation.test.mjs tests/userSapCode.test.mjs tests/visitStorePresentation.test.mjs tests/visitPhotoMetadata.test.mjs"
   },
   "private": true
 }

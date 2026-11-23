@@ -35,6 +35,7 @@ Untuk menjalankan proyek secara lokal:
 [Desain dan rencana implementasi](history/README.md) menjelaskan alasan perubahan dan langkah yang pernah direncanakan. Dokumen tersebut adalah riwayat pekerjaan; untuk menjalankan rilis gunakan panduan aktif di atas dan periksa status staging terbaru yang tertulis di dalamnya.
 
 Spesifikasi fitur: [pengelolaan koordinat master toko di CRM](superpowers/specs/2026-11-19-store-coordinate-management-design.md).
+Spesifikasi tambahan: [customer SAP milik Area Manager](superpowers/specs/2026-11-23-area-manager-own-customers-design.md).
 
 - [Template UAT mobile versi 1.1.0](history/uat/mobile-uat-v1.1.0.md) — contoh kasus uji lama; sesuaikan sebelum digunakan pada APK baru.
 - [Pelaksanaan hardening mobile](security/mobile-security-hardening-execution.md) dan [UAT hardening](security/uat-mobile-security-hardening.md) — catatan keamanan dari Oktober 2026.

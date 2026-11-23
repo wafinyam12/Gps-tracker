@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\VisitLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -119,6 +120,166 @@ class AreaManagerCustomerVisitTest extends TestCase
             ->assertJsonPath('data.meta.visible_stores', 2);
 
         Http::assertNothingSent();
+    }
+
+    public function test_area_manager_own_sap_customer_appears_beside_sales_customers_and_can_be_visited(): void
+    {
+        $own = $this->branch('OWN-AM');
+        $other = $this->branch('OTHER-AM');
+        $manager = $this->user('spv', $own, '50');
+        $manager->update(['name' => 'AM Utomo']);
+        $sales = $this->user('sales', $own, '47');
+        $sales->update(['name' => 'Sales Utomo']);
+        $amCustomer = $this->customer('AM-50', $own, '50');
+        $this->customer('SALES-47', $own, '47');
+        $this->customer('OTHER-50', $other, '50');
+
+        $this->actingAs($manager, 'sanctum');
+        $items = collect($this->getJson('/api/v1/stores/available?page=1&per_page=25')
+            ->assertOk()->assertJsonCount(2, 'data.items')->json('data.items'));
+        $this->assertEqualsCanonicalizing(['AM-50', 'SALES-47'], $items->pluck('external_bp_code')->all());
+        $this->assertSame('AM Utomo', $items->firstWhere('external_bp_code', 'AM-50')['sales_owner_name']);
+        $this->assertSame('spv', $items->firstWhere('external_bp_code', 'AM-50')['owner_role']);
+        $this->assertSame('sales', $items->firstWhere('external_bp_code', 'SALES-47')['owner_role']);
+
+        $this->getJson('/api/v1/stores/map-markers?south=-6.3&north=-6.1&west=106.7&east=106.9&zoom=15')
+            ->assertOk()->assertJsonPath('data.meta.visible_stores', 2);
+        $this->postJson('/api/v1/visit/start', [
+            'store_id' => $amCustomer->id, 'latitude' => -6.2,
+            'longitude' => 106.8, 'accuracy' => 10,
+        ])->assertStatus(201)->assertJsonPath('data.store.id', $amCustomer->id);
+        $this->assertSame($manager->id, VisitLog::sole()->user_id);
+        $this->assertSame('50', $amCustomer->fresh()->sap_slp_code);
+        Http::assertNothingSent();
+    }
+
+    public function test_superadmin_can_save_optional_sap_code_for_area_manager(): void
+    {
+        Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
+        $superadmin = $this->user('superadmin', null);
+        $branch = $this->branch('AM-USER');
+        $payload = [
+            'name' => 'AM Baru', 'username' => 'am-baru', 'email' => 'am-baru@example.com',
+            'password' => 'password123', 'team_id' => $branch->id,
+            'role' => 'spv', 'slpCode' => '50',
+        ];
+
+        $created = $this->actingAs($superadmin, 'sanctum')
+            ->postJson('/api/v1/users', $payload)
+            ->assertStatus(201)->assertJsonPath('data.user.slp_code', '50');
+        $id = $created->json('data.user.id');
+        $this->assertDatabaseHas('users', ['id' => $id, 'slpCode' => '50']);
+
+        $this->putJson('/api/v1/users/'.$id, [
+            ...$payload, 'password' => '', 'slpCode' => '51',
+        ])->assertOk()->assertJsonPath('data.user.slp_code', '51');
+
+        $this->putJson('/api/v1/users/'.$id, [
+            ...$payload, 'password' => '', 'slpCode' => null,
+        ])->assertOk()->assertJsonPath('data.user.slp_code', null);
+    }
+
+    public function test_area_manager_code_may_match_a_sales_code_in_another_branch_only(): void
+    {
+        Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
+        $superadmin = $this->user('superadmin', null);
+        $firstBranch = $this->branch('CODE-A');
+        $secondBranch = $this->branch('CODE-B');
+        $this->user('sales', $firstBranch, '50');
+        $payload = [
+            'name' => 'AM Cabang B', 'username' => 'am-cabang-b',
+            'email' => 'am-cabang-b@example.com', 'password' => 'password123',
+            'team_id' => $secondBranch->id, 'role' => 'spv', 'slpCode' => '50',
+        ];
+
+        $this->actingAs($superadmin, 'sanctum')
+            ->postJson('/api/v1/users', $payload)
+            ->assertStatus(201)->assertJsonPath('data.user.slp_code', '50');
+        $this->postJson('/api/v1/users', [
+            ...$payload, 'username' => 'am-cabang-a',
+            'email' => 'am-cabang-a@example.com', 'team_id' => $firstBranch->id,
+        ])->assertStatus(422)->assertJsonValidationErrors('slpCode');
+    }
+
+    public function test_area_manager_catalog_syncs_own_code_without_deactivating_sales_customers(): void
+    {
+        $branch = $this->branch('AM-SYNC');
+        $manager = $this->user('spv', $branch, '50');
+        $this->user('sales', $branch, '47');
+        $salesCustomer = $this->customer('SALES-47', $branch, '47');
+        Http::fake([
+            'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_AM-SYNC/50' => Http::response([
+                'status' => 'success',
+                'data' => [[
+                    'Sales Code' => '50', 'Customer Code' => 'AM-50',
+                    'Customer Name' => 'Customer AM Sendiri',
+                    'Customer Address' => 'Jl. Toko AM', 'Invoices' => [],
+                ]],
+            ], 200),
+        ]);
+
+        $this->actingAs($manager, 'sanctum')
+            ->getJson('/api/v1/stores/available')
+            ->assertOk()->assertJsonCount(2, 'data');
+        $this->assertDatabaseHas('stores', [
+            'team_id' => $branch->id, 'external_bp_code' => 'AM-50',
+            'sap_slp_code' => '50', 'status' => 'active',
+        ]);
+        $this->assertSame('active', $salesCustomer->fresh()->status);
+        Http::assertSentCount(1);
+    }
+
+    public function test_empty_am_catalog_is_not_fetched_again_while_fresh(): void
+    {
+        $branch = $this->branch('AM-EMPTY');
+        $manager = $this->user('spv', $branch, '50');
+        $this->user('sales', $branch, '47');
+        $this->customer('SALES-47', $branch, '47');
+        $endpoint = 'https://ite-sap.utomodeck.com/sap/api/v1/cs-outstanding-receivable/SAP_AM-EMPTY/50';
+        Http::fake([$endpoint => Http::response(['status' => 'success', 'data' => []], 200)]);
+
+        $this->actingAs($manager, 'sanctum')->getJson('/api/v1/stores/available')->assertOk();
+        Cache::forget('sap:outstanding-receivable:v4:'.sha1($endpoint));
+        $this->getJson('/api/v1/stores/available')->assertOk();
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_existing_same_branch_code_can_remain_when_editing_historical_am(): void
+    {
+        Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
+        $superadmin = $this->user('superadmin', null);
+        $branch = $this->branch('AM-LEGACY');
+        $this->user('sales', $branch, '50');
+        $manager = $this->user('spv', $branch, '50');
+
+        $this->actingAs($superadmin, 'sanctum')
+            ->putJson('/api/v1/users/'.$manager->id, [
+                'name' => 'AM Diperbarui', 'username' => $manager->username,
+                'email' => $manager->email, 'password' => '',
+                'team_id' => $branch->id, 'role' => 'spv', 'slpCode' => '50',
+            ])->assertOk()->assertJsonPath('data.user.slp_code', '50');
+    }
+
+    public function test_whitespace_cannot_create_another_account_for_the_same_sap_code(): void
+    {
+        Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
+        $superadmin = $this->user('superadmin', null);
+        $branch = $this->branch('CODE-SPACES');
+        $this->user('sales', $branch, '47');
+
+        $this->actingAs($superadmin, 'sanctum')
+            ->postJson('/api/v1/users', [
+                'name' => 'AM Spasi', 'username' => 'am-spasi',
+                'email' => 'am-spasi@example.com', 'password' => 'password123',
+                'team_id' => $branch->id, 'role' => 'spv', 'slpCode' => ' 47 ',
+            ])->assertStatus(422)->assertJsonValidationErrors('slpCode');
+
+        $this->postJson('/api/v1/users', [
+            'name' => 'AM Spasi', 'username' => 'am-spasi',
+            'email' => 'am-spasi@example.com', 'password' => 'password123',
+            'team_id' => $branch->id, 'role' => 'spv', 'slpCode' => ' 51 ',
+        ])->assertStatus(201)->assertJsonPath('data.user.slp_code', '51');
     }
 
     public function test_sales_customer_list_does_not_include_other_sales_owner_names(): void

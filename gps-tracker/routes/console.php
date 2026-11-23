@@ -18,7 +18,7 @@ Schedule::call(function () {
         ->where('is_active', true)
         ->whereNotNull('team_id')
         ->whereNotNull('slpCode')
-        ->whereHas('roles', fn ($query) => $query->where('name', 'sales'))
+        ->whereHas('roles', fn ($query) => $query->whereIn('name', ['sales', 'spv']))
         ->orderBy('id')
         ->chunkById(100, function ($users) {
             foreach ($users as $user) {

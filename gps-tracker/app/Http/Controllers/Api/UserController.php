@@ -85,7 +85,7 @@ class UserController extends Controller
                 'password'    => Hash::make($request->password),
                 'phone'       => $request->phone,
                 'employee_id' => $request->employee_id,
-                'slpCode'     => $request->role === 'sales' ? $request->slpCode : null,
+                'slpCode'     => in_array($request->role, ['sales', 'spv'], true) ? $request->slpCode : null,
                 'team_id'     => $teamId,
                 'is_active'   => $request->boolean('is_active', true),
             ]);
@@ -134,7 +134,7 @@ class UserController extends Controller
             'email'       => $request->email,
             'phone'       => $request->phone,
             'employee_id' => $request->employee_id,
-            'slpCode'     => $request->role === 'sales' ? $request->slpCode : null,
+            'slpCode'     => in_array($request->role, ['sales', 'spv'], true) ? $request->slpCode : null,
             'team_id'     => $teamId,
             'is_active'   => $request->boolean('is_active', $user->is_active),
         ];

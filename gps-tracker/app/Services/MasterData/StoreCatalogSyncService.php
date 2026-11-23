@@ -94,14 +94,14 @@ class StoreCatalogSyncService
         return $query;
     }
 
-    /** @return array<string, string> SAP Sales code => names of active Sales in the AM's branch. */
+    /** @return array<string, string> SAP Sales code => owner name in the AM's branch. */
     public function areaManagerSalesOwnerNames(?User $user): array
     {
         if (! $this->isAreaManager($user) || $user->team_id === null) {
             return [];
         }
 
-        return User::query()
+        $names = User::query()
             ->where('team_id', (int) $user->team_id)
             ->where('is_active', true)
             ->whereHas('roles', fn (Builder $roles) => $roles->where('name', 'sales')->where('guard_name', 'web'))
@@ -116,11 +116,17 @@ class StoreCatalogSyncService
                 ->values()
                 ->implode(', '))
             ->all();
+
+        if ($user->is_active && $user->sapSalesCode()) {
+            $names[$user->sapSalesCode()] = trim((string) $user->name);
+        }
+
+        return $names;
     }
 
     public function warm(?User $user = null, bool $onlyActive = false): void
     {
-        if ($this->isAreaManager($user) || ! $this->hasSapCredentials($user)) {
+        if (! $this->hasSapCredentials($user)) {
             return;
         }
 
@@ -129,9 +135,29 @@ class StoreCatalogSyncService
 
     public function ensureCatalog(bool $onlyActive = false, ?User $user = null, bool $force = false): void
     {
-        // Area Managers read the Sales catalogs synchronized for their branch.
-        // They have no individual SAP catalog to refresh or reconcile.
+        // AMs share their branch Sales catalogs and may also own one SAP code.
         if ($this->isAreaManager($user)) {
+            if (! $this->hasSapCredentials($user)) {
+                return;
+            }
+
+            $identity = $this->resolveCatalogIdentity($user);
+            $ownRows = Store::query()
+                ->where('master_source', 'sap_outstanding_receivable')
+                ->where('team_id', (int) $user->team_id)
+                ->where('sap_slp_code', $this->sapSalesCode($user))
+                ->exists();
+
+            if (! $force && $this->hasFreshCatalog($identity)) {
+                return;
+            }
+
+            if (! $force && $ownRows) {
+                $this->scheduleWarmup($user, $onlyActive);
+                return;
+            }
+
+            $this->refreshCatalog($user, $onlyActive);
             return;
         }
 

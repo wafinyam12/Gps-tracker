@@ -140,6 +140,9 @@ class StoreController extends Controller
 
         if ($request->user()?->hasRole('spv')) {
             $data['sales_owner_name'] = $ownerNames[trim((string) $store->sap_slp_code)] ?? null;
+            $data['owner_role'] = $request->user()->sapSalesCode() === trim((string) $store->sap_slp_code)
+                ? 'spv'
+                : 'sales';
         }
 
         return $data;

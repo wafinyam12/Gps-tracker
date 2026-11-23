@@ -61,6 +61,7 @@ const normalizeStore = (store) => ({
   status: store.status,
   has_location: Boolean(store.has_location),
   sales_owner_name: typeof store.sales_owner_name === 'string' ? store.sales_owner_name.trim() : '',
+  owner_role: store.owner_role === 'spv' ? 'spv' : 'sales',
 });
 
 const distanceBetweenMeters = (first, second) => {

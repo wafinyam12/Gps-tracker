@@ -23,6 +23,7 @@ import PasswordInput from '../../components/ui/PasswordInput';
 import { useAuth } from '../../context/AuthContext';
 import { normalizePhoneNumber } from '../../utils/phone';
 import { formatUserValidationError, getUserFieldErrors } from '../../utils/userFormValidation';
+import { acceptsSapCode, requiresSapCode, sapCodeForPayload } from '../../utils/userSapCode';
 import { getRoleName } from '../../utils/roles';
 import { colors, radii, spacing } from '../../styles/theme';
 import { logEvent } from '../../utils/diagnosticLogger';
@@ -145,7 +146,7 @@ const UserFormScreen = () => {
       return;
     }
 
-    if (form.role === 'sales' && !trimmedSlpCode) {
+    if (requiresSapCode(form.role) && !trimmedSlpCode) {
       Alert.alert('Error', 'Kode sales SAP wajib diisi untuk role Sales');
       return;
     }
@@ -163,7 +164,7 @@ const UserFormScreen = () => {
         password: trimmedPassword,
         phone: normalizedPhone,
         employee_id: trimmedEmployeeId,
-        slpCode: form.role === 'sales' ? trimmedSlpCode : null,
+        slpCode: sapCodeForPayload(form.role, trimmedSlpCode),
         team_id: isBranchAdmin ? currentBranchId : (['sales', 'spv', 'admin'].includes(form.role) ? form.team_id : ''),
       };
 
@@ -369,7 +370,7 @@ const UserFormScreen = () => {
                       ...form,
                       role: val,
                       team_id: ['sales', 'spv', 'admin'].includes(val) ? form.team_id : '',
-                      slpCode: val === 'sales' ? form.slpCode : '',
+                      slpCode: acceptsSapCode(val) ? form.slpCode : '',
                     });
                     setFieldErrors((previous) => ({ ...previous, role: undefined, team_id: undefined }));
                     setSaveError('');
@@ -386,9 +387,9 @@ const UserFormScreen = () => {
             </View>
           )}
 
-          {form.role === 'sales' && (
+          {acceptsSapCode(form.role) && (
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Kode Sales SAP *</Text>
+              <Text style={styles.label}>Kode Sales SAP{requiresSapCode(form.role) ? ' *' : ' (opsional)'}</Text>
               <TextInput
                 style={styles.input}
                 value={form.slpCode}
@@ -397,7 +398,11 @@ const UserFormScreen = () => {
                 autoCapitalize="characters"
               />
               <FieldError message={fieldErrors.slpCode} />
-              <Text style={styles.subLabel}>Dipakai untuk mengambil customer dan outstanding dari SAP.</Text>
+              <Text style={styles.subLabel}>
+                {form.role === 'spv'
+                  ? 'Isi jika Area Manager mempunyai customer SAP atas nama sendiri.'
+                  : 'Dipakai untuk mengambil customer dan outstanding dari SAP.'}
+              </Text>
             </View>
           )}
 

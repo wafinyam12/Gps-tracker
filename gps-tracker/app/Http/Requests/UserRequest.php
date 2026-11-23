@@ -19,6 +19,11 @@ class UserRequest extends FormRequest
         $actor = $this->user();
         $isSuperAdmin = $actor?->hasRole('superadmin') === true;
         $isBranchAdmin = $actor?->hasRole('admin') === true;
+        $teamId = $isBranchAdmin ? $actor?->team_id : $this->input('team_id');
+        $currentUser = $this->route('user');
+        $unchangedCode = $currentUser
+            && (int) $currentUser->team_id === (int) $teamId
+            && trim((string) $this->input('slpCode')) === (string) $currentUser->sapSalesCode();
         $allowedRoles = $isSuperAdmin
             ? ['sales', 'spv', 'manager', 'admin', 'superadmin']
             : ['sales'];
@@ -32,11 +37,14 @@ class UserRequest extends FormRequest
             'employee_id' => ['nullable', 'string', 'max:50', Rule::unique('users', 'employee_id')->ignore($userId)],
             'slpCode'     => [
                 Rule::requiredIf(fn () => $role === 'sales'),
-                Rule::excludeIf(fn () => $role !== 'sales'),
+                Rule::excludeIf(fn () => ! in_array($role, ['sales', 'spv'], true)),
                 'nullable',
                 'string',
                 'max:50',
-                Rule::unique('users', 'slpCode')->ignore($userId),
+                ...($unchangedCode ? [] : [Rule::unique('users', 'slpCode')
+                    ->where('team_id', $teamId)
+                    ->whereNull('deleted_at')
+                    ->ignore($userId)]),
             ],
             'team_id'     => [
                 Rule::requiredIf(fn () => $isSuperAdmin && in_array($role, ['sales', 'spv', 'admin'], true)),

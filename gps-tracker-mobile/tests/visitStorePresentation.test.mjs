@@ -16,3 +16,9 @@ test('a store with coordinates distinguishes missing GPS from a measured distanc
   assert.equal(module.getStoreDistanceLabel(true, 350), '350 m dari lokasi Anda');
   assert.equal(module.getStoreDistanceLabel(true, 1250), '1,3 km dari lokasi Anda');
 });
+
+test('customer card names Area Manager ownership separately from Sales ownership', () => {
+  assert.equal(module.getStoreOwnerLabel({ owner_role: 'spv', sales_owner_name: 'AM Utomo' }), 'Area Manager: AM Utomo');
+  assert.equal(module.getStoreOwnerLabel({ owner_role: 'sales', sales_owner_name: 'Sales Utomo' }), 'Sales: Sales Utomo');
+  assert.equal(module.getStoreOwnerLabel({ sales_owner_name: 'Sales Lama' }), 'Sales: Sales Lama');
+});
