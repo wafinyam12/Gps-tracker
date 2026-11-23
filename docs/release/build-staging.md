@@ -169,9 +169,16 @@ Pada 19 November 2026, pengguna melaporkan pengujian langsung di perangkat
 sudah aman. Jalur yang terpasang saat uji (OTA atau APK build 10) belum dicatat.
 `app.json` telah dikembalikan ke `runtimeVersion.policy=appVersion`.
 
-### Rilis koordinat toko dan pembaruan CRM otomatis (belum dipublikasikan)
+### Rilis koordinat toko, CRM otomatis, dan customer AM (23 November 2026)
 
 Perubahan ini meliputi koreksi titik dan radius master toko dari CRM, pengisian master kosong dari GPS foto baru yang lolos pemeriksaan, GPS terpisah untuk setiap foto mobile, dan penyegaran CRM otomatis. Panduan penggunaan ada di [Koordinat Master Toko di CRM](../operations/store-coordinate-management.md).
+
+Pengguna melaporkan backend staging sudah dipindahkan ke hosting. OTA Android dari commit `df79915077924bfe36d9024dae13feefb65107cc` diterbitkan pada branch dan channel `staging` dengan EAS environment `preview`:
+
+- Runtime `1.1.5`: [group `f9b5e007-4bce-48be-b890-786fca9cf0f2`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f9b5e007-4bce-48be-b890-786fca9cf0f2), Android update ID `01a20640-c446-7045-b427-e2a378f39c89`.
+- Runtime `1.1.6`: [group `f6c5ccd9-b73f-4480-b565-f838bf1cde06`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f6c5ccd9-b73f-4480-b565-f838bf1cde06), Android update ID `01a20641-ffa6-7e83-8a35-977f05ed619b`.
+
+Kedua group muncul di `eas update:list` untuk runtime masing-masing. `app.json` kembali memakai `runtimeVersion.policy=appVersion`. Migrasi, perilaku backend setelah deploy, dan uji perangkat untuk rilis ini belum diverifikasi langsung dari sesi ini.
 
 Urutan rilis staging:
 
@@ -181,7 +188,7 @@ Urutan rilis staging:
 4. Uji di kedua runtime: ambil dua foto di titik berbeda, periksa titik dan akurasi masing-masing di CRM; ulangi saat offline lalu sinkronkan. Coba tanpa izin GPS: kamera tetap terbuka dan foto tersimpan, tetapi master tidak terisi otomatis. Periksa pilihan kamera depan/belakang dan isian form visit tetap ada saat kembali dari kamera.
 5. Untuk kasus foto lama seperti visit #66, pilih titik foto secara manual di CRM setelah memeriksa peta dan bukti. Data lama tidak mempunyai akurasi GPS per foto yang dapat diverifikasi. Kunjungan yang telah selesai tidak dihitung ulang.
 
-Hingga backend dan kedua OTA benar-benar dipublikasikan dan diuji di perangkat, bagian ini adalah prosedur rilis, bukan laporan bahwa fitur sudah tersedia bagi sales.
+Pemeriksaan fungsional di kedua runtime dan verifikasi migrasi backend pada langkah di atas masih perlu dilakukan.
 
 Karena build 9 di perangkat pengguna belum menampilkan OTA yang diharapkan,
 [APK staging 1.1.6 build 10](https://expo.dev/accounts/nyma/projects/sales-daily/builds/d529765d-bcad-438c-99f8-362194d47ebe)

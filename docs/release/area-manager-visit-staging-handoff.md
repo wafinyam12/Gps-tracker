@@ -23,7 +23,7 @@ The mobile source changes include `gps-tracker-mobile/src/screens/admin/UserForm
 
 The prepared JavaScript change was published to Android channel `staging` with EAS environment `preview` on 2026-11-18. Runtime version: `1.1.5`. Update group: `6b3bbbdd-0449-4c9c-944b-ec36678ed4d2`. Android update ID: `01a1ecae-202d-770e-ac23-8e4142b29f07`. EAS Dashboard: `https://expo.dev/accounts/nyma/projects/sales-daily/updates/6b3bbbdd-0449-4c9c-944b-ec36678ed4d2`.
 
-The 2026-11-18 update predates AM-owned SAP customers. The new user field, own-customer sync, and owner label are local source changes as of 2026-11-23 and have **not** been published to backend staging or OTA yet.
+The 2026-11-18 update predates AM-owned SAP customers. On 2026-11-23 the user reported deploying the backend to staging. Android OTA from commit `df79915` was published on channel `staging` for [runtime 1.1.5](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f9b5e007-4bce-48be-b890-786fca9cf0f2) and [runtime 1.1.6](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f6c5ccd9-b73f-4480-b565-f838bf1cde06). EAS lists both groups; the backend migration and AM device behavior still need direct staging verification.
 
 ## Staging check
 
