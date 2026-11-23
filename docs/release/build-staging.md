@@ -178,7 +178,7 @@ Pengguna melaporkan backend staging sudah dipindahkan ke hosting. OTA Android da
 - Runtime `1.1.5`: [group `f9b5e007-4bce-48be-b890-786fca9cf0f2`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f9b5e007-4bce-48be-b890-786fca9cf0f2), Android update ID `01a20640-c446-7045-b427-e2a378f39c89`.
 - Runtime `1.1.6`: [group `f6c5ccd9-b73f-4480-b565-f838bf1cde06`](https://expo.dev/accounts/nyma/projects/sales-daily/updates/f6c5ccd9-b73f-4480-b565-f838bf1cde06), Android update ID `01a20641-ffa6-7e83-8a35-977f05ed619b`.
 
-Kedua group muncul di `eas update:list` untuk runtime masing-masing. `app.json` kembali memakai `runtimeVersion.policy=appVersion`. Migrasi, perilaku backend setelah deploy, dan uji perangkat untuk rilis ini belum diverifikasi langsung dari sesi ini.
+Kedua group muncul di `eas update:list` untuk runtime masing-masing. `app.json` kembali memakai `runtimeVersion.policy=appVersion`. Pada 23 November 2026, pengguna mengonfirmasi perubahan sudah tampil dan uji awal di perangkat tampak aman. Runtime perangkat dan skenario yang diuji tidak dikonfirmasi ulang; migrasi serta perilaku backend setelah deploy belum diverifikasi langsung dari sesi ini.
 
 Urutan rilis staging:
 
@@ -188,7 +188,7 @@ Urutan rilis staging:
 4. Uji di kedua runtime: ambil dua foto di titik berbeda, periksa titik dan akurasi masing-masing di CRM; ulangi saat offline lalu sinkronkan. Coba tanpa izin GPS: kamera tetap terbuka dan foto tersimpan, tetapi master tidak terisi otomatis. Periksa pilihan kamera depan/belakang dan isian form visit tetap ada saat kembali dari kamera.
 5. Untuk kasus foto lama seperti visit #66, pilih titik foto secara manual di CRM setelah memeriksa peta dan bukti. Data lama tidak mempunyai akurasi GPS per foto yang dapat diverifikasi. Kunjungan yang telah selesai tidak dihitung ulang.
 
-Pemeriksaan fungsional di kedua runtime dan verifikasi migrasi backend pada langkah di atas masih perlu dilakukan.
+Pemeriksaan fungsional terperinci di kedua runtime dan verifikasi migrasi backend pada langkah di atas masih perlu dilakukan.
 
 Karena build 9 di perangkat pengguna belum menampilkan OTA yang diharapkan,
 [APK staging 1.1.6 build 10](https://expo.dev/accounts/nyma/projects/sales-daily/builds/d529765d-bcad-438c-99f8-362194d47ebe)
